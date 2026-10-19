@@ -42,7 +42,7 @@ namespace {
 const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", "version", "--version",
                                "watch", "locate", "art", "tag", "undo", "journal", "organise", "organize",
                                "tag-from-filename", "audit", "duplicates", "playlist", "autoplaylist",
-                               "collection", "autodj", "import"};
+                               "collection", "autodj", "import", "volume", "nas", "remote"};
 
 const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp open [files or folders...]  the same, for names that look like commands
@@ -81,6 +81,18 @@ const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp import mediamonkey <MM.DB> [--map 'D:\Music=/mnt/music'] --dry-run | --apply
                                          ratings, play counts, history and playlists
        omamp import undo [batch]         undo an import
+       omamp volume list|show <v>        the volumes (disks and shares) and whether they are online
+       omamp volume reassign <v> <folder>
+                                         point a volume at its music's new place (re-assign drive)
+       omamp volume forget <v> [--force] remove a volume and its tracks from the library
+       omamp volume workers <v> <n>      folders listed at once when scanning it (0: default)
+       omamp nas mount-guide --smb //nas/music --at /mnt/music [--write-to <folder>]
+       omamp nas mount-guide --nfs nas:/export/music --at /mnt/music
+                                         print systemd automount units and the sudo commands
+       omamp remote add subsonic <url> --user <name> --password-stdin | --api-key-stdin [--name n]
+       omamp remote list|sync [source|all] [--full]|remove <source> [--keep-tracks]
+       omamp remote set <source> --max-bitrate <kbit/s> --format <raw|mp3|opus|...>
+                                         Navidrome and other (Open)Subsonic servers as sources
 
 Options:
   --json         print JSON on stdout
@@ -1563,6 +1575,8 @@ bool isCommand(const QString &first) { return commands.contains(first); }
 int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver) {
     Options o;
     const QString command = arguments.value(0);
+    if (command == "volume" || command == "nas" || command == "remote")
+        return runNas(arguments, out, err, resolver);
     for (int i = 1; i < arguments.size(); ++i) {
         const QString &a = arguments[i];
         auto value = [&](QString *target) {

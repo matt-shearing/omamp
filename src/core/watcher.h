@@ -12,6 +12,7 @@
 
 class Job;
 class Library;
+class MountMonitor;
 class QSocketNotifier;
 class QThread;
 class QTimer;
@@ -85,12 +86,20 @@ public:
     Q_INVOKABLE void rescanScheduledNow();
     // Queues folders for an incremental rescan, as if they had changed.
     Q_INVOKABLE void rescanFolders(const QStringList &folders, bool recursive = false);
+    // Quick-rescans whole library roots (ChangedFolders mode), as a
+    // "remount" request: for a share that has just come back.
+    Q_INVOKABLE void rescanRoots(const QStringList &roots);
+    // Follows a MountMonitor: when a volume comes back online, the roots are
+    // re-read (a network root that was offline isn't scheduled yet) and the
+    // volume's library folders are quick-rescanned, and only those.
+    void followMounts(MountMonitor *monitor);
 
 signals:
     // A debounced batch of changed folders, about to be rescanned.
     void foldersChanged(const QStringList &folders);
-    // kind is "changes" (from inotify), "scheduled" or "overflow" (the kernel
-    // dropped events, so every watched root is rescanned).
+    // kind is "changes" (from inotify), "scheduled", "overflow" (the kernel
+    // dropped events, so every watched root is rescanned) or "remount" (a
+    // share came back).
     void rescanStarted(const QString &kind, const QStringList &folders);
     // result is ScanResult::toJson() plus "kind".
     void rescanFinished(const QJsonObject &result);

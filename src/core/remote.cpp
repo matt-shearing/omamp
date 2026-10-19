@@ -390,7 +390,9 @@ qint64 add(Library &library, const QUrl &url, const QString &user, const QString
     while (path.endsWith('/'))
         path.chop(1);
     clean.setPath(path);
-    for (const QVariant &v : {QVariant(label), QVariant(clean.toString()), QVariant(user), QVariant(auth), QVariant(store),
+    // An empty user, never NULL: Qt SQL binds a null QString as NULL.
+    const QString userName = user.isEmpty() ? QString("") : user;
+    for (const QVariant &v : {QVariant(label), QVariant(clean.toString()), QVariant(userName), QVariant(auth), QVariant(store),
                               QVariant(ref), QVariant(server.type), QVariant(server.serverVersion),
                               QVariant(server.apiVersion), QVariant(server.openSubsonic ? 1 : 0),
                               QVariant(QDateTime::currentSecsSinceEpoch())})

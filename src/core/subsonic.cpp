@@ -88,8 +88,24 @@ QByteArray SubsonicClient::get(const QUrl &url, QString *contentType, int *statu
         if (contentType)
             *contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
         body = reply->readAll();
-        if (reply->error() != QNetworkReply::NoError && error)
-            *error = reply->errorString();
+        // Never reply->errorString(): it quotes the URL, which carries the
+        // token and salt (or the API key).
+        if (reply->error() != QNetworkReply::NoError && error) {
+            const QString host = m_server.host();
+            switch (reply->error()) {
+            case QNetworkReply::ConnectionRefusedError: *error = QString("%1 refused the connection").arg(host); break;
+            case QNetworkReply::HostNotFoundError: *error = QString("%1 was not found").arg(host); break;
+            case QNetworkReply::TimeoutError:
+            case QNetworkReply::OperationCanceledError: *error = QString("%1 did not answer in time").arg(host); break;
+            case QNetworkReply::RemoteHostClosedError: *error = QString("%1 closed the connection").arg(host); break;
+            case QNetworkReply::SslHandshakeFailedError:
+                *error = QString("%1's certificate was not accepted").arg(host);
+                break;
+            default:
+                *error = *status ? QString("%1 answered HTTP %2").arg(host).arg(*status)
+                                 : QString("%1 could not be reached (network error %2)").arg(host).arg(int(reply->error()));
+            }
+        }
     }
     reply->deleteLater();
     return body;

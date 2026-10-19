@@ -2,7 +2,7 @@
 // Totals line; the exit code is non-zero if any of them failed.
 //
 // OMAMP_TESTS=query,palette runs only the named classes (player, library,
-// query, palette, watcher, window, mask, tidy, playlists, engine), for a quick loop or a machine that must stay silent.
+// query, palette, watcher, window, mask, tidy, playlists, engine, nas, subsonic), for a quick loop or a machine that must stay silent.
 #include <QGuiApplication>
 #include <QtTest>
 
@@ -16,6 +16,8 @@ int runMaskTests(int argc, char **argv);
 int runTidyTests(int argc, char **argv);
 int runPlaylistTests(int argc, char **argv);
 int runEngineTests(int argc, char **argv);
+int runNasTests(int argc, char **argv);
+int runSubsonicTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
@@ -24,6 +26,9 @@ int main(int argc, char **argv) {
     // Never out of the speakers: the native engine's device sink aborts and
     // the Qt engine leaves out its audio output.
     qputenv("OMAMP_NO_AUDIO_DEVICE", "1");
+    // Never in the desktop keyring: remote source secrets go to a file under
+    // the temporary XDG_CONFIG_HOME the remote tests set.
+    qputenv("OMAMP_SECRET_STORE", "file");
     QGuiApplication app(argc, argv);
     const QStringList only = qEnvironmentVariable("OMAMP_TESTS").split(',', Qt::SkipEmptyParts);
     auto wanted = [&](const char *name) { return only.isEmpty() || only.contains(QLatin1String(name)); };
@@ -48,5 +53,9 @@ int main(int argc, char **argv) {
         failures += runPlaylistTests(argc, argv);
     if (wanted("engine"))
         failures += runEngineTests(argc, argv);
+    if (wanted("nas"))
+        failures += runNasTests(argc, argv);
+    if (wanted("subsonic"))
+        failures += runSubsonicTests(argc, argv);
     return failures ? 1 : 0;
 }

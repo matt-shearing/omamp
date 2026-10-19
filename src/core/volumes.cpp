@@ -421,6 +421,27 @@ bool reassign(Library &library, const VolumeResolver &resolver, qint64 volumeId,
         return fail(QString("None of this volume's library folders (%1) are under %2. Give the folder that matches "
                             "the volume's old root, %3.")
                         .arg(old.libraryRoots.join(", "), root, old.rootPath));
+    // And some of its tracks: a library folder that is the volume root
+    // exists under any folder at all.
+    {
+        QSqlQuery sample(library.db());
+        sample.prepare("SELECT rel_path FROM tracks WHERE volume_id = ? AND availability != 'missing' ORDER BY id LIMIT 50");
+        sample.addBindValue(old.id);
+        sample.exec();
+        QString example;
+        bool any = false, some = false;
+        while (sample.next() && !some) {
+            any = true;
+            const QString rel = sample.value(0).toString();
+            if (example.isEmpty())
+                example = rel;
+            some = QFileInfo::exists(joinPath(root, rel));
+        }
+        if (any && !some)
+            return fail(QString("None of this volume's tracks (such as %1) are under %2. Give the folder that matches "
+                                "the volume's old root, %3.")
+                            .arg(example, root, old.rootPath));
+    }
 
     const Mount mount = resolver.mountFor(root);
     if (mount.mountPoint.isEmpty())

@@ -170,7 +170,7 @@ private slots:
         Library library(db);
         QString error;
         QVERIFY2(library.open(&error), qPrintable(error));
-        QCOMPARE(library.schemaVersion(), 3);
+        QCOMPARE(library.schemaVersion(), Library::latestVersion());
         QCOMPARE(Library::latestVersion(), 3);
         QVERIFY(library.lastBackup().contains(".v2-"));
         QVERIFY(QFileInfo::exists(library.lastBackup()));

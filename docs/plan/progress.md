@@ -2639,3 +2639,280 @@ and `audits`.
   header. Not investigated further.
 - **Translations**: the new strings are in English only, with English plural
   forms in `src/app/i18n/en.json`.
+
+## Phase 3 window: playlists, auto-playlists, Auto-DJ, party mode and Settings (20 October 2026)
+
+The Phase 3 core and engine now have their window. Playlists sit in the
+tree in folders and in their own order, with a view that keeps repeats and
+entries not in the library; tracks are dragged onto them from the list.
+Auto-playlists have an editor that checks and counts the query as you type
+and shows it as rules. Collections have their own tree nodes and columns.
+The player counts plays and skips by what was heard and queues scrobbles.
+`Ctrl+J` turns Auto-DJ on, party mode locks the window behind a PIN, and
+`Ctrl+,` opens Settings with the engine, crossfade, ReplayGain and a
+10-band equaliser. All tests pass. Nothing is pushed.
+
+![Playlists in the tree](../playlists.png)
+
+### What was built
+
+```text
+src/engine/player.{h,cpp}           play statistics hooks: playStarted, playProgress, playFinished (heard ms,
+                                    length, user skip); finishPlay(); clipPrevention; preferredEngine; trackAt()
+src/app/playrecorder.{h,cpp}        Stats::recordPlay and Scrobble::Scrobbler from those signals; flush on a worker
+src/app/playlistscontroller.{h,cpp} library.playlists: create, rename, move, delete, add, play, import and
+                                    export, Save Now Playing, query check, rules, collections
+src/app/playlistitemsmodel.{h,cpp}  the playlist view: entries in order, repeats, unmatched, select, move, remove
+src/app/rulebuilder.{h,cpp}         rows of field/operator/value to query text and back, checked by compiling both
+src/app/djcontroller.{h,cpp}        library.dj: Auto-DJ refills, its settings, party mode
+src/app/settingscontroller.{h,cpp}  library.appSettings: library settings, folders, ListenBrainz token check
+src/app/librarytree.cpp             playlist folders, static and auto-playlists in position order;
+                                    a collection's own nodes (cgroup, cvalue)
+src/app/PlaylistView.qml            the playlist view
+src/app/AutoPlaylistSheet.qml, CollectionSheet.qml, AutoDjSheet.qml, PartySheet.qml,
+src/app/SettingsSheet.qml, NameSheet.qml, PartyDisplay.qml
+src/app/Main.qml, AdvancedView.qml, LibraryTreePane.qml, TrackTable.qml, DeckStrip.qml, JobsBar.qml
+tests/p3window_tests.cpp            17 tests: controllers on files and fixtures, and the window from the keys
+```
+
+**Counting plays.** The Player keeps the time actually heard: forward
+position moves while playing count, a seek resets the mark, a jump back
+does not count. When a track ends by itself the rest after the last
+position report counts too. A play ends when the track ends, Next or
+Previous is pressed, another track is chosen or played now (a user skip),
+playback stops, or Omamp quits (`aboutToQuit` calls `finishPlay()`).
+`PlayRecorder` turns that into `Stats::recordPlay()` and
+`Scrobbler::trackStarted/trackProgress/trackFinished` on its own connection,
+opened only if the library file exists, so the deck alone never makes a
+library. The list's Plays and Last played columns refresh after a counted
+play or a skip. The scrobble queue is sent on a worker thread after a play
+that queued something and once at start-up, and only when a service has
+credentials; with none, nothing touches the network.
+
+**Playlists in the tree.** Under Playlists: Now Playing, then folders
+(`plfolder`), static playlists (`playlist`, with their entry count) and
+auto-playlists (`autoplaylist`, with an accent mark), nested, siblings by
+position then name. Their track-list scope is empty; the playlist view reads
+`Playlists::items()`, so order, repeats and unmatched entries show, and an
+auto-playlist's `sort:` and `limit:` apply (the old tree compiled only its
+WHERE). The tree's context menu (right-click or `Menu`) has new playlist,
+auto-playlist and folder, import, Save Now Playing, play, play next, add to
+Now Playing, edit, rename, move to folder, export and delete; `Delete` on a
+node deletes it after asking. The palette has the same, working on the
+chosen node.
+
+**The playlist view.** Name, entries, length, repeats and entries not in
+the library; Play, Play next, Edit… (auto), New shuffle (random auto),
+Export…. `Alt+↑/↓` and a mouse drag move the chosen entries
+(`Playlists::moveItems`), `Delete` removes them, `Enter` plays from the
+cursor. Repeats are marked **repeat**; unmatched, offline and missing
+entries are greyed, italic when unmatched, and marked.
+
+**Dragging tracks.** Pressing on a chosen row keeps a multi-selection, so
+several tracks drag together. The list reports the pointer's place in the
+window, and the tree lights the static playlist under it and adds the
+tracks on release. **Add to playlist** in the track menu does the same from
+the keyboard, with a new playlist at the top.
+
+**Import and export.** Import takes M3U, M3U8 and PLS through the portal's
+file picker (several at once), and says how many entries matched. Export
+picks a folder through the portal and writes `<name>.m3u8` there.
+
+**The auto-playlist editor.** Name and query; a 150 ms pause after typing
+runs `Query::parse` and `Query::run` (count and the first 40). The rules
+are `RuleBuilder::fromQuery()` of the text: all or any, rows of field (with
+"Any text" for bare words), operator (by field type) and value, sort with
+descending or random, limit by tracks, time or size. Editing a row writes
+the text but keeps the rows, so a half-filled row isn't lost. A query is
+representable only if the rows give back one that compiles to identical
+SQL, parameters, order and limit; otherwise the rows step aside with
+"Advanced query" and the reason.
+
+**Collections.** Editor for name, query (counted live), when to show it,
+which nodes go under it and which columns it shows. A collection's node
+opens onto those nodes, each listing values inside the collection (by the
+track's own artist, album artist, album, genre, year, rating or composer
+column). While a collection is chosen, the list shows its columns; hiding or
+showing a column then saves to the collection, and the window's own column
+layout comes back when leaving it.
+
+**Auto-DJ.** `Ctrl+J`, the deck strip's **AUTO-DJ** lamp, or the palette.
+After every track change or list change it tops Now Playing up to "keep N"
+queued (`AutoDj::Dj::refill` with the last 50 played and everything
+queued). Turning it on with an empty list fills it without playing. The
+settings sheet chooses the source (library, a collection, a playlist or a
+query), how many to keep, artist separation, days to avoid, rating weights
+and the never-played boost. On/off is kept in the library (`autodj_enabled`)
+and resumes at start.
+
+**Party mode.** From the palette: a preset (jukebox, dj, display), an
+optional PIN and an optional big now-playing display. While on, the
+**PARTY** lamp is lit; every guarded action checks `PartyMode::allowed`
+(edit-tags covers the tag editor, F2, organise, tag from file names, undo
+and duplicates; edit-playlists every playlist and collection change;
+settings covers Settings, Auto-DJ, adding folders and rescans; play, skip,
+seek, volume, reorder, add and remove guard the transport and queue keys;
+library guards Tab and search). Locked actions say "Locked in party mode";
+`Q` and closing the window open the PIN sheet instead of quitting. Party
+mode is read at start, before the library window opens.
+
+**Settings** (`Ctrl+,`, four tabs). Playback: engine Qt or native
+(experimental), crossfade 0 to 12 s, ReplayGain off/track/album with preamp
+and clip prevention, the equaliser on/off, presets, preamp and ten vertical
+band sliders. Library: folders with remove (after asking) and add, rescan,
+watching on/off, the network rescan interval in minutes, ratings in files.
+Scrobbling: on/off, a ListenBrainz token checked on a worker
+(`validateToken`) and saved with the user name, per-service switches, a
+Last.fm note. Web: AcoustID key, MusicBrainz countries, formats, genres and
+label, cover size, embed and `cover.jpg`. Only known keys can be written
+(`SettingsController::editable`).
+
+**Keys.** `Ctrl+J` Auto-DJ, `Ctrl+,` Settings, `Alt+↑/↓` and `Delete` in a
+playlist, `Delete` and `Menu` in the tree. The `?` overlay now has four
+groups in two rows (Player, Library, Tags and files, Playlists). Demo
+verbs for screenshots: `party:<preset>` and `playlist:<id>`.
+
+### Test results
+
+`bin/test` with `JOBS=4`, a throwaway `HOME` and XDG folders, offscreen in
+software, `OMAMP_NO_AUDIO_DEVICE=1`:
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 83ms      (player)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 509ms     (library)
+Totals: 24 passed, 0 failed, 0 skipped, 0 blacklisted, 24ms      (query)
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 85ms       (palette)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 2598ms    (watcher)
+Totals: 17 passed, 0 failed, 0 skipped, 0 blacklisted, 830ms     (library window models)
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1529ms     (the window, offscreen)
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 3096ms     (Phase 1D window parts)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 7ms       (masks)
+Totals: 21 passed, 0 failed, 0 skipped, 0 blacklisted, 1210ms    (Phase 2 backend)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 10341ms   (Phase 3 core)
+Totals: 36 passed, 0 failed, 4 skipped, 0 blacklisted, 3865ms    (engine)
+Totals: 25 passed, 0 failed, 1 skipped, 0 blacklisted, 1252ms    (web)
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 501ms      (Phase 2 window models)
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 10752ms    (Phase 2 window, from the keyboard)
+Totals: 10 passed, 0 failed, 0 skipped, 0 blacklisted, 6787ms    (Phase 3 window: controllers)
+Totals: 7 passed, 0 failed, 0 skipped, 0 blacklisted, 8200ms     (Phase 3 window: from the keyboard)
+```
+
+The new classes (`OMAMP_TESTS=p3window`) cover:
+
+- **Counting plays**: two 2-second FLAC files made by `ffmpeg`, scanned,
+  played from the list through the native engine into the in-memory
+  `BufferSink` (20 times real time, never a device): both counted, heard
+  at least 1.8 s each, play count 1, last played set, two history rows,
+  the list's Plays column reading 1, nothing queued to scrobble (no
+  service). Then Next straight after starting: a skip, skip count 1.
+- **Rules**: all and any, aliases to field names, ranges, comparisons,
+  `played:never`, random sort, limits by count and time; brackets, mixed
+  AND/OR, `+word` and a broken query refused; rows to text with quoting,
+  regex, a half-filled row left out, and back.
+- **Playlists**: a folder and a playlist in it, the tree's parent and count,
+  a repeat, `Alt+Down`, a drag of two rows to the end, the stored order,
+  Delete, a removed track left as unmatched, export to M3U8 in a temporary
+  folder and import back (one unmatched), rename, move to the top, a folder
+  refused into itself, delete, and Save Now Playing with a file not in the
+  library.
+- **Auto-playlist count**: everything, `genre:pop` against SQL, the
+  preview's size, `limit:1`, a broken query, create, the view read-only,
+  save with a new query.
+- **Auto-DJ keeps N**: three queued; after two Nexts still three; off adds
+  nothing; settings and source back after a restart.
+- **Party mode**: jukebox with a PIN locks edit-tags, edit-playlists,
+  settings and quit, allows add; a wrong PIN keeps it; read at start; the
+  right PIN unlocks.
+- **Settings round trip**: library settings back after reopening, unknown
+  keys refused, the token only through its check, folders; the Player's
+  crossfade, ReplayGain, clip prevention, EQ and engine choice back from
+  `omamp.conf`.
+- **Collections**: own nodes and a value node's tracks, a bad query
+  refused, columns remembered.
+- **In the window**: a playlist from the palette and the name sheet, the
+  playlist view replacing the list, `Down Down Alt+Up`, `End Delete`,
+  export, delete from the palette through the confirm sheet; a real mouse
+  drag of two selected tracks onto the playlist's node; the auto-playlist
+  editor's count, rules and advanced note, a broken query's position,
+  `Ctrl+Enter` to create; `Ctrl+J` on and off with the lamp; `Ctrl+,`;
+  party mode: `Ctrl+E` blocked with the toast, `Ctrl+,` blocked, `Q` opening
+  the PIN sheet with the window still up, a wrong PIN, the right one, and
+  `Ctrl+E` working again.
+
+### Screenshots
+
+`docs/playlists.png` (an imported M3U with a repeat and an entry not in the
+library), `docs/autoplaylist-editor.png` (three rules, sort by rating
+descending, a two-hour limit) and `docs/settings-playback.png` (native
+engine, 3 s crossfade, album gain, the equaliser on). They come from
+`tests/make-demo-library` scanned into throwaway XDG folders in the
+scratchpad, with playlists made by `omamp playlist` and `omamp
+autoplaylist`, captured offscreen in software with `OMAMP_DEMO` and
+`OMAMP_SCREENSHOT` in the Night Ride theme. No audio device was opened.
+
+### Decisions
+
+- **Signals from the Player, statistics in the app.** The Player (engine
+  side) knows paths and heard time, not the library; `PlayRecorder` maps
+  paths to tracks and writes. The hook's "the player calls" is kept in
+  spirit: the calls happen on the window's thread, once per play.
+- **Heard time counts forward moves while playing, plus the unreported
+  tail of a track that ended by itself.** A seek resets the mark. The
+  native engine's in-memory sink moves the position in large steps, so
+  capping a step would undercount; tracking seeks is exact instead.
+- **Choosing another track or playing something now is a skip; Stop is
+  not.** Stop under a tenth of a track still counts as a skip by the core's
+  rule.
+- **Flushing scrobbles only with credentials,** on a worker with its own
+  connection and HTTP client. That worker's Scrobbler never saw
+  `trackStarted`, so "now playing" notices are not sent (see gaps).
+- **Playlists get their own view,** not the track list: the list is a set
+  of ids in a sort order and can't hold repeats, unmatched entries or a
+  hand order. Auto-playlists use the same view, read-only, so their
+  `sort:` and `limit:` apply.
+- **The drag is the window's own,** not Qt's `Drag`/`DropArea`: an
+  internal drag from the TableView never reached the tree's drop areas
+  offscreen, so the list reports the pointer and the tree works out the
+  row. It is tested with real mouse events.
+- **Export picks a folder, not a file name.** The portal picker here opens
+  files and folders; the file is `<playlist>.m3u8` in the chosen folder.
+- **Same-album gapless is a note, not a switch.** The engine always joins
+  tracks of one album without a crossfade; changing that would mean
+  changing the engine, which this round doesn't own.
+- **The engine choice applies at the next start.** The Player can't swap
+  engines while playing; `preferredEngine` writes `playback/engine` and the
+  page says so when it differs from the engine playing.
+- **Turning Auto-DJ on doesn't start playback**; it fills the queue and
+  `Space` plays. Auto-DJ left on opens the library at start.
+- **Collection tree nodes use the track's own columns** (artist, genre…),
+  not the multi-value tables, so they are simple GROUP BYs inside the
+  collection's scope.
+- **Party mode guards in the window**, through one `guard()` and `may()`,
+  with the core's action names (`edit-tags`, `add`, `quit`…). The backend
+  stays unguarded, so the command line and tests work as before.
+- **Only known setting keys are writable** from the page; the ListenBrainz
+  token only through its check.
+
+### Known gaps
+
+- **Not tried on screen, on Matt's library or with a sound card.** Play
+  counting was tested only through the in-memory sink; the Qt engine's
+  position reports in real use are untested for heard time.
+- **No "now playing" scrobbles**, as above. Listens themselves queue and
+  send.
+- **Last.fm login** is still the command line (`omamp scrobble login
+  lastfm`); the page says so.
+- **No search inside a playlist view, no drag from the album grid, no
+  dragging playlists in the tree** (move them with the menu).
+- **A collection's own nodes** use one column per track, so a track with
+  several artists files under its artist text as written ("A; B").
+- **The auto-playlist preview** uses seed 0 for `sort:random`, so its
+  order differs from the playlist's stored shuffle; the count is exact.
+- **Removing a library folder** takes its tracks out of the library
+  (ratings and counts with them); adding the folder again rescans them as
+  new.
+- **The equaliser preset menu** doesn't show which preset matches the
+  current bands.
+- **Translations**: English only, with the new plural forms in
+  `src/app/i18n/en.json`. The tests run without the translator, so they
+  check English plurals only where the count isn't 1.

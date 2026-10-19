@@ -51,7 +51,12 @@ void DjController::loadSaved(const QString &databasePath) {
         return;
     m_party = PartyMode::Settings::load(lib);
     m_display = lib.setting("party_display", "0").toString() == "1";
+    // Auto-DJ left on keeps going from the deck too: it needs the library,
+    // so open it once the window is up.
+    const bool autoDj = lib.setting("autodj_enabled", "0").toString() == "1";
     emit partyChanged();
+    if (autoDj)
+        QTimer::singleShot(0, m_controller, [c = m_controller] { c->activate(); });
 }
 
 void DjController::setError(const QString &error) {

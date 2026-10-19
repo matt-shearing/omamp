@@ -36,6 +36,21 @@ Item {
         anchors.fill: parent
         spacing: 8
 
+        // Whose words these are.
+        Text {
+            objectName: "lyricsTitle"
+            Layout.fillWidth: true
+            visible: view.trackId > 0
+            elide: Text.ElideRight
+            text: {
+                if (!(view.trackId > 0)) return ""
+                const i = library.trackInfo(view.trackId)
+                return (i.title || "") + (i.artist ? "  —  " + i.artist : "")
+            }
+            font.pixelSize: 14
+            font.bold: true
+            color: theme.c.bright_foreground
+        }
         Text {
             Layout.fillWidth: true
             visible: view.shown && view.web.lyricsState === "found"

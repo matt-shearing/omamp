@@ -6,11 +6,29 @@
 #include <QFile>
 #include <QImage>
 #include <QQmlApplicationEngine>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QTextStream>
 #include <QTimer>
 
 static QElapsedTimer processTimer;
+
+// An object by its objectName, in the window or in a sheet (sheets live in
+// the window's overlay, outside its content item).
+static QObject *findNamed(QQuickWindow *window, const QString &name) {
+    if (QObject *o = window->findChild<QObject *>(name))
+        return o;
+    std::function<QObject *(QQuickItem *)> walk = [&](QQuickItem *item) -> QObject * {
+        if (item->objectName() == name)
+            return item;
+        for (QQuickItem *child : item->childItems())
+            if (QObject *o = walk(child))
+                return o;
+        return nullptr;
+    };
+    QQuickItem *top = window->contentItem()->parentItem() ? window->contentItem()->parentItem() : window->contentItem();
+    return walk(top);
+}
 
 void DevHooks::markStart() { processTimer.start(); }
 
@@ -145,7 +163,25 @@ void DevHooks::runDemo() {
         else if (verb == "party")
             // party:<preset> turns party mode on, with the big display and no PIN.
             m_library->dj()->enableParty(arg.isEmpty() ? QString("jukebox") : arg, {}, true);
-        else if (verb == "playlist")
+        else if (verb == "set") {
+            // set:<objectName>.<property>=<value>: true, false, a number, or text.
+            const QString target = arg.section('=', 0, 0), text = arg.section('=', 1);
+            QObject *o = findNamed(m_window, target.section('.', 0, 0));
+            QVariant value = text;
+            bool number = false;
+            const double d = text.toDouble(&number);
+            if (text == "true" || text == "false")
+                value = text == "true";
+            else if (number)
+                value = d;
+            if (!o || !o->setProperty(target.section('.', 1).toUtf8(), value))
+                say("can't set " + target);
+        } else if (verb == "click") {
+            // click:<objectName> presses a named button.
+            QObject *o = findNamed(m_window, arg);
+            if (!o || !QMetaObject::invokeMethod(o, "clicked"))
+                say("can't click " + arg);
+        } else if (verb == "playlist")
             // playlist:<id> shows a playlist (opening its folders).
             m_library->playlists()->show(arg.toLongLong());
         else

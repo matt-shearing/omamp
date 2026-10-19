@@ -41,6 +41,8 @@ ToolSheet {
     }
 
     component Glyph: Text {
+        Layout.preferredWidth: 28
+        horizontalAlignment: Text.AlignHCenter
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 22
         color: theme.c.light_foreground
@@ -101,7 +103,8 @@ ToolSheet {
                     Layout.preferredHeight: contentHeight
                     interactive: false
                     spacing: 6
-                    model: sheet.nas.volumes
+                    // Servers have their own rows below.
+                    model: sheet.nas.volumes.filter(v => v.kind !== "subsonic")
                     delegate: Rectangle {
                         id: vol
                         required property var modelData
@@ -144,9 +147,10 @@ ToolSheet {
                                     Layout.fillWidth: true
                                     visible: text !== ""
                                     elide: Text.ElideMiddle
-                                    text: vol.remote ? "" : vol.modelData.root
-                                          + (vol.modelData.kind === "network" && vol.modelData.source !== "" && vol.modelData.source !== vol.modelData.name
-                                             ? "  ·  " + vol.modelData.source : "")
+                                    text: vol.remote || vol.modelData.root === vol.modelData.name ? ""
+                                          : vol.modelData.root
+                                            + (vol.modelData.kind === "network" && vol.modelData.source !== "" && vol.modelData.source !== vol.modelData.name
+                                               ? "  ·  " + vol.modelData.source : "")
                                     font.pixelSize: 12
                                     color: theme.c.light_foreground
                                 }
@@ -251,7 +255,7 @@ ToolSheet {
                 }
                 Text {
                     Layout.fillWidth: true
-                    visible: sheet.nas.volumes.length === 0
+                    visible: list.count === 0
                     text: qsTr("No volumes yet: add a folder of music to the library.")
                     font.pixelSize: 13
                     color: theme.c.muted
@@ -318,6 +322,7 @@ ToolSheet {
                                 }
                             }
                             ColumnLayout {
+                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                                 spacing: 0
                                 Row {
                                     Layout.alignment: Qt.AlignRight

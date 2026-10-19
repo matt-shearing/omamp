@@ -149,6 +149,8 @@ ToolSheet {
             // The albums found among the chosen tracks.
             ColumnLayout {
                 Layout.preferredWidth: 270
+                Layout.maximumWidth: 270
+                Layout.fillWidth: false
                 Layout.fillHeight: true
                 spacing: 6
                 Text {
@@ -384,6 +386,7 @@ ToolSheet {
 
                 TabBar {
                     id: tabs
+                    objectName: "identifyTabs"
                     Layout.fillWidth: true
                     visible: sheet.cluster !== null && sheet.cluster.chosen >= 0
                     TabButton { text: qsTr("Files and tracks"); font.pixelSize: 13; width: implicitWidth + 24 }
@@ -418,7 +421,7 @@ ToolSheet {
                                 Layout.rightMargin: 8
                                 Layout.preferredHeight: 26
                                 spacing: 10
-                                Text { Layout.preferredWidth: 300; text: qsTr("File"); font.pixelSize: 12; font.bold: true; color: theme.c.muted }
+                                Text { Layout.preferredWidth: 260; text: qsTr("File"); font.pixelSize: 12; font.bold: true; color: theme.c.muted }
                                 Text { Layout.fillWidth: true; text: qsTr("Release track"); font.pixelSize: 12; font.bold: true; color: theme.c.muted }
                                 Text { Layout.preferredWidth: 110; text: qsTr("Length"); font.pixelSize: 12; font.bold: true; color: theme.c.muted }
                                 Text { Layout.preferredWidth: 60; text: qsTr("Match"); horizontalAlignment: Text.AlignRight; font.pixelSize: 12; font.bold: true; color: theme.c.muted }
@@ -443,7 +446,7 @@ ToolSheet {
                                         anchors { fill: parent; leftMargin: 8; rightMargin: 8 }
                                         spacing: 10
                                         Text {
-                                            Layout.preferredWidth: 300
+                                            Layout.preferredWidth: 260
                                             elide: Text.ElideMiddle
                                             text: mrow.modelData.file
                                             font.pixelSize: 12
@@ -550,7 +553,8 @@ ToolSheet {
                                         color: theme.c.muted
                                     }
                                     Text {
-                                        Layout.preferredWidth: 280
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 300
                                         elide: Text.ElideRight
                                         text: change.modelData.oldValue !== "" ? change.modelData.oldValue : qsTr("(empty)")
                                         font.pixelSize: 12
@@ -560,6 +564,8 @@ ToolSheet {
                                     Text { text: "→"; font.pixelSize: 12; color: theme.c.muted }
                                     Text {
                                         Layout.fillWidth: true
+                                        Layout.preferredWidth: 300
+                                        Layout.rightMargin: 8
                                         elide: Text.ElideRight
                                         text: change.modelData.newValue !== "" ? change.modelData.newValue : qsTr("(cleared)")
                                         font.pixelSize: 12

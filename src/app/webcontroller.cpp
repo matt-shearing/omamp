@@ -95,10 +95,23 @@ QString whyText(const Identify::Candidate &c, int files) {
     return text;
 }
 
+// The fields a person reads first come first; the IDs last.
+int fieldRank(const QString &field) {
+    static const QStringList order = {"title",  "artist",     "album",        "albumartist", "track",
+                                      "tracktotal", "disc",   "disctotal",    "year",        "originalyear",
+                                      "genre",  "label",      "catalognumber", "releasecountry", "isrc", "artwork"};
+    const int i = order.indexOf(field);
+    return i < 0 ? int(order.size()) : i;
+}
+
 QJsonArray changesJson(const TagBatchResult &r) {
     QJsonArray out;
     for (const TagFileResult &f : r.files) {
-        for (const TagFieldChange &c : f.changes)
+        QList<TagFieldChange> changes = f.changes;
+        std::stable_sort(changes.begin(), changes.end(), [](const TagFieldChange &a, const TagFieldChange &b) {
+            return fieldRank(a.field) < fieldRank(b.field);
+        });
+        for (const TagFieldChange &c : changes)
             out.append(QJsonObject{{"trackId", f.trackId},
                                    {"file", QFileInfo(f.path).fileName()},
                                    {"field", c.field},

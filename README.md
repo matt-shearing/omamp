@@ -131,6 +131,58 @@ window size for each.
   Nothing is ever deleted outright.
 - Dates read the same everywhere: "12 Jul 2026", not "7/12/26".
 
+### Playlists, Auto-DJ and party mode
+
+- **Playlists** live in the tree under Playlists: folders, playlists in your
+  own order, and auto-playlists, nested as deep as you like. Right-click
+  Playlists or a folder for **New playlist**, **New auto-playlist**, **New
+  folder**, **Import playlists** (M3U, M3U8 and PLS, through the desktop's
+  file picker) and **Save Now Playing as a playlist**; right-click a playlist
+  to play it, rename it, move it into a folder, export it as M3U8 or delete
+  it. Everything is in the palette (`Ctrl+K`) too.
+- Drag tracks from the list onto a playlist in the tree, or use **Add to
+  playlist** in a track's menu. A playlist shows in its own order:
+  `Alt+↑` and `Alt+↓` (or a drag) move the chosen entries, `Delete` takes
+  them out. A track that is in the list twice is marked **repeat**; an entry
+  whose file isn't in the library stays, marked **not in library**, so an
+  exported playlist is never shorter than the one you imported.
+- **Auto-playlists** are a query that updates by itself
+  ([docs/query-language.md](docs/query-language.md)). The editor checks the
+  query as you type, says how many tracks it picks and shows them. Below
+  the query, rules build the same text from rows of field, operator and
+  value, matching all or any, with an order and a limit by tracks, playing
+  time or size. The text is what is saved; a query the rows can't show (with
+  brackets, say) is marked as advanced and edited as text. A random one
+  keeps its order until **New shuffle**.
+- **Collections** (right-click Collections) are a saved query with their
+  own tree nodes (Artist, Album, Genre…) and their own columns; columns
+  hidden or shown while a collection is open are remembered for it.
+- **Play counts** go up as you listen: a track counts once you have heard
+  half of it or four minutes, and pressing Next before a tenth of it counts
+  as a skip. Seeking forward is not listening. Plays and Last played update
+  in the list as they happen, and listens queue for ListenBrainz or Last.fm
+  when one is set up.
+- **Auto-DJ** (`Ctrl+J`, or the **AUTO-DJ** lamp in the deck strip) keeps a
+  number of tracks queued after the one playing, from the whole library, a
+  collection, a playlist or a query, without repeating an artist too soon or
+  a track heard lately, favouring higher ratings. **Auto-DJ settings…** in
+  the palette sets all that.
+- **Party mode** (palette) lets guests use the player without touching your
+  library: tag editing, playlists, organising, settings and quitting are
+  locked, with an optional PIN to leave, and an optional big now-playing
+  display. The **PARTY** lamp shows it is on; click it to leave.
+- **Settings** (`Ctrl+,`): the playback engine, crossfade, ReplayGain with
+  preamp and clip prevention, a 10-band equaliser with presets; library
+  folders, watching and the network rescan interval, ratings in files;
+  ListenBrainz (paste a token and check it) and Last.fm; the AcoustID key,
+  MusicBrainz preferences and cover size.
+
+![Playlists in the tree, with a repeat and an entry not in the library](docs/playlists.png)
+
+![The auto-playlist editor: query, rules and preview](docs/autoplaylist-editor.png)
+
+![Settings: playback and the equaliser](docs/settings-playback.png)
+
 ![The tag editor, three tracks at once](docs/tag-editor.png)
 
 ![Organise files: the preview](docs/organise.png)
@@ -205,6 +257,13 @@ instead of the playlist, and these keys work too:
 | `Ctrl+Shift+Z` or `Ctrl+Y` | Redo what was undone |
 | `Ctrl+Enter` or `Ctrl+S` in an editor | Save, organise or tag |
 | `Esc` in an editor | Close it (asking first if there are unsaved changes) |
+| `Menu` in the tree | New playlist, auto-playlist or folder; rename, move, export or delete |
+| Drag from the list | Add the selected tracks to a playlist in the tree |
+| `Alt+↑` `Alt+↓` in a playlist | Move the chosen entries up or down |
+| `Delete` in a playlist | Remove the chosen entries from the playlist |
+| `Delete` in the tree | Delete the chosen playlist, folder or collection (asks first) |
+| `Ctrl+J` | Auto-DJ on or off (on the deck too) |
+| `Ctrl+,` | Settings (on the deck too) |
 
 ## Build and install
 
@@ -225,7 +284,7 @@ The full plan is in [docs/plan/](docs/plan/). In short:
 
 - **Tagging:** MusicBrainz and AcoustID lookups, and lyrics from the web.
 - **NAS libraries:** SMB, NFS or a Navidrome/Subsonic server, with offline tracks kept in the library.
-- **The 2000s comforts:** Auto-DJ, party mode, auto-playlists, ReplayGain, play counts and ratings.
+- **Web in the window:** identify, covers and lyrics from MusicBrainz, AcoustID and LRCLIB (the command line has them now).
 
 ## The library from the command line
 
@@ -261,7 +320,9 @@ removed.
 - Tags for tracks added from a folder or by dropping files (rather than
   from the library) that haven't played yet. Until such a track plays, the
   playlist shows a tidied file name and no length.
-- An equaliser window and playlist search.
+- Searching inside a playlist, and dragging tracks from the album grid.
+- Logging in to Last.fm from the window (`omamp scrobble login lastfm` works).
+- A change of playback engine takes effect at the next start.
 
 ## Licence
 

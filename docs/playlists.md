@@ -10,8 +10,55 @@ Omamp keeps four kinds of list in its library:
 - A **collection** is a saved search with its own columns, tree and sort,
   such as Music, Classical, Audiobooks and Podcasts.
 
-Everything here works from the command line, and every command takes `--json`
-for scripts and agents.
+Everything here works in the window (below) and from the command line, and
+every command takes `--json` for scripts and agents.
+
+## In the window
+
+![Playlists in the tree](playlists.png)
+
+- **The tree.** Playlists holds Now Playing, then your folders, playlists
+  and auto-playlists in their own order. A playlist shows its number of
+  entries; an auto-playlist has the accent-coloured mark. Right-click (or
+  press `Menu` on) Playlists or a folder to make a playlist, auto-playlist
+  or folder in it, import M3U, M3U8 or PLS files through the desktop's file
+  picker, or save Now Playing as a playlist. Right-click a playlist to play
+  it, play it next, add it to Now Playing, rename it, move it into another
+  folder, export it, or delete it (asked first; `Delete` in the tree does
+  the same). Every command is also in the palette (`Ctrl+K`), working on the
+  chosen node.
+- **Adding tracks.** Drag tracks from the track list onto a playlist in the
+  tree; the playlist under the pointer lights up. Or right-click tracks and
+  choose **Add to playlist**, which lists every playlist and offers a new
+  one.
+- **The playlist view.** A playlist shows in its own order with its length,
+  how many entries repeat and how many are not in the library. `Alt+↑` and
+  `Alt+↓`, or a drag, move the chosen entries; `Delete` takes them out;
+  `Enter` or a double-click plays from there. An entry in the list twice is
+  marked **repeat**; one whose file is offline, missing or was never in the
+  library is greyed and marked. **Export…** writes an M3U8 into a folder you
+  pick, named after the playlist.
+- **The auto-playlist editor** (New auto-playlist, or **Edit…** on one).
+  The query is checked as you type: a mistake says where it is, and
+  otherwise the editor counts the tracks and lists the first forty. The
+  rules below build the same query from rows of field, operator and value,
+  matched all or any, plus an order and a limit by tracks, playing time
+  (`2h`) or size (`700mb`). Editing either side updates the other. The text
+  is what is saved; a query the rows can't show (brackets, AND mixed with
+  OR, `+word`) is marked **advanced** and the rows step aside. A random
+  auto-playlist keeps its order until **New shuffle**.
+- **Collections.** Right-click Collections for **New collection** or to put
+  the four standard ones back; right-click one to edit or delete it. The
+  editor takes a name, a query, when to show it in the tree, which nodes go
+  under it (Artist, Album Artist, Album, Genre, Year, Rating, Composer) and
+  which columns its list shows. Hiding or showing a column while the
+  collection is open is remembered for that collection; other nodes keep
+  the window's own columns.
+- **Plays.** The player counts what you hear, by the rule below, whenever a
+  track ends, is skipped or stopped, or another starts, and when Omamp
+  quits. Plays and Last played update in the list straight away.
+
+![The auto-playlist editor](autoplaylist-editor.png)
 
 ## Playlists
 
@@ -175,6 +222,13 @@ of one song still plays.
 A seed makes the picks repeatable: the same seed and the same library give
 the same songs.
 
+In the window, `Ctrl+J` (or the **AUTO-DJ** lamp in the deck strip) turns
+Auto-DJ on and off, and **Auto-DJ settings…** in the palette chooses the
+source and the rules. While it is on, every track change tops Now Playing up
+to the chosen number of queued tracks. Turning it on with an empty Now
+Playing fills it without starting to play; `Space` starts it. Auto-DJ stays
+on across restarts.
+
 ## Party mode
 
 Party mode locks the player so guests can't spoil the queue or the library.
@@ -187,8 +241,15 @@ It has three presets:
 | display | nothing; the window shows what is playing |
 
 An optional PIN guards leaving party mode. Omamp stores only a salted hash of
-it. The window will offer party mode; the settings live in the library under
-`party_mode`.
+it. The settings live in the library under `party_mode`.
+
+In the window, **Party mode…** in the palette chooses the preset, an
+optional PIN and an optional big now-playing display that covers the
+window. While it is on, the **PARTY** lamp in the deck strip is lit;
+editing tags, changing playlists, organising, settings, the library folders
+and switching Auto-DJ say "Locked in party mode", and `Q` or closing the
+window asks for the PIN. Click the lamp (or the note on the big display) to
+leave. Party mode holds across a restart.
 
 ## For developers
 
@@ -198,6 +259,11 @@ it. The window will offer party mode; the settings live in the library under
 | `src/core/m3u.h` | `PlaylistFiles::` reading, matching (`Matcher`), import and export |
 | `src/core/stats.h` | `Stats::recordPlay()`, the play rule, top lists, recent, never played |
 | `src/core/autodj.h` | `AutoDj::Dj` and its settings; `PartyMode::` |
+| `src/app/playlistscontroller.h` | the window's playlists, collections, import and export, query check |
+| `src/app/playlistitemsmodel.h` | the playlist view's entries, selection, moves and removal |
+| `src/app/rulebuilder.h` | the auto-playlist rules to query text and back |
+| `src/app/djcontroller.h` | Auto-DJ refills and party mode for the window |
+| `src/app/playrecorder.h` | play counts and the scrobble queue from the player |
 
 Schema step 7 added `playlists.position`, `seed`, `note` and `source`;
 rebuilt `playlist_items` so `track_id` may be NULL and each entry keeps its

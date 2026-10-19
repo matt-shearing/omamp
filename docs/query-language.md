@@ -262,6 +262,18 @@ omamp: sort: applies to the whole query, so it can't go inside ( ), after - or n
 With `--json`, the error is also printed on standard output as
 `{"ok": false, "error": "..."}`, and the exit code is 1.
 
+## Rules in the auto-playlist editor
+
+The auto-playlist editor shows a query as rows of field, operator and value,
+matched all (`genre:jazz rating:4..`) or any (`genre:rock OR genre:metal`),
+plus `sort:` and `limit:`. The rows offer contains, is (`=`), does not
+contain and is not (`-`), less than, at most, more than, at least, between
+(`..`), matches the pattern (`/…/`), is empty (`none`) and is set (`any`).
+The text stays the source of truth. Brackets, AND mixed with OR, and
+`+word` can't be shown as rows; the editor then marks the query as advanced
+and leaves it as text. A query counts as representable only when the rows
+give back one that compiles to exactly the same SQL.
+
 ## The command line
 
 ```text

@@ -2,9 +2,21 @@
 
 #include <QSqlDatabase>
 #include <QString>
+#include <QStringList>
 #include <QVariant>
 
+class QUrl;
 class VolumeResolver;
+
+// One volume as refreshVolumes() found it.
+struct VolumeCheck {
+    qint64 id = 0;
+    QString key, kind, label;
+    QString root;              // where it is mounted now (the last place, when offline)
+    bool wasOnline = false, online = false;
+    QString state;             // ProbeResult::name(): "online", "absent", "timed-out", ...
+    QStringList libraryRoots;  // the library folders on it, as absolute paths (when online)
+};
 
 // Counts for `omamp stats` and, later, the status line of the library window.
 struct LibraryStats {
@@ -51,13 +63,25 @@ public:
 
     // Checks every known volume and marks its tracks offline or back online.
     // Missing tracks stay missing: only a scan can prove a file came back.
-    void refreshVolumes(const VolumeResolver &resolver);
+    // A network volume is looked at through PathProbe, so a hung share costs
+    // at most one probe timeout (1.5 s) the first time and nothing after
+    // that while it stays hung; the window should still prefer MountMonitor,
+    // which does this on a worker thread. Remote (subsonic) volumes are left
+    // alone: their state comes from talking to the server.
+    QList<VolumeCheck> refreshVolumes(const VolumeResolver &resolver);
 
     LibraryStats stats() const;
 
     // The absolute path of a track on its volume's current mount, or empty
     // when the volume is offline.
     QString absolutePath(qint64 trackId) const;
+
+    // What the player should open for a track: a file:// URL on its volume's
+    // current mount, or for a track mirrored from a Subsonic server, the
+    // server's stream URL (with this machine's auth parameters and the
+    // source's bitrate and format limits). Empty when the track is offline,
+    // missing, or its server's credentials can't be read.
+    QUrl playableUrl(qint64 trackId, QString *error = nullptr) const;
 
 private:
     bool connect(QString *error);

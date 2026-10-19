@@ -1,6 +1,8 @@
 #include "library.h"
 
 #include "migrations.h"
+#include "mounts.h"
+#include "remote.h"
 #include "volumes.h"
 
 #include <QDateTime>
@@ -9,6 +11,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStandardPaths>
+#include <QUrl>
 #include <QUuid>
 
 Library::Library(const QString &path)
@@ -92,6 +95,11 @@ bool Library::open(QString *error, int targetVersion) {
         return false;
     }
 
+    // OMAMP_MOUNTINFO lets tests fake the mount table; nothing else sets it.
+    if (!checkDatabaseIsLocal(m_path, VolumeResolver(qEnvironmentVariable("OMAMP_MOUNTINFO", "/proc/self/mountinfo")),
+                              error))
+        return false;
+
     QString why;
     if (!connect(&why)) {
         if (error)
@@ -160,6 +168,19 @@ bool Library::migrate(int target, QString *error) {
     for (const Migration &m : migrations()) {
         if (m.version <= current || m.version > target)
             continue;
+        // PRAGMA foreign_keys is a no-op inside a transaction, so it is
+        // switched off before the step begins and back on after it ends,
+        // whichever way it ends.
+        struct ForeignKeys {
+            QSqlDatabase db;
+            bool off;
+            ~ForeignKeys() {
+                if (off)
+                    QSqlQuery(db).exec("PRAGMA foreign_keys = ON");
+            }
+        } keys{database, m.rebuildsTables};
+        if (m.rebuildsTables)
+            QSqlQuery(database).exec("PRAGMA foreign_keys = OFF");
         if (!database.transaction()) {
             if (error)
                 *error = database.lastError().text();
@@ -172,6 +193,13 @@ bool Library::migrate(int target, QString *error) {
             if (!run(q, statement, &why)) {
                 ok = false;
                 break;
+            }
+        }
+        if (ok && m.rebuildsTables) {
+            QSqlQuery check(database);
+            if (check.exec("PRAGMA foreign_key_check") && check.next()) {
+                ok = false;
+                why = QString("a row in %1 lost its %2").arg(check.value(0).toString(), check.value(2).toString());
             }
         }
         if (ok)
@@ -206,44 +234,72 @@ void Library::setSetting(const QString &key, const QVariant &value) {
     q.exec();
 }
 
-void Library::refreshVolumes(const VolumeResolver &resolver) {
+QList<VolumeCheck> Library::refreshVolumes(const VolumeResolver &resolver) {
     QSqlDatabase database = db();
-    struct Row {
-        qint64 id;
-        QString key, root, subpath;
-    };
-    QList<Row> rows;
+    QList<VolumeCheck> checks;
+    QList<QString> subpaths;
     QSqlQuery q(database);
-    q.exec("SELECT id, key, root_path, mount_subpath FROM volumes");
-    while (q.next())
-        rows.append({q.value(0).toLongLong(), q.value(1).toString(), q.value(2).toString(), q.value(3).toString()});
+    q.exec("SELECT id, key, root_path, mount_subpath, kind, coalesce(label, ''), online FROM volumes "
+           "WHERE kind != 'subsonic' ORDER BY id");
+    while (q.next()) {
+        VolumeCheck c;
+        c.id = q.value(0).toLongLong();
+        c.key = q.value(1).toString();
+        c.root = q.value(2).toString();
+        c.kind = q.value(4).toString();
+        c.label = q.value(5).toString();
+        c.wasOnline = q.value(6).toBool();
+        checks << c;
+        subpaths << q.value(3).toString();
+    }
+    q.finish();
+
+    // Look first, write after: the looking may wait on a slow share, and the
+    // write transaction should not be held open meanwhile.
+    for (int i = 0; i < checks.size(); ++i) {
+        ProbeResult why;
+        const QString where = resolver.locate(checks[i].key, checks[i].root, subpaths[i], &why);
+        checks[i].online = !where.isEmpty();
+        checks[i].state = checks[i].online ? QString("online") : why.name();
+        if (checks[i].online)
+            checks[i].root = where;
+    }
 
     const qint64 now = QDateTime::currentSecsSinceEpoch();
     database.transaction();
-    for (const Row &row : rows) {
-        const QString where = resolver.locate(row.key, row.root, row.subpath);
-        const bool online = !where.isEmpty();
+    for (VolumeCheck &c : checks) {
         QSqlQuery u(database);
-        if (online) {
+        if (c.online) {
             u.prepare("UPDATE volumes SET online = 1, root_path = ?, last_seen = ? WHERE id = ?");
-            u.addBindValue(where);
+            u.addBindValue(c.root);
             u.addBindValue(now);
-            u.addBindValue(row.id);
+            u.addBindValue(c.id);
         } else {
             u.prepare("UPDATE volumes SET online = 0 WHERE id = ?");
-            u.addBindValue(row.id);
+            u.addBindValue(c.id);
         }
         u.exec();
         // Offline tracks come back as online; missing ones wait for a scan.
         // Run every time, not only on a change, so a crash between the two
         // updates can't leave tracks in the wrong state.
         QSqlQuery t(database);
-        t.prepare(online ? "UPDATE tracks SET availability = 'online' WHERE volume_id = ? AND availability = 'offline'"
-                         : "UPDATE tracks SET availability = 'offline' WHERE volume_id = ? AND availability = 'online'");
-        t.addBindValue(row.id);
+        t.prepare(c.online ? "UPDATE tracks SET availability = 'online' WHERE volume_id = ? AND availability = 'offline'"
+                           : "UPDATE tracks SET availability = 'offline' WHERE volume_id = ? AND availability = 'online'");
+        t.addBindValue(c.id);
         t.exec();
+        if (c.online) {
+            QSqlQuery r(database);
+            r.prepare("SELECT rel_path FROM folders WHERE volume_id = ? AND is_root ORDER BY rel_path");
+            r.addBindValue(c.id);
+            r.exec();
+            while (r.next()) {
+                const QString rel = r.value(0).toString();
+                c.libraryRoots << (rel.isEmpty() ? c.root : (c.root == "/" ? '/' + rel : c.root + '/' + rel));
+            }
+        }
     }
     database.commit();
+    return checks;
 }
 
 LibraryStats Library::stats() const {
@@ -277,10 +333,43 @@ LibraryStats Library::stats() const {
 
 QString Library::absolutePath(qint64 trackId) const {
     QSqlQuery q(db());
-    q.prepare("SELECT v.root_path, t.rel_path, v.online FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.id = ?");
+    q.prepare("SELECT v.root_path, t.rel_path, v.online, v.kind FROM tracks t JOIN volumes v ON v.id = t.volume_id "
+              "WHERE t.id = ?");
     q.addBindValue(trackId);
-    if (!q.exec() || !q.next() || !q.value(2).toBool())
+    // A remote track has no path on this machine: see playableUrl().
+    if (!q.exec() || !q.next() || !q.value(2).toBool() || q.value(3).toString() == "subsonic")
         return {};
     const QString root = q.value(0).toString();
     return root == "/" ? '/' + q.value(1).toString() : root + '/' + q.value(1).toString();
+}
+
+QUrl Library::playableUrl(qint64 trackId, QString *error) const {
+    QSqlQuery q(db());
+    q.prepare("SELECT v.kind, v.remote_source_id, t.rel_path, t.availability FROM tracks t "
+              "JOIN volumes v ON v.id = t.volume_id WHERE t.id = ?");
+    q.addBindValue(trackId);
+    if (!q.exec() || !q.next()) {
+        if (error)
+            *error = QString("Track %1 is not in the library").arg(trackId);
+        return {};
+    }
+    const QString kind = q.value(0).toString();
+    const qint64 source = q.value(1).toLongLong();
+    const QString rel = q.value(2).toString();
+    const QString availability = q.value(3).toString();
+    q.finish();
+    if (availability != "online") {
+        if (error)
+            *error = QString("Track %1 is %2").arg(trackId).arg(availability);
+        return {};
+    }
+    if (kind == "subsonic")
+        return RemoteSources::streamUrl(*this, source, rel, error);
+    const QString path = absolutePath(trackId);
+    if (path.isEmpty()) {
+        if (error)
+            *error = QString("Track %1's volume is offline").arg(trackId);
+        return {};
+    }
+    return QUrl::fromLocalFile(path);
 }

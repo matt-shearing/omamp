@@ -2639,3 +2639,307 @@ and `audits`.
   header. Not investigated further.
 - **Translations**: the new strings are in English only, with English plural
   forms in `src/app/i18n/en.json`.
+
+## Phase 5 core: the NAS (20 October 2026)
+
+Omamp can now keep a library on a NAS in two ways: a mounted SMB or NFS share
+that it scans itself, hardened against shares that hang or vanish, or a
+Navidrome (OpenSubsonic) server whose library it mirrors without scanning
+across the network. The user guide is [docs/nas.md](../nas.md). The window
+doesn't use any of it yet; the hooks are listed at the end.
+
+### What was built
+
+```text
+src/core/mounts.{h,cpp}    PathProbe: stat with a timeout on a throwaway thread; MountMonitor;
+                           the database-on-a-share guard
+src/core/walker.{h,cpp}    the folder walk, parallel, behind a FileSystem seam
+                           (POSIX, LatencyFileSystem, MemoryFileSystem)
+src/core/volumes.{h,cpp}   locate() through probes; Volumes::list/find/reassign/forget/setScanWorkers
+src/core/subsonic.{h,cpp}  SubsonicClient: token and API-key auth, the browse, cover, stream,
+                           scrobble and rating calls
+src/core/remote.{h,cpp}    RemoteSources (add, sync, remove, streamUrl, coverArt, scrobble,
+                           setRating) and Secrets (secret-tool, or a 0600 file)
+src/core/peaks.{h,cpp}     PeaksCache: the waveform cache's storage, keyed by volume, path, size, time
+src/cli/clinas.cpp         omamp volume, omamp nas mount-guide, omamp remote
+tests/nas_tests.cpp        19 tests: hung, stale and unmounted shares, the monitor, reassign, the walker
+tests/subsonic_tests.cpp   9 tests against a mock Subsonic server (QTcpServer on 127.0.0.1)
+```
+
+**Schema 9** (exactly 9; Phase 4 takes 8, and neither depends on the other).
+`volumes` is rebuilt so `kind` may be `subsonic`, and gains `scan_workers`
+and `remote_source_id`. New tables: `remote_sources` (no secrets in it),
+`remote_albums` (each album's fingerprint at the last sync) and
+`remote_tracks` (a mirrored track's album and cover on the server). SQLite
+can't change a CHECK constraint in place, so `Migration` gained a
+`rebuildsTables` flag: that step runs with foreign keys off (otherwise
+dropping `volumes` cascades into `folders`) and must pass
+`PRAGMA foreign_key_check` before it commits. When Phase 4's step 8 is
+merged, it goes before 9 in `migrations()`; the migration tests compare with
+`Library::latestVersion()`, never a number.
+
+**Network volumes.** cifs, smb3, smbfs, nfs, nfs4, fuse.sshfs, fuse.rclone,
+davfs, fuse.davfs2, 9p and a few cluster filesystems count as network
+shares. Identity is unchanged: the `.omamp-volume-id` marker, else server and
+share. What changed is how a share is looked at:
+
+- `PathProbe::probe()` runs `stat()` (and reads the marker) on a thread of its
+  own and waits 1.5 s. A thread that doesn't return is abandoned and its path
+  remembered, so later probes return `StillHung` at once. ESTALE reads as
+  `stale`, EIO and other network errors as `io-error`, EACCES as `denied`,
+  ENOENT as `absent`. All of them mean offline.
+- `VolumeResolver::locate()` probes every place it looks on a network mount.
+  `Library::refreshVolumes()` now returns a `VolumeCheck` per volume (state,
+  before and after, library folders) and skips `subsonic` volumes.
+- `Scanner::scan()` probes each root before touching it, so a hung share
+  fails that root in 1.5 s with "offline" instead of blocking for minutes,
+  and nothing is marked missing. `rescanFolders()` does the same.
+- `MountMonitor` watches `/proc/self/mountinfo` (POLLPRI through a
+  QSocketNotifier) and polls every 30 s for hung shares, which leave the mount
+  table alone. Each check runs on a worker thread with its own `Library`.
+  It reports `volumesWentOffline` and `volumesCameOnline(ids, roots)`.
+- `Watcher::followMounts(monitor)` re-reads the roots and queues a `remount`
+  rescan (quick mode) of just the roots that came back. `omamp watch` uses it.
+- `Volumes::reassign()` (`omamp volume reassign`) points a volume at a new
+  root after checking that the volume's tracks are there. A marker volume
+  keeps its identity: the old marker id is written onto the new share.
+  `forget` removes a volume and its tracks, and refuses an online volume
+  without `--force`.
+- `Library::open()` refuses a database on a network mount
+  (`checkDatabaseIsLocal`). `OMAMP_MOUNTINFO` lets tests fake the mount table.
+
+**Scanning tuned for latency.** The scanner's walk moved into `Walker`, with
+the same rules (hidden entries skipped, only audio names stat'ed, linked files
+followed and linked folders not, no crossing into other filesystems, folder
+times for quick mode), now listing several folders at once. The default is 8
+walkers on a network volume and 4 on a local one, set per volume with
+`scan_workers` (`omamp volume workers`), or for one scanner with
+`setWalkWorkers()`. Results are sorted by path, so the order no longer
+depends on the walk. `Scanner::setFileSystem()` takes the seam; tests and the
+benchmark put a `LatencyFileSystem` (a fixed wait per listing and per stat,
+counted) in front of POSIX or of a `MemoryFileSystem`.
+
+**Subsonic sources.** `SubsonicClient` signs every request with a fresh salt
+and `t = md5(password + salt)`, or with an OpenSubsonic `apiKey`; it never
+sends `p=`. Its error messages never quote the URL, which carries the token.
+Calls: ping, getMusicFolders, getArtists (flattened), getAlbumList2 (paged),
+getAlbum, search3, getCoverArt, stream URLs (maxBitRate, format), scrobble,
+setRating. `RemoteSources::sync()`:
+
+1. Pings; on failure the source's tracks go offline (never missing) and
+   `last_error` says why.
+2. Lists every album, 500 a page. A failed page stops the sync before
+   anything is marked missing.
+3. Fetches with getAlbum only the albums whose listing changed (name,
+   artist, song count, length, year, genre, cover, created, changed); `full`
+   fetches all of them.
+4. Writes songs through `Scanner::writeTrackRows()`, the scanner's own
+   writer, so artists (OpenSubsonic multi-artist lists included), genres,
+   albums, ReplayGain and the search index come out the same as for files.
+   The server's rating and play count fill empty library values, like a
+   file's tags.
+5. Marks songs no longer on the server missing; a song that returns gets its
+   row, rating and history back.
+
+Secrets go to the keyring through `secret-tool` (attributes
+`application=omamp remote=<uuid>`) when it and a session bus are there,
+otherwise to `~/.config/omamp/credentials.json` with mode 0600 in a 0700
+folder. `OMAMP_SECRET_STORE=file` forces the file; the tests set it.
+
+**`Library::playableUrl(trackId)`** gives a `file://` URL, or for a mirrored
+track the signed stream URL with the source's bitrate and format.
+`absolutePath()` returns empty for a mirrored track.
+
+**Waveform cache.** `PeaksCache` stores and loads peaks under
+`~/.cache/omamp/peaks/`, keyed by SHA-1 of volume key, relative path, size and
+modification time, with `prune(maxBytes)`. Nothing computes peaks yet.
+
+**Command line.** `omamp volume list|show|reassign|forget|workers`,
+`omamp nas mount-guide --smb //nas/music | --nfs nas:/export --at /mnt/music
+[--write-to dir] [--uid --gid --idle]`, and `omamp remote add subsonic <url>
+--user u --password-stdin | --api-key-stdin`, `remote list|sync [--full]|set
+--max-bitrate --format|remove [--keep-tracks]`. All take `--json`. Secrets are
+refused on the command line. The mount guide prints a `.mount` and an
+`.automount` unit, the equivalent fstab line, and the `sudo` commands; it
+never runs them.
+
+### Test results
+
+`bin/test` with JOBS=4, every class passing:
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped   player
+Totals: 16 passed, 0 failed, 0 skipped   library
+Totals: 24 passed, 0 failed, 0 skipped   query
+Totals:  8 passed, 0 failed, 0 skipped   palette
+Totals: 16 passed, 0 failed, 0 skipped   watcher
+Totals: 17 passed, 0 failed, 0 skipped   window
+Totals:  3 passed, 0 failed, 0 skipped   advanced window
+Totals:  4 passed, 0 failed, 0 skipped   advanced parts
+Totals: 22 passed, 0 failed, 0 skipped   mask
+Totals: 21 passed, 0 failed, 0 skipped   tidy
+Totals: 22 passed, 0 failed, 0 skipped   playlists
+Totals: 36 passed, 0 failed, 4 skipped   engine
+Totals: 19 passed, 0 failed, 0 skipped   nas
+Totals:  9 passed, 0 failed, 0 skipped   subsonic
+```
+
+The NAS tests fake every share: a temporary folder that a fake `mountinfo`
+calls cifs, and a `stat()` hook (`PathProbe::setStatHook`) that hangs until
+released or fails with ESTALE, EIO or EHOSTDOWN. They cover: the migration
+keeping volumes, folders and tracks (and the cascade still working after it);
+which filesystem types count as shares; probes timing out within the limit
+and returning `StillHung` at once afterwards; a hung, stale or failing share
+going offline with no track missing and a scan of it failing fast; an
+unmounted share surviving `rescanAll`; the monitor reporting a share going
+and coming back, and a hung one with no mount table change; the watcher's
+`remount` rescan finding a file added while the share was away; reassigning a
+volume to a copied share without its marker, keeping ratings and finding
+every file unchanged afterwards; the volume commands; the parallel walk
+matching the serial one; the latency cost model; an unchanged rescan over a
+slow share with every file unreadable (proving none is opened); per-volume
+walkers; the database guard; the peaks cache; `playableUrl` for files; and
+the mount guide for SMB and NFS.
+
+The Subsonic tests run a mock Navidrome on 127.0.0.1 that checks every
+request's token against its password. They cover: the token against the
+example in the Subsonic documentation; a fresh salt per request and no
+password on the wire; wrong passwords, API keys and a non-Subsonic server;
+paging, albums, search, covers, stream URLs, scrobbles and ratings; and a
+source's whole life: the secret in a 0600 file and not in the database,
+syncing into searchable tracks, an unchanged sync costing two requests, a
+renamed album fetched alone, a removed album's song going missing and coming
+back with its rating and history, the server going offline and back, a full
+sync, cached covers, and removal taking tracks and secret with it. The
+command line is tested too.
+
+### Benchmark
+
+`omamp_bench nas --files 100000` walks 1,000 artists × 10 albums × 10 tracks
+(100,000 files, 11,001 folders) held in memory, waiting a fixed time for every
+listing and every stat. The model column is round trips × wait ÷ walkers.
+
+| Rescan | Round trip | Walkers | Listings | Stats | Measured | Model |
+|---|---|---:|---:|---:|---:|---:|
+| Full | 0.5 ms | 1 | 11,001 | 111,000 | 67.6 s | 61.0 s |
+| Full | 0.5 ms | 4 | 11,001 | 111,000 | 17.3 s | 15.3 s |
+| Full | 0.5 ms | 8 | 11,001 | 111,000 | 8.9 s | 7.6 s |
+| Full | 0.5 ms | 16 | 11,001 | 111,000 | 4.8 s | 3.8 s |
+| Quick | 0.5 ms | 1 | 11,001 | 11,000 | 12.2 s | 11.0 s |
+| Quick | 0.5 ms | 4 | 11,001 | 11,000 | 3.5 s | 2.8 s |
+| Quick | 0.5 ms | 8 | 11,001 | 11,000 | 2.0 s | 1.4 s |
+| Quick | 0.5 ms | 16 | 11,001 | 11,000 | 1.3 s | 0.7 s |
+| Full | 2 ms | 8 | 11,001 | 111,000 | 33.2 s | 30.5 s |
+| Full | 2 ms | 16 | 11,001 | 111,000 | 17.6 s | 15.3 s |
+| Quick | 2 ms | 8 | 11,001 | 11,000 | 7.5 s | 5.5 s |
+| Quick | 2 ms | 16 | 11,001 | 11,000 | 4.8 s | 2.8 s |
+
+The gap to the model is `sleep_for` overshooting by about 60 µs per wait. End
+to end (`omamp_bench files --files 100000 --latency-us 500 --walk-workers 8`,
+hard links on tmpfs, database work included): first scan 4.8 s (no latency),
+unchanged rescan 8.4 s, quick rescan 1.4 s, with 16,880 listings and 116,878
+stats over the two; peak memory 185 MB. Without latency the unchanged rescan
+takes 0.43 s with 1 walker (as in Phase 0), 0.33 s with 4 and 0.30 s with 8;
+the quick one 0.18, 0.15 and 0.14 s.
+
+These are upper bounds for a real share: the Linux SMB and NFS clients return
+attributes with the listing and cache them for `actimeo`, so many stats never
+reach the NAS. Parallel requests help as long as the server serves them
+concurrently (SMB credits, NFS session slots); a NAS with one slow disk may
+not. Nothing was measured against a real NAS.
+
+### Decisions
+
+- **Probe threads are abandoned, not cancelled.** A thread in uninterruptible
+  sleep on a hard NFS mount can't be killed. One stuck thread per path, at
+  most; the path then answers `StillHung` immediately.
+- **1.5 s probe timeout.** A healthy share answers a stat in milliseconds; a
+  hung one never does.
+- **Local disks aren't probed** in `locate()`; only network mounts are. A
+  failing USB disk can still hang a scan, as before.
+- **Quick rescans keep the folder-time rule**: one listing per folder and one
+  stat per subfolder. On SMB the folder time changes for entries added,
+  removed or renamed, but the client caches it for `actimeo` (30 s in the
+  guide), so a change shows a rescan later; files edited in place are caught
+  by the full rescan every fourth schedule. This is reasoned and simulated,
+  not checked on a real share.
+- **8 walkers on shares, 4 locally.** At 0.5 ms a round trip, 8 cut a full
+  rescan from 68 s to 9 s; 16 halve it again, but many NAS boxes serve only a
+  few requests at once, so 8 is the default and the setting is per volume.
+- **Subsonic tracks are mirrored, not queried live.** One code path for
+  search, playlists, statistics and Auto-DJ. rel_path is the song id; the
+  volume's root_path is `subsonic://<source id>`, which never names a real
+  folder.
+- **Incremental sync by album fingerprint.** The API has no "changed since"
+  for songs; album listings are cheap (500 a request), and a changed song
+  nearly always changes its album's listing. A retag that doesn't is caught
+  by `--full`.
+- **Token auth keeps the password** (the API needs it to sign requests). An
+  API key is preferred where the server offers one.
+- **Secrets: keyring first, a 0600 file otherwise**, and the tests force the
+  file so they never touch the desktop keyring.
+- **The mount guide uses `hard` for NFS** (safe tag writes) and relies on
+  Omamp's probes for responsiveness; `vers=3.1.1` and `noserverino` for SMB;
+  credentials in `/etc/samba/credentials/`, edited with `sudoedit` so the
+  password never reaches a command line.
+- **The NAS commands live in their own file**, `src/cli/clinas.cpp`, with a
+  two-line hook in `cli.cpp`, to stay out of other phases' way.
+
+### Known gaps
+
+- **Nothing was run against a real NAS** or a real Navidrome. Matt's NAS
+  model and protocol are still unknown.
+- **The Player can't play a stream yet** (see below); `playableUrl` exists.
+- **Peaks are stored, never computed.**
+- **Ratings and plays aren't pushed to Subsonic automatically.**
+  `RemoteSources::setRating` and `scrobble` exist; nothing calls them on a
+  rating change or a play.
+- **Tag writing, organise and the content duplicate finder** don't know about
+  mirrored tracks; they fail on them as on an offline file. They should skip
+  `subsonic` volumes outright.
+- **A song in two albums** keeps only its latest album in `remote_tracks`.
+- **Cover art for mirrored tracks** is fetched by `RemoteSources::coverArt`,
+  but the artwork cache and the window's image provider don't call it yet.
+- **`omamp watch` follows mounts; the window doesn't** until it creates a
+  `MountMonitor`.
+- **Probing local disks** (USB drives that hang) is left for later.
+
+### What the window and the player need
+
+1. **Volume panel.** `Volumes::list()` (or `omamp volume list --json`) for
+   rows; each `VolumeRow::toJson()` has kind, state, root, tracks, offline
+   and missing counts and the walker count. Actions: Rescan (scan that
+   volume's `libraryRoots` in quick mode), Reassign (a folder picker through
+   the portal, then `Volumes::reassign`), Forget (`Volumes::forget`, with a
+   confirmation that names the track count), Walkers (`setScanWorkers`).
+2. **Offline indicators.** Create one `MountMonitor(dbPath)` beside the
+   `Watcher`, call `watcher.followMounts(&monitor)` and `monitor.start()`.
+   On `volumesChecked` refresh the volume panel; on `volumesWentOffline` and
+   `volumesCameOnline` reload the visible track lists, which already show
+   `availability = 'offline'`. Show the state name from `volumesChecked`
+   (`timed-out`, `stale`, `absent`) as the tooltip. Stop calling
+   `library->refreshVolumes(VolumeResolver())` on the UI thread
+   (`librarycontroller.cpp:78`); with a hung share it costs up to 1.5 s once.
+3. **Remote source dialog.** Fields: address, user, password or API key,
+   name. On OK call `RemoteSources::add` on a worker thread (it pings), then
+   `RemoteSources::sync` on a worker with its own `Library` and a `Job` for
+   the jobs bar. List sources with `RemoteSources::list()`, showing
+   `lastSync` and `lastError`; offer Sync, Full sync, Streaming quality
+   (`setStreaming`) and Remove (with "keep tracks").
+4. **Playing mirrored tracks (src/engine, not touched here).**
+   - Ask `Library::playableUrl(trackId)` instead of building
+     `root_path + '/' + rel_path`. Keep track ids in the queue and resolve
+     the URL when a track starts; never store the URL, which carries the
+     token or API key, in the saved playback state.
+   - `QtEngine::load`: use `QUrl(path)` for `http(s)://`, not
+     `QUrl::fromLocalFile`.
+   - `Decoder::open`: `avformat_open_input` takes the URL as it is; pass
+     `rw_timeout` (for example 15 s) and `reconnect=1` in the options
+     dictionary so a dropped stream fails instead of hanging the worker.
+     Seeking needs the server to honour Range requests (Navidrome does for
+     raw streams); transcoded streams may not seek or join gaplessly.
+   - Report plays with `RemoteSources::scrobble(library, trackId, true,
+     startMs)` and rating changes with `RemoteSources::setRating`.
+5. **Artwork for mirrored tracks.** In the image provider, when a track's
+   volume is `subsonic`, use `RemoteSources::coverArt(library, trackId,
+   size)`, which returns a cached file path.

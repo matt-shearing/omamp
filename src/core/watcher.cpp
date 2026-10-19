@@ -2,6 +2,7 @@
 
 #include "job.h"
 #include "library.h"
+#include "mounts.h"
 #include "tagreader.h"
 
 #include <QDateTime>
@@ -433,6 +434,35 @@ void Watcher::rescanScheduledNow() {
             return; // one is already waiting
     m_queue.append({"scheduled", {}, roots});
     runNext();
+}
+
+void Watcher::rescanRoots(const QStringList &roots) {
+    if (roots.isEmpty() || !m_thread)
+        return;
+    for (Request &r : m_queue)
+        if (r.kind == "remount") {
+            for (const QString &root : roots)
+                if (!r.roots.contains(root))
+                    r.roots << root;
+            return;
+        }
+    m_queue.append({"remount", {}, roots});
+    runNext();
+}
+
+void Watcher::followMounts(MountMonitor *monitor) {
+    connect(monitor, &MountMonitor::volumesCameOnline, this, [this](const QList<qint64> &, const QStringList &roots) {
+        if (!isRunning())
+            return;
+        start();
+        rescanRoots(roots);
+    });
+    // A share that went away leaves its roots on the schedule; the rescan
+    // finds them offline and skips them, so only the list needs refreshing.
+    connect(monitor, &MountMonitor::volumesWentOffline, this, [this](const QList<qint64> &) {
+        if (isRunning())
+            start();
+    });
 }
 
 void Watcher::runNext() {

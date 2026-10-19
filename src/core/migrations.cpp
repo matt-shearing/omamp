@@ -343,6 +343,62 @@ static const QStringList version6 = {
     "CREATE INDEX tag_journal_time ON tag_journal(changed_at)",
 };
 
+// Phase 3: playlists, play statistics and importing MediaMonkey.
+//
+// - playlists gain their place among their siblings, the seed a random
+//   auto-playlist was last rolled with, a note (an imported MediaMonkey
+//   AutoPlaylist keeps its untranslated criteria there) and where it came
+//   from ("m3u:/path", "mediamonkey:12").
+// - playlist_items is rebuilt so an entry outlives its track: track_id is
+//   now optional and set to NULL when the track row goes, and each entry
+//   keeps the path, title, artist and length it was added with. An M3U
+//   entry that matches nothing in the library is kept the same way, so
+//   exporting the playlist again loses nothing.
+// - play_history.source says which import wrote a row, so undoing the
+//   import removes exactly those rows.
+// - import_journal records every change an import made, so the whole
+//   import can be undone. It is separate from tag_journal on purpose: an
+//   undo there writes tags into files, and an import never touches files.
+static const QStringList version7 = {
+    "ALTER TABLE playlists ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE playlists ADD COLUMN seed INTEGER",
+    "ALTER TABLE playlists ADD COLUMN note TEXT",
+    "ALTER TABLE playlists ADD COLUMN source TEXT",
+    "CREATE INDEX playlists_parent ON playlists(parent_id, position)",
+    R"(CREATE TABLE playlist_items_new (
+        id INTEGER PRIMARY KEY,
+        playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+        track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+        position INTEGER NOT NULL,
+        path TEXT,
+        title TEXT,
+        artist TEXT,
+        duration_ms INTEGER,
+        added INTEGER
+    ))",
+    "INSERT INTO playlist_items_new (id, playlist_id, track_id, position) "
+    "SELECT id, playlist_id, track_id, position FROM playlist_items",
+    "DROP TABLE playlist_items",
+    "ALTER TABLE playlist_items_new RENAME TO playlist_items",
+    "CREATE INDEX playlist_items_order ON playlist_items(playlist_id, position)",
+    "CREATE INDEX playlist_items_track ON playlist_items(track_id)",
+    "ALTER TABLE play_history ADD COLUMN source TEXT",
+    "CREATE INDEX play_history_source ON play_history(source) WHERE source IS NOT NULL",
+    R"(CREATE TABLE import_journal (
+        id INTEGER PRIMARY KEY,
+        batch TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('track', 'playlist', 'history')),
+        target_id INTEGER,
+        field TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        source TEXT,
+        changed_at INTEGER NOT NULL,
+        undone INTEGER NOT NULL DEFAULT 0
+    ))",
+    "CREATE INDEX import_journal_batch ON import_journal(batch)",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
@@ -351,6 +407,7 @@ const QList<Migration> &migrations() {
         {4, "play statistics indexes", version4},
         {5, "text sort indexes", version5},
         {6, "fingerprints for the duplicate finder", version6},
+        {7, "playlists, play statistics, import journal", version7},
     };
     return all;
 }

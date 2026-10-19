@@ -133,7 +133,11 @@ bool Decoder::open(const QString &path, const QUrl &url, QString *error) {
         // Range request) when the server allows it, a few times with
         // growing waits, and then fails.
         av_dict_set(&options, "reconnect", "1", 0);
-        av_dict_set(&options, "reconnect_streamed", "1", 0);
+        // Not for a stream without ranges: FFmpeg would ask for the rest
+        // with a Range the server ignores, take the file's start for its
+        // continuation and play on through garbage (the streaming tests
+        // caught it). Such a stream fails instead, and the Player moves on.
+        av_dict_set(&options, "reconnect_streamed", "0", 0);
         av_dict_set(&options, "reconnect_on_network_error", "1", 0);
         av_dict_set(&options, "reconnect_delay_max", QByteArray::number(o.reconnectDelayMaxS).constData(), 0);
         av_dict_set(&options, "reconnect_delay_total_max", QByteArray::number(o.reconnectDelayMaxS * 3).constData(),
@@ -253,8 +257,25 @@ bool Decoder::decodeMore() {
             // A stream that broke off (FFmpeg's reconnects failed or timed
             // out) is reported, unless a skip or seek abandoned the read.
             // Local files keep treating any read error as the end.
-            if (m_network && r != AVERROR_EOF && !interrupted() && m_readError.isEmpty())
-                m_readError = averror(r);
+            if (m_network && !interrupted() && m_readError.isEmpty()) {
+                // FFmpeg may call a connection that closed early the end,
+                // and the clean end of a chunked answer an I/O error. So
+                // what counts is whether the stream is all here: by the
+                // length the server gave, else by the length of the audio;
+                // knowing neither, only a real error (a timeout) counts.
+                bool known = false, cut = false;
+                const int64_t size = m_format->pb ? avio_size(m_format->pb) : -1;
+                const int64_t at = m_format->pb ? avio_tell(m_format->pb) : -1;
+                if (size > 0 && at >= 0) {
+                    known = true;
+                    cut = at < size;
+                } else if (m_durationMs > 0 && m_rate > 0) {
+                    known = true;
+                    cut = m_decodedTo * 1000 / m_rate < m_durationMs - 1000;
+                }
+                if (known ? cut : (r != AVERROR_EOF && r != AVERROR(EIO)))
+                    m_readError = r != AVERROR_EOF ? averror(r) : QStringLiteral("the stream broke off");
+            }
             // The end of the file, or a read error: drain the decoder so the
             // last frames (and FFmpeg's end trimming) come out.
             avcodec_send_packet(m_codec, nullptr);

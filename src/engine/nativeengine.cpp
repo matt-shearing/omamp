@@ -651,6 +651,10 @@ private:
         dropPending();
         m_deferred.reset();
         openPending(c.path, c.url);
+        // A local file opens in a moment: give it that, so the fade starts
+        // where the listener pressed. A stream that takes longer fades in
+        // when it arrives, with the old track playing on meanwhile.
+        m_pending.wait_for(std::chrono::milliseconds(100));
         m_skipFade = true;
     }
 

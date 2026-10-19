@@ -12,6 +12,13 @@
 #include "organise.h"
 #include "tagwriter.h"
 #include "watcher.h"
+#include "autodj.h"
+#include "m3u.h"
+#include "mmimport.h"
+#include "playlists.h"
+#include "stats.h"
+
+#include <QDateTime>
 
 #include <QFile>
 #include <QFileInfo>
@@ -34,7 +41,8 @@ namespace {
 
 const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", "version", "--version",
                                "watch", "locate", "art", "tag", "undo", "journal", "organise", "organize",
-                               "tag-from-filename", "audit", "duplicates"};
+                               "tag-from-filename", "audit", "duplicates", "playlist", "autoplaylist",
+                               "collection", "autodj", "import"};
 
 const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp open [files or folders...]  the same, for names that look like commands
@@ -60,6 +68,19 @@ const char *usage = R"(Usage: omamp [files or folders...]      open the player
                                          or list one check's tracks
        omamp duplicates [--by tags|content|fingerprint]
                                          find the same song twice; nothing is deleted
+       omamp playlist list|show|create|add|remove|move|rename|delete|clear|reroll|import|export
+                                         playlists, playlist folders and playlist files
+       omamp autoplaylist create <name> '<query>'
+                                         a playlist that is a saved query, always up to date
+       omamp collection list|show|create|remove|restore-defaults
+       omamp stats --top tracks|artists|albums|years|genres [--since 30d]
+       omamp stats --recent | --never    what was played lately, or never
+       omamp autodj [--source library|collection:<name>|playlist:<name>|query:<text>]
+                    [--count 20] [--seed n]
+                                         pick tracks the way Auto-DJ would
+       omamp import mediamonkey <MM.DB> [--map 'D:\Music=/mnt/music'] --dry-run | --apply
+                                         ratings, play counts, history and playlists
+       omamp import undo [batch]         undo an import
 
 Options:
   --json         print JSON on stdout
@@ -87,6 +108,22 @@ Options:
   --pattern <p>  tag-from-filename: what file names look like
   --by <how>     duplicates: tags (default), content or fingerprint
   --any-length   duplicates: match tags whatever the lengths
+  --parent <p>   playlist, autoplaylist: inside this playlist folder ("/" for the top)
+  --folder       playlist create: make a folder for other playlists
+  --ids <a,b>    playlist add: track ids; playlist remove: entry ids; autodj: what was played
+  --at <n>       playlist add: insert at entry n; playlist move: the playlist's new place
+  --name <n>     playlist import: the new playlist's name
+  --relative     playlist export: paths relative to the playlist file
+  --top <what>   stats: most played tracks, artists, albums, years or genres
+  --since <age>  stats: only plays since then (30d, 2w, 6m, 1y, 2026-01-01)
+  --recent       stats: the latest plays
+  --never        stats: tracks never played
+  --source <s>   autodj: library, collection:<name>, playlist:<name> or query:<text>
+  --count <n>    autodj: how many tracks to pick
+  --separation <n>  autodj: no artist twice within n tracks
+  --days <n>     autodj: leave out tracks played in the last n days
+  --map w=l      import mediamonkey: a Windows path prefix and the Linux folder it is now
+  --overwrite    import mediamonkey: replace Omamp's ratings and custom fields too
 
 Tag and organise examples:
   omamp tag 'album:"night drive"' --set genre=Synthwave --set year=1997
@@ -122,6 +159,11 @@ struct Options {
     bool anyLength = false;
     QList<QPair<QString, QString>> sets, setMasks;
     QString mask, to, pattern, by;
+    // Phase 3: playlists, statistics, Auto-DJ and imports.
+    QString parent, name, ids, top, since, source;
+    QStringList maps;
+    bool folder = false, relative = false, overwrite = false, recent = false, never = false;
+    int at = 0, countN = 0, separation = -1, days = -1;
     QStringList rest;
 };
 
@@ -743,11 +785,19 @@ int organise(Library &library, const Options &o, const VolumeResolver &resolver,
     return r.ok ? 0 : 1;
 }
 
+int importCommand(Library &library, const Options &o, QTextStream &out, QTextStream &err);
+
 int undo(Library &library, const Options &o, const VolumeResolver &resolver, QTextStream &out, QTextStream &err) {
     library.refreshVolumes(resolver);
     const QString batch = o.rest.isEmpty() ? Journal::lastUndoable(library) : o.rest.first();
     if (batch.isEmpty())
         return failWith(o, out, err, "There is nothing to undo");
+    // A MediaMonkey import has its own journal; `omamp undo <batch>` takes it too.
+    if (MmImport::isImportBatch(batch)) {
+        Options importUndo = o;
+        importUndo.rest = QStringList{"undo", batch};
+        return importCommand(library, importUndo, out, err);
+    }
     Job job("undo");
     showProgress(job, o, err);
     const QJsonObject r = undoBatch(library, batch, &job);
@@ -921,6 +971,591 @@ int duplicates(Library &library, const Options &o, const VolumeResolver &resolve
     return 0;
 }
 
+// ---- Phase 3: playlists, collections, statistics, Auto-DJ, imports --------
+
+QString kindLabel(const Playlists::Playlist &p) {
+    if (p.kind == "auto")
+        return "auto: " + p.query;
+    if (p.kind == "folder")
+        return "folder";
+    return p.items == 1 ? QString("1 track") : QString("%1 tracks").arg(p.items);
+}
+
+int depthOf(const QList<Playlists::Playlist> &all, const Playlists::Playlist &p) {
+    int depth = 0;
+    for (qint64 up = p.parentId; up && depth < 64; ++depth) {
+        qint64 next = 0;
+        for (const Playlists::Playlist &q : all)
+            if (q.id == up)
+                next = q.parentId;
+        up = next;
+    }
+    return depth;
+}
+
+void printItems(const QList<Playlists::Item> &items, QTextStream &out) {
+    for (const Playlists::Item &it : items) {
+        out << QString("%1").arg(it.position + 1, 4) << "  "
+            << (it.artist.isEmpty() ? QString("(unknown artist)") : it.artist) << " - "
+            << (it.title.isEmpty() ? QString("(untitled)") : it.title) << "  " << formatDuration(it.durationMs) << "  "
+            << (it.path.isEmpty() ? QString("(no path)") : it.path);
+        if (it.availability != "online")
+            out << "  (" << it.availability << ")";
+        out << '\n';
+    }
+}
+
+QList<qint64> parseIds(const QString &text, bool *ok) {
+    QList<qint64> out;
+    *ok = true;
+    for (const QString &part : text.split(',', Qt::SkipEmptyParts)) {
+        bool good = false;
+        const qint64 n = part.trimmed().toLongLong(&good);
+        if (!good) {
+            *ok = false;
+            return {};
+        }
+        out << n;
+    }
+    return out;
+}
+
+qint64 parentFor(Library &library, const Options &o, QString *error) {
+    if (o.parent.isEmpty() || o.parent == "/")
+        return 0;
+    return Playlists::resolve(library, o.parent, error);
+}
+
+int playlist(Library &library, const Options &o, QTextStream &out, QTextStream &err) {
+    const QString sub = o.rest.value(0);
+    const QStringList args = o.rest.mid(1);
+    QString error;
+    auto done = [&](const QJsonObject &j, const QString &text) {
+        if (o.json)
+            out << json(j) << Qt::flush;
+        else
+            out << text << Qt::endl;
+        return 0;
+    };
+    const bool badParent = !o.parent.isEmpty() && o.parent != "/" && !parentFor(library, o, &error);
+    if (sub == "list" || sub.isEmpty()) {
+        const QList<Playlists::Playlist> all = Playlists::list(library);
+        if (o.json) {
+            QJsonArray list;
+            for (const Playlists::Playlist &p : all)
+                list << p.toJson();
+            out << json({{"ok", true}, {"playlists", list}}) << Qt::flush;
+            return 0;
+        }
+        for (const Playlists::Playlist &p : all)
+            out << QString(depthOf(all, p) * 2, ' ') << QString("%1  %2  (%3)").arg(p.id, 4).arg(p.name, kindLabel(p))
+                << '\n';
+        if (all.isEmpty())
+            out << "No playlists yet. Make one with: omamp playlist create <name>" << '\n';
+        out << Qt::flush;
+        return 0;
+    }
+    if (badParent)
+        return failWith(o, out, err, error);
+    const qint64 parent = parentFor(library, o, &error);
+    if (sub == "create") {
+        if (args.isEmpty())
+            return failWith(o, out, err, "playlist create needs a name");
+        const qint64 id = o.folder ? Playlists::createFolder(library, args.join(' '), parent, &error)
+                                   : Playlists::create(library, args.join(' '), parent, &error);
+        if (!id)
+            return failWith(o, out, err, error);
+        Playlists::Playlist p;
+        Playlists::get(library, id, &p);
+        return done({{"ok", true}, {"playlist", p.toJson()}},
+                    QString("Made %1 %2 (%3)").arg(o.folder ? "folder" : "playlist", p.name).arg(id));
+    }
+    if (sub == "import") {
+        if (args.isEmpty())
+            return failWith(o, out, err, "playlist import needs a playlist file or a folder of them");
+        QList<PlaylistFiles::ImportResult> results;
+        qint64 folderId = 0;
+        if (QFileInfo(args.first()).isDir()) {
+            results = PlaylistFiles::importFolder(library, args.first(), parent, o.name, &folderId, &error);
+            if (!folderId)
+                return failWith(o, out, err, error.isEmpty() ? QString("Nothing imported") : error);
+        } else {
+            results << PlaylistFiles::import(library, args.first(), parent, o.name);
+        }
+        bool ok = true;
+        QJsonArray list;
+        for (const PlaylistFiles::ImportResult &r : results) {
+            ok = ok && r.ok();
+            list << r.toJson();
+        }
+        if (o.json) {
+            out << json({{"ok", ok}, {"folder_id", folderId ? QJsonValue(folderId) : QJsonValue()}, {"imported", list}})
+                << Qt::flush;
+            return ok ? 0 : 1;
+        }
+        for (const PlaylistFiles::ImportResult &r : results) {
+            if (!r.ok()) {
+                err << "omamp: " << r.error << Qt::endl;
+                continue;
+            }
+            out << QString("%1 (%2): %3 entries, %4 matched by path, %5 by artist and title, %6 not in the library")
+                       .arg(r.name)
+                       .arg(r.playlistId)
+                       .arg(r.entries)
+                       .arg(r.byPath)
+                       .arg(r.byTags)
+                       .arg(r.unmatched)
+                << '\n';
+        }
+        out << Qt::flush;
+        return ok ? 0 : 1;
+    }
+    // Everything else names a playlist first.
+    if (args.isEmpty())
+        return failWith(o, out, err, QString("playlist %1 needs a playlist (its id, name or Folder/Name)").arg(sub));
+    const qint64 id = Playlists::resolve(library, args.first(), &error);
+    if (!id)
+        return failWith(o, out, err, error);
+    Playlists::Playlist p;
+    Playlists::get(library, id, &p);
+    if (sub == "show") {
+        const QList<Playlists::Item> items = Playlists::items(library, id, &error);
+        if (!error.isEmpty())
+            return failWith(o, out, err, error);
+        if (o.json) {
+            QJsonArray list;
+            for (const Playlists::Item &it : items)
+                list << it.toJson();
+            out << json({{"ok", true}, {"playlist", p.toJson()}, {"items", list}}) << Qt::flush;
+            return 0;
+        }
+        printItems(items, out);
+        out << QString("%1: %2 entries").arg(p.name).arg(items.size()) << Qt::endl;
+        return 0;
+    }
+    if (sub == "add") {
+        QList<qint64> ids;
+        if (!o.ids.isEmpty()) {
+            bool ok = false;
+            ids = parseIds(o.ids, &ok);
+            if (!ok)
+                return failWith(o, out, err, "--ids takes track ids separated by commas");
+        } else {
+            const QString text = args.mid(1).join(' ');
+            if (text.isEmpty())
+                return failWith(o, out, err, "playlist add needs a query or --ids");
+            Query::Context context;
+            context.seed = o.seed >= 0 ? quint32(o.seed) : QRandomGenerator::global()->bounded(1u << 31);
+            ids = Query::ids(library, text, context, &error);
+            if (!error.isEmpty())
+                return failWith(o, out, err, error);
+        }
+        const int added = Playlists::addTracks(library, id, ids, o.at > 0 ? o.at - 1 : -1, &error);
+        if (added < 0)
+            return failWith(o, out, err, error);
+        return done({{"ok", true}, {"playlist_id", id}, {"added", added}},
+                    QString("Added %1 tracks to %2").arg(added).arg(p.name));
+    }
+    if (sub == "remove") {
+        int removed = 0;
+        if (!o.ids.isEmpty()) {
+            bool ok = false;
+            const QList<qint64> items = parseIds(o.ids, &ok);
+            if (!ok)
+                return failWith(o, out, err, "--ids takes entry ids separated by commas");
+            removed = Playlists::removeItems(library, id, items, &error);
+        } else {
+            QList<int> positions;
+            for (const QString &a : args.mid(1)) {
+                bool ok = false;
+                const int n = a.toInt(&ok);
+                if (!ok || n < 1)
+                    return failWith(o, out, err, "playlist remove takes entry numbers, counting from 1");
+                positions << n - 1;
+            }
+            if (positions.isEmpty())
+                return failWith(o, out, err, "playlist remove needs entry numbers or --ids");
+            removed = Playlists::removePositions(library, id, positions, &error);
+        }
+        if (removed < 0)
+            return failWith(o, out, err, error);
+        return done({{"ok", true}, {"playlist_id", id}, {"removed", removed}},
+                    QString("Removed %1 entries from %2").arg(removed).arg(p.name));
+    }
+    if (sub == "move") {
+        if (!o.parent.isEmpty() || o.at > 0) {
+            // Moves the playlist itself: under --parent ("/" for the top), to place --at.
+            const qint64 newParent = o.parent.isEmpty() ? p.parentId : parent;
+            if (!Playlists::move(library, id, newParent, o.at > 0 ? o.at - 1 : -1, &error))
+                return failWith(o, out, err, error);
+            return done({{"ok", true}, {"playlist_id", id}, {"parent_id", newParent}},
+                        QString("Moved %1").arg(p.name));
+        }
+        bool okFrom = false, okTo = false;
+        const int from = args.value(1).toInt(&okFrom), to = args.value(2).toInt(&okTo);
+        QList<qint64> order;
+        for (const Playlists::Item &it : Playlists::items(library, id))
+            order << it.id;
+        if (!okFrom || !okTo || from < 1 || to < 1 || from > order.size())
+            return failWith(o, out, err, "playlist move <playlist> <from> <to> takes entry numbers, counting from 1");
+        if (!Playlists::moveItems(library, id, {order[from - 1]}, to - 1, &error))
+            return failWith(o, out, err, error);
+        return done({{"ok", true}, {"playlist_id", id}, {"from", from}, {"to", to}},
+                    QString("Moved entry %1 to %2").arg(from).arg(to));
+    }
+    if (sub == "rename") {
+        if (args.size() < 2 || !Playlists::rename(library, id, args.mid(1).join(' '), &error))
+            return failWith(o, out, err, error.isEmpty() ? QString("playlist rename needs a new name") : error);
+        return done({{"ok", true}, {"playlist_id", id}, {"name", args.mid(1).join(' ')}}, "Renamed");
+    }
+    if (sub == "delete") {
+        if (!Playlists::remove(library, id, &error))
+            return failWith(o, out, err, error);
+        return done({{"ok", true}, {"deleted", id}}, QString("Deleted %1").arg(p.name));
+    }
+    if (sub == "clear") {
+        if (!Playlists::clear(library, id, &error))
+            return failWith(o, out, err, error);
+        return done({{"ok", true}, {"playlist_id", id}}, QString("Emptied %1").arg(p.name));
+    }
+    if (sub == "reroll") {
+        const qint64 seed = Playlists::reroll(library, id, o.seed);
+        if (seed < 0)
+            return failWith(o, out, err, QString("%1 is not an auto-playlist").arg(p.name));
+        return done({{"ok", true}, {"playlist_id", id}, {"seed", seed}}, QString("New shuffle %1").arg(seed));
+    }
+    if (sub == "export") {
+        if (args.size() < 2)
+            return failWith(o, out, err, "playlist export needs a playlist and a file (.m3u8, .m3u or .pls)");
+        PlaylistFiles::ExportOptions options;
+        options.relative = o.relative;
+        int written = 0;
+        if (!PlaylistFiles::exportFile(library, id, args[1], options, &written, &error))
+            return failWith(o, out, err, error);
+        const QString file = QFileInfo(args[1]).absoluteFilePath();
+        return done({{"ok", true}, {"playlist_id", id}, {"file", file}, {"entries", written}},
+                    QString("Wrote %1 entries to %2").arg(written).arg(file));
+    }
+    return failWith(o, out, err,
+                    QString("Unknown playlist command %1. Commands: list, show, create, add, remove, move, rename, "
+                            "delete, clear, reroll, import, export")
+                        .arg(sub));
+}
+
+int autoplaylist(Library &library, const Options &o, QTextStream &out, QTextStream &err) {
+    const QString sub = o.rest.value(0);
+    QString error;
+    if (sub == "create") {
+        if (o.rest.size() < 3)
+            return failWith(o, out, err, "autoplaylist create <name> '<query>'");
+        const qint64 parent = parentFor(library, o, &error);
+        if (!o.parent.isEmpty() && o.parent != "/" && !parent)
+            return failWith(o, out, err, error);
+        const qint64 id = Playlists::createAuto(library, o.rest[1], o.rest.mid(2).join(' '), parent, &error);
+        if (!id)
+            return failWith(o, out, err, error);
+        Playlists::Playlist p;
+        Playlists::get(library, id, &p);
+        const qsizetype count = Playlists::trackIds(library, id).size();
+        if (o.json)
+            out << json({{"ok", true}, {"playlist", p.toJson()}, {"tracks", count}}) << Qt::flush;
+        else
+            out << QString("Made auto-playlist %1 (%2): %3 tracks now").arg(p.name).arg(id).arg(count) << Qt::endl;
+        return 0;
+    }
+    if (sub == "set") {
+        if (o.rest.size() < 3)
+            return failWith(o, out, err, "autoplaylist set <playlist> '<query>'");
+        const qint64 id = Playlists::resolve(library, o.rest[1], &error);
+        if (!id || !Playlists::setQuery(library, id, o.rest.mid(2).join(' '), &error))
+            return failWith(o, out, err, error);
+        if (o.json)
+            out << json({{"ok", true}, {"playlist_id", id}, {"query", o.rest.mid(2).join(' ')}}) << Qt::flush;
+        else
+            out << "Saved" << Qt::endl;
+        return 0;
+    }
+    return failWith(o, out, err, "autoplaylist create <name> '<query>' or autoplaylist set <playlist> '<query>'");
+}
+
+int collection(Library &library, const Options &o, QTextStream &out, QTextStream &err) {
+    const QString sub = o.rest.value(0, "list");
+    QString error;
+    if (sub == "list") {
+        const QList<Collections::Collection> all = Collections::list(library);
+        if (o.json) {
+            QJsonArray list;
+            for (const Collections::Collection &c : all) {
+                QJsonObject j = c.toJson();
+                j["tracks"] = Collections::trackIds(library, c.id).size();
+                list << j;
+            }
+            out << json({{"ok", true}, {"collections", list}}) << Qt::flush;
+            return 0;
+        }
+        for (const Collections::Collection &c : all)
+            out << QString("%1  %2  (%3; %4 tracks)")
+                       .arg(c.id, 4)
+                       .arg(c.name, c.query.isEmpty() ? QString("everything") : c.query)
+                       .arg(Collections::trackIds(library, c.id).size())
+                << '\n';
+        out << Qt::flush;
+        return 0;
+    }
+    if (sub == "create") {
+        if (o.rest.size() < 2)
+            return failWith(o, out, err, "collection create <name> '<query>'");
+        Collections::Collection c;
+        c.name = o.rest[1];
+        c.query = o.rest.mid(2).join(' ');
+        const qint64 id = Collections::create(library, c, &error);
+        if (!id)
+            return failWith(o, out, err, error);
+        Collections::get(library, id, &c);
+        if (o.json)
+            out << json({{"ok", true}, {"collection", c.toJson()}}) << Qt::flush;
+        else
+            out << QString("Made collection %1 (%2)").arg(c.name).arg(id) << Qt::endl;
+        return 0;
+    }
+    if (sub == "restore-defaults") {
+        const int added = Collections::ensureDefaults(library);
+        if (o.json)
+            out << json({{"ok", true}, {"added", added}}) << Qt::flush;
+        else
+            out << QString("Put back %1 collections").arg(added) << Qt::endl;
+        return 0;
+    }
+    if (o.rest.size() < 2)
+        return failWith(o, out, err, "collection list|show|create|remove|restore-defaults");
+    const qint64 id = Collections::resolve(library, o.rest[1], &error);
+    if (!id)
+        return failWith(o, out, err, error);
+    if (sub == "show") {
+        Collections::Collection c;
+        Collections::get(library, id, &c);
+        const QList<qint64> ids = Collections::trackIds(library, id, {}, &error);
+        if (o.json)
+            out << json({{"ok", true}, {"collection", c.toJson()}, {"tracks", ids.size()}}) << Qt::flush;
+        else
+            out << c.name << ": " << (c.query.isEmpty() ? QString("everything") : c.query) << ", " << ids.size()
+                << " tracks" << Qt::endl;
+        return 0;
+    }
+    if (sub == "remove") {
+        if (!Collections::remove(library, id, &error))
+            return failWith(o, out, err, error);
+        if (o.json)
+            out << json({{"ok", true}, {"deleted", id}}) << Qt::flush;
+        else
+            out << "Deleted" << Qt::endl;
+        return 0;
+    }
+    return failWith(o, out, err, "collection list|show|create|remove|restore-defaults");
+}
+
+int topStats(Library &library, const Options &o, QTextStream &out, QTextStream &err) {
+    qint64 since = 0;
+    if (!o.since.isEmpty()) {
+        since = Stats::parseSince(o.since);
+        if (since < 0)
+            return failWith(o, out, err, "--since takes an age (30d, 2w, 6m, 1y) or a date (2026-01-01)");
+    }
+    const int limit = o.limit > 0 ? o.limit : 25;
+    if (o.recent) {
+        const QList<Stats::Played> plays = Stats::recent(library, limit);
+        if (o.json) {
+            QJsonArray list;
+            for (const Stats::Played &p : plays)
+                list << p.toJson();
+            out << json({{"ok", true}, {"recent", list}}) << Qt::flush;
+            return 0;
+        }
+        for (const Stats::Played &p : plays)
+            out << QDateTime::fromSecsSinceEpoch(p.playedAt).toString("yyyy-MM-dd HH:mm") << "  " << p.artist << " - "
+                << p.title << '\n';
+        out << Qt::flush;
+        return 0;
+    }
+    if (o.never) {
+        const QList<Query::Track> tracks = tracksById(library, Stats::neverPlayed(library, limit));
+        if (o.json) {
+            QJsonArray list;
+            for (const Query::Track &t : tracks)
+                list << QJsonObject{{"id", t.id}, {"title", t.title}, {"artist", t.artist}, {"album", t.album}};
+            out << json({{"ok", true}, {"never_played", list}, {"total", Stats::summary(library).neverPlayed}})
+                << Qt::flush;
+            return 0;
+        }
+        for (const Query::Track &t : tracks)
+            out << t.artist << " - " << t.title << '\n';
+        out << Qt::flush;
+        return 0;
+    }
+    Stats::TopOptions options;
+    if (!Stats::parseBy(o.top, &options.by))
+        return failWith(o, out, err, "--top takes tracks, artists, albums, years or genres");
+    options.since = since;
+    options.limit = limit;
+    QString error;
+    const QList<Stats::Row> rows = Stats::top(library, options, &error);
+    if (!error.isEmpty())
+        return failWith(o, out, err, error);
+    if (o.json) {
+        QJsonArray list;
+        for (const Stats::Row &r : rows)
+            list << r.toJson();
+        out << json({{"ok", true},
+                     {"top", Stats::byName(options.by)},
+                     {"since", since ? QJsonValue(since) : QJsonValue()},
+                     {"summary", Stats::summary(library, since).toJson()},
+                     {"rows", list}})
+            << Qt::flush;
+        return 0;
+    }
+    int rank = 0;
+    for (const Stats::Row &r : rows)
+        out << QString("%1. %2%3  %4 plays")
+                   .arg(++rank, 3)
+                   .arg(r.name, r.detail.isEmpty() ? QString() : " - " + r.detail)
+                   .arg(r.plays)
+            << '\n';
+    if (rows.isEmpty())
+        out << "Nothing played" << (since ? " in that time" : "") << " yet." << '\n';
+    out << Qt::flush;
+    return 0;
+}
+
+int autodj(Library &library, const Options &o, QTextStream &out, QTextStream &err) {
+    AutoDj::Settings settings = AutoDj::Settings::load(library);
+    if (!o.source.isEmpty())
+        settings.source = AutoDj::Source::parse(o.source);
+    if (o.separation >= 0)
+        settings.artistSeparation = o.separation;
+    if (o.days >= 0)
+        settings.skipPlayedWithinDays = o.days;
+    const int count = o.countN > 0 ? o.countN : settings.upcoming;
+    AutoDj::Dj dj(library, settings, o.seed > 0 ? quint32(o.seed) : 0);
+    QList<qint64> history;
+    if (!o.ids.isEmpty()) {
+        bool ok = false;
+        history = parseIds(o.ids, &ok);
+        if (!ok)
+            return failWith(o, out, err, "--ids takes the track ids already played or queued, oldest first");
+    }
+    const QList<AutoDj::Pick> picks = dj.pick(count, history);
+    if (!dj.error().isEmpty())
+        return failWith(o, out, err, dj.error());
+    if (o.json) {
+        QJsonArray list;
+        for (const AutoDj::Pick &p : picks)
+            list << p.toJson();
+        out << json({{"ok", true},
+                     {"source", settings.source.toString()},
+                     {"seed", qint64(dj.seed())},
+                     {"candidates", dj.candidates()},
+                     {"settings", settings.toJson()},
+                     {"tracks", list}})
+            << Qt::flush;
+        return 0;
+    }
+    for (const AutoDj::Pick &p : picks)
+        out << p.trackId << "  " << p.artist << " - " << p.title
+            << (p.relaxed.isEmpty() ? QString() : "  (relaxed: " + p.relaxed.join(", ") + ")") << '\n';
+    out << QString("%1 tracks from %2 (seed %3)").arg(picks.size()).arg(settings.source.toString()).arg(dj.seed())
+        << Qt::endl;
+    return 0;
+}
+
+int importCommand(Library &library, const Options &o, QTextStream &out, QTextStream &err) {
+    const QString what = o.rest.value(0);
+    if (what == "undo") {
+        const QString batch = o.rest.size() > 1 ? o.rest[1] : MmImport::lastBatch(library);
+        if (batch.isEmpty())
+            return failWith(o, out, err, "There is no import to undo");
+        const MmImport::UndoResult r = MmImport::undo(library, batch);
+        if (!r.ok)
+            return failWith(o, out, err, r.error);
+        if (o.json)
+            out << json(r.toJson()) << Qt::flush;
+        else
+            out << QString("Undid import %1: %2 fields on %3 tracks, %4 playlists, %5 history rows")
+                       .arg(batch)
+                       .arg(r.fields)
+                       .arg(r.tracks)
+                       .arg(r.playlists)
+                       .arg(r.historyRows)
+                << Qt::endl;
+        return 0;
+    }
+    if (what != "mediamonkey" && what != "mm")
+        return failWith(o, out, err,
+                        "import mediamonkey <MM.DB or MM5.DB> --map 'D:\\Music=/mnt/music' [--dry-run | --apply], "
+                        "or import undo [batch]");
+    if (o.rest.size() < 2)
+        return failWith(o, out, err, "import mediamonkey needs the path of MM.DB or MM5.DB");
+    if (o.apply && o.dryRun)
+        return failWith(o, out, err, "Choose --dry-run or --apply, not both");
+    MmImport::Options options;
+    for (const QString &m : o.maps) {
+        MmImport::PathMap map;
+        if (!MmImport::PathMap::parse(m, &map))
+            return failWith(o, out, err,
+                            QString("--map takes 'D:\\Music=/mnt/music' (a Windows prefix, =, a Linux folder), not %1")
+                                .arg(m));
+        options.maps << map;
+    }
+    options.apply = o.apply;
+    options.overwrite = o.overwrite;
+    Job job("mmimport");
+    showProgress(job, o, err);
+    const MmImport::Report r = MmImport::run(library, o.rest[1], options, &job);
+    endProgress(o, err);
+    if (!r.ok)
+        return failWith(o, out, err, r.error);
+    if (o.json) {
+        out << json(r.toJson()) << Qt::flush;
+        return 0;
+    }
+    out << QString("%1 (%2): %3 tracks").arg(r.database, r.schema).arg(r.mmTracks) << '\n'
+        << QString("Matched %1 by path, %2 by folder and file name, %3 by artist, title and length; %4 not found")
+               .arg(r.matchedByPath)
+               .arg(r.matchedBySuffix)
+               .arg(r.matchedByTags)
+               .arg(r.unmatched)
+        << '\n'
+        << QString("%1 %2 changes on %3 tracks")
+               .arg(r.applied ? "Made" : "Would make")
+               .arg(r.fieldChanges)
+               .arg(r.tracksChanged)
+        << '\n';
+    for (auto it = r.changesByField.constBegin(); it != r.changesByField.constEnd(); ++it)
+        out << "  " << it.key() << ": " << it.value() << '\n';
+    out << QString("%1 play history rows (%2 already there)").arg(r.historyRows).arg(r.historyDuplicates) << '\n';
+    for (const MmImport::PlaylistReport &p : r.playlists) {
+        out << "Playlist " << p.name << ": " << p.kind;
+        if (p.kind == "auto")
+            out << " (" << p.query << ")";
+        else if (p.kind == "snapshot")
+            out << " (" << p.reason << ")";
+        else if (p.kind == "static")
+            out << QString(" (%1 of %2 entries matched)").arg(p.matched).arg(p.entries);
+        out << '\n';
+    }
+    for (const QString &m : r.suggestedMaps)
+        out << "Suggested --map " << m << '\n';
+    for (const QString &c : r.missingColumns)
+        out << "Not in this database: " << c << '\n';
+    for (const QString &n : r.notes)
+        out << n << '\n';
+    if (r.applied)
+        out << "Imported as batch " << r.batch << "; undo it with: omamp import undo " << r.batch << '\n';
+    else
+        out << "Nothing was changed. Run again with --apply to import." << '\n';
+    out << Qt::flush;
+    return 0;
+}
+
 } // namespace
 
 bool isCommand(const QString &first) { return commands.contains(first); }
@@ -939,7 +1574,7 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         QString v;
         if (a == "--json")
             o.json = true;
-        else if (a == "--count")
+        else if (a == "--count" && command != "autodj")
             o.count = true;
         else if (a == "--explain")
             o.explain = true;
@@ -988,6 +1623,47 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
                 o.pattern = v;
             else
                 o.by = v;
+        } else if (a == "--parent" || a == "--name" || a == "--ids" || a == "--top" || a == "--since" ||
+                   a == "--source" || a == "--map") {
+            if (!value(&v))
+                return failWith(o, out, err, a + " needs a value");
+            if (a == "--parent")
+                o.parent = v;
+            else if (a == "--name")
+                o.name = v;
+            else if (a == "--ids")
+                o.ids = v;
+            else if (a == "--top")
+                o.top = v;
+            else if (a == "--since")
+                o.since = v;
+            else if (a == "--source")
+                o.source = v;
+            else
+                o.maps << v;
+        } else if (a == "--at" || a == "--separation" || a == "--days" || (a == "--count" && command == "autodj")) {
+            bool ok = false;
+            const int n = value(&v) ? v.toInt(&ok) : 0;
+            if (!ok || n < 0)
+                return failWith(o, out, err, a + " needs a number");
+            if (a == "--at")
+                o.at = n;
+            else if (a == "--separation")
+                o.separation = n;
+            else if (a == "--days")
+                o.days = n;
+            else
+                o.countN = n;
+        } else if (a == "--folder") {
+            o.folder = true;
+        } else if (a == "--relative") {
+            o.relative = true;
+        } else if (a == "--overwrite") {
+            o.overwrite = true;
+        } else if (a == "--recent") {
+            o.recent = true;
+        } else if (a == "--never") {
+            o.never = true;
         } else if (a == "--") {
             o.rest += arguments.mid(i + 1);
             break;
@@ -1024,7 +1700,18 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
     if (command == "query")
         return query(library, o, volumes, out, err);
     if (command == "stats")
-        return stats(library, o, volumes, out);
+        return !o.top.isEmpty() || o.recent || o.never ? topStats(library, o, out, err)
+                                                       : stats(library, o, volumes, out);
+    if (command == "playlist")
+        return playlist(library, o, out, err);
+    if (command == "autoplaylist")
+        return autoplaylist(library, o, out, err);
+    if (command == "collection")
+        return collection(library, o, out, err);
+    if (command == "autodj")
+        return autodj(library, o, out, err);
+    if (command == "import")
+        return importCommand(library, o, out, err);
     if (command == "locate")
         return locate(library, o, volumes, out, err);
     if (command == "art")

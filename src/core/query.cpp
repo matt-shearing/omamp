@@ -167,7 +167,7 @@ QString unknownField(const QString &name) {
     for (const Field &known : fields())
         names << known.name;
     if (!best.isEmpty())
-        return QString("Unknown field \"%1\"; did you mean %2:? Fields: %3").arg(name, best, names.join(", "));
+        return QString("Unknown field \"%1\"; did you mean %2:?").arg(name, best);
     return QString("Unknown field \"%1\". Fields: %2").arg(name, names.join(", "));
 }
 

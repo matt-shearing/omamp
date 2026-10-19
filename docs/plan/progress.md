@@ -303,3 +303,275 @@ Times are Unix seconds except `mtime_ns`. `track_artists.role` is `artist`,
 
 **Running the benchmark.** `JOBS=6 bin/bench` (about two minutes; `--tracks`
 and `--files` change the sizes). Everything goes in `build/bench`.
+
+## Phase 1B: the query language and the command palette (20 October 2026)
+
+The query language is complete, the command palette has a backend and a
+popup, and `omamp query` takes the whole language. Nothing is wired into
+`Main.qml` (agent 1A owns it); the steps are below. The schema is unchanged.
+
+### What was built
+
+- **`src/core/query.{h,cpp}`**: dates and ages (`added:<30d`, `added:2024`,
+  `added:2024-01..2024-06`, `played:>1y`, `played:never`, `lastplayed:<7d`,
+  `today`, `yesterday`); lengths and sizes with units (`length:>10m`,
+  `length:3:00..5:00`, `size:>20mb`); `none` and `any` on every field;
+  `+word` word starts; `;` and `|` as OR; `sort:` with several keys,
+  descending keys, `random`, `random:<seed>` and `randomalbum`; `limit:` by
+  count, playing time or size; short aliases (`aa`, `ar`, `al`, `ti`...);
+  "did you mean" for misspelt fields; every error with its character
+  position. New API: `Query::Context` (pinned clock and seed),
+  `Compiled::orderBy`, `order()` and `limit`, `Query::ids()`,
+  `Parsed::toJson()`, `Options::countOnly`, and `added`, `lastPlayed` and
+  `size` on `Track`.
+- **`src/core/palette.{h,cpp}`**: `Palette`, a `QAbstractListModel` that
+  ranks actions, artists, albums and tracks together.
+- **`src/app/CommandPalette.qml`**: the popup, keyboard-only, in the theme
+  colours. Added to `resources.qrc`.
+- **CLI**: `omamp query` takes `--count`, `--offset`, `--seed` and
+  `--explain`, prints the total length and size, and puts `duration_ms` and
+  `seed` in its JSON.
+- **Docs**: [docs/query-language.md](../query-language.md), the full syntax
+  with examples. Screenshots: `docs/command-palette.png` and
+  `docs/command-palette-actions.png`, from the offscreen test with made-up
+  data.
+- **Tests**: `tests/query_tests.cpp` (parse, compile and run against a
+  12-track library built in SQL with a pinned clock, plus the CLI),
+  `tests/palette_tests.cpp` (ranking, actions, activation, library changes,
+  and the QML popup driven by keys in an offscreen window that has Omamp's
+  one-key shortcuts), and `tests/fixture_library.h`. `tests/main.cpp` now
+  takes `OMAMP_TESTS=library,query,palette` to run some classes only, and
+  `OMAMP_SCREENSHOTS=<folder>` makes the palette test save its screenshots.
+
+### Test results
+
+```text
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 442ms   (library)
+Totals: 24 passed, 0 failed, 0 skipped, 0 blacklisted, 21ms    (query)
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 82ms     (palette)
+```
+
+The player tests were not run in this phase: they open audio devices
+(muted), and this machine had to stay silent. Nothing in the player changed.
+
+### Benchmark
+
+`omamp_bench run` on the 200,000-track synthetic library, generated in a
+temporary folder and deleted afterwards. Median of 7 runs, warm cache, with
+another heavy job on the machine. Each query time includes a page of 100
+rows and the total count. The Phase 0 rows were measured again and match.
+
+| Query | ms | Rows |
+|---|---:|---:|
+| `"midnight highway"` (phrase) | 5.4 | 357 |
+| `+love` (word start: index, then pattern) | 27.4 | 17,211 |
+| `+go` (word start too short for the index) | 93.5 | 43,858 |
+| `aa:"neon coast"` | 10.2 | 10,126 |
+| `added:<30d` | 0.9 | 1,404 |
+| `added:2024` | 24.9 | 21,250 |
+| `added:2024-01..2024-06` | 4.4 | 10,510 |
+| `played:>1y` | 24.8 | 68,839 |
+| `played:never` | 24.6 | 100,288 |
+| `lastplayed:<7d` | 54.4 | 188 |
+| `plays:0` | 26.6 | 100,288 |
+| `plays:10..` | 26.5 | 95,179 |
+| `length:>6m` | 24.8 | 39,421 |
+| `length:3:00..5:00` | 26.9 | 80,765 |
+| `album:none` | 11.8 | 0 |
+| `genre:any` | 25.6 | 200,000 |
+| `-genre:none` | 26.7 | 200,000 |
+| `sort:-rating,artist limit:50` | 66.1 | 50 |
+| `sort:random limit:50` | 79.7 | 50 |
+| `sort:random` (every row shuffled, first page) | 82.2 | 200,000 |
+| `sort:randomalbum limit:100` | 73.8 | 100 |
+| `limit:2h` (library order) | 0.1 | 24 |
+| `limit:700mb` (library order) | 0.1 | 35 |
+| `rating:4.. sort:random limit:2h` | 38.5 | 28 |
+| `added:<1y plays:0 sort:-added limit:2h` | 0.2 | 25 |
+| `genre:rock played:>1y sort:-plays limit:50` | 5.6 | 50 |
+
+| Palette search | ms | Rows |
+|---|---:|---:|
+| First search, loading artist and album names | 63.5 | 17 |
+| `coast` | 6.0 | 17 |
+| `neon night` | 21.2 | 13 |
+| `lov` | 7.6 | 13 |
+| `re` | 1.7 | 10 |
+| `midnight highway` | 11.3 | 14 |
+| `artist:neon sort:-plays` | 14.8 | 9 |
+
+Every query is under the 100 ms target. `+go` is the closest at 93.5 ms, for
+the same reason the plain short word `go` takes 75 ms: no index can answer
+two letters. Every palette search after the first is under the 50 ms target;
+the first loads 1,600 artist and 18,278 album names once.
+
+**Indexes for the coordinator.** I tried these two indexes on a copy of the
+benchmark library. They are not in a migration, because 1C owns the schema.
+They cut the play-history clauses by an order of magnitude:
+
+```sql
+CREATE INDEX tracks_last_played ON tracks(last_played);
+CREATE INDEX tracks_play_count ON tracks(play_count);
+```
+
+| Query | Without (ms) | With (ms) |
+|---|---:|---:|
+| `played:>1y` | 24.8 | 1.3 |
+| `played:never` | 24.6 | 1.6 |
+| `lastplayed:<7d` | 54.4 | 0.3 |
+| `plays:0` | 26.6 | 1.7 |
+| `plays:10..` | 26.5 | 0.8 |
+
+An index on `rating` would not speed up `sort:-rating,artist`: `NULLS LAST`
+and the tie-breaking keys need a sort anyway.
+
+### Decisions
+
+- **Ages and dates read the way people say them.** With an age, `<` means
+  more recent (`added:<30d`, "less than 30 days ago"), and `added:30d` means
+  the same. With a calendar date, `<` means before. `m` means months in a
+  date and minutes in a length; `min` always means minutes.
+- **A calendar date covers its whole span** in local time: `added:2024` runs
+  from 1 January 2024 00:00 up to 1 January 2025 00:00. A range runs from
+  the earlier moment to the later, whichever order it is written in.
+- **`played:>1y` leaves out never-played tracks.** A missing date is not a
+  date long ago. The docs show `played:>1y OR played:never`.
+- **NOT counts unknown as false.** `-rating:4..` used to drop unrated tracks,
+  because SQL's NOT of NULL is NULL. Every NOT is now `NOT coalesce(x, 0)`.
+  This deliberately changes Phase 0 behaviour.
+- **`none`, `never` and `any` are keywords** only when unquoted;
+  `album:"none"` searches for the word. `rating:none` means unrated, and a
+  rating of 0 stars is a rating. For numbers, `none` means 0 or unset.
+- **A value's precision is its last unit.** `length:4m` matches 4:00 to
+  4:59, `length:3:00..5:00` includes 5:00.999, and `size:20mb` matches a
+  whole megabyte. Sizes count in 1,024s, as MediaMonkey and file managers do.
+- **`limit:` by time or size stops at the first track that does not fit**,
+  rather than skipping ahead for a shorter one, so the result is a prefix of
+  the sorted list and paging stays simple. When the order is the library
+  index, it reads only the rows it keeps (0.1 ms).
+- **The query's `limit:` applies first, then the page** (`Options::limit`,
+  `--limit`). `total` is the count after `limit:`.
+- **`sort:` and `limit:` live outside the tree** (`Parsed::sort`,
+  `Parsed::limit`). Inside brackets, after `-` or next to `OR` they are an
+  error with a position. Several `sort:` clauses add their keys; a second
+  `limit:` is an error.
+- **Empty values sort last both ways round.** Ties fall back to the library
+  order and then the id, so a page never changes between runs.
+- **The shuffle is SQL arithmetic**: a multiply, an xor-shift (written
+  `(a | b) - (a & b)`, since SQLite has no XOR) and a multiply, all modulo
+  2^32, on the track id plus the seed. Any connection can run a compiled
+  query without registering a C function. `randomalbum` hashes the album id
+  and keeps disc and track order. The core never picks a seed:
+  `Context::seed` defaults to 0, and the CLI picks a random one per run and
+  prints it.
+- **`+word` narrows with the index, then checks the word start** with the
+  pattern `(?<![\p{L}\p{N}])word`. When the word is too short for the
+  index, `LIKE` narrows first. The pattern does not ignore accents.
+- **Field names start with a letter**, so `3:20` and `12:00` are words.
+  `-(` now starts a NOT; a lone `-` or `+` is a word.
+- **The palette keeps artist and album names in memory**, folded for case
+  and accents. It reloads them when a cheap count-and-max check on
+  `artists`, `albums` and `tracks` changes (checked at most every 2 seconds)
+  or on `refresh()`. Tracks come from the search index. Text with no word
+  of three letters lists no tracks, because a full scan would take 75 ms
+  per keystroke.
+- **Palette ranking.** A name equal to the text scores 100; one that starts
+  with it, 92; one where every word starts a word, 80; one that contains the
+  text, 68; one that contains every word, 55; long names lose a little.
+  Actions also match fuzzily from a word start ("pp" finds Play/Pause, "tam"
+  finds Toggle advanced mode) and through keywords. Artists get 4 extra,
+  albums 2, actions 3 (and 2 more once used), and tracks a little for their
+  play count. Text with fields (`artist:neon sort:-plays`) lists the tracks
+  it selects, in its order. `>` lists actions only. The last row is always
+  "Search the library for ...", which emits `searchRequested`.
+- **The popup takes every key while open** (`Keys.onShortcutOverride`), so
+  Main.qml's one-letter shortcuts (Space, Q, Z, Up, Return...) do not fire
+  while typing. Ctrl+K still reaches the window, so it toggles the popup.
+  The test proves this with a window that carries those shortcuts.
+
+### Integrating the palette (for 1A)
+
+1. In `main.cpp`, create the model next to the library and hand it to QML:
+
+   ```cpp
+   #include "palette.h"
+   Palette palette;                      // after the window's Library is open
+   palette.setLibrary(&library);         // or leave unset for actions only
+   engine.rootContext()->setContextProperty("commandPalette", &palette);
+   ```
+
+   The `Library` must outlive the palette (or call `setLibrary(nullptr)`
+   first) and belong to the GUI thread. After a scan finishes, call
+   `palette.refresh()`.
+
+2. In `Main.qml`, add the popup and its key inside the `ApplicationWindow`:
+
+   ```qml
+   CommandPalette { id: palette; model: commandPalette }
+   Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; onActivated: palette.toggle() }
+   ```
+
+3. Register the actions once, with translated titles, for example in
+   `Component.onCompleted`:
+
+   ```qml
+   commandPalette.addAction("play-pause", qsTr("Play/Pause"), ["pause", "resume"], "Space")
+   commandPalette.addAction("next", qsTr("Next track"), ["skip"], "B")
+   commandPalette.addAction("previous", qsTr("Previous track"), ["back"], "Z")
+   commandPalette.addAction("add-folder", qsTr("Add folder…"), ["open", "import"], "O")
+   commandPalette.addAction("rescan", qsTr("Rescan library"), ["scan", "refresh"], "")
+   commandPalette.addAction("advanced", qsTr("Toggle advanced mode"), ["library"], "")
+   commandPalette.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help"], "?")
+   commandPalette.addAction("quit", qsTr("Quit"), ["exit"], "Q")
+   ```
+
+   `setActionEnabled(id, false)` greys one out (for example Rescan while a
+   scan runs); `removeAction(id)` drops it.
+
+4. Connect what the user chooses:
+
+   ```qml
+   Connections {
+       target: commandPalette
+       function onActionTriggered(id) {
+           if (id === "play-pause") backend.toggle()
+           else if (id === "next") backend.next()
+           // ...
+       }
+       function onTrackActivated(trackId) { /* play or show the track */ }
+       function onAlbumActivated(albumId, title, albumArtist) { /* show the album */ }
+       function onArtistActivated(artistId, name) { /* filter by artist:="name" */ }
+       function onSearchRequested(text) { /* put the text in the search box */ }
+   }
+   ```
+
+   The popup closes itself after a choice and also emits `chosen(item)` with
+   the row's roles (`kind`, `itemId`, `title`, `subtitle`, `detail`,
+   `shortcut`, `kindLabel`, `actionEnabled`).
+
+5. Optionally, disable Main.qml's one-key shortcuts while `palette.opened`.
+   The popup already takes the keys, so this is only a second guard.
+
+The new strings to translate are in `CommandPalette.qml` (the placeholder,
+the hint line, "Nothing matches") and in `palette.cpp` (`Action`, `Artist`,
+`Album`, `Track`, `Search`, `%n tracks`, `Search the library for “%1”`).
+Check that the app's `Translator` serves `tr()` in C++ as well as `qsTr()`.
+
+### Known gaps
+
+- **`+word` and words under three letters match accents exactly**, and the
+  short-word `LIKE` ignores case only for A to Z.
+- **Short word starts such as `+go` take 94 ms** on 200,000 tracks: under
+  target, but the slowest clause.
+- **`limit:` by time or size does not skip ahead** to fill the space. An
+  Auto-DJ or sync list that wants the closest fit needs its own packing.
+- **`played:` reads `tracks.last_played`**, not `play_history`, so "played
+  more than three times this month" cannot be written yet.
+- **No `present` or `now` in number ranges** (MediaMonkey's
+  `year:1978..Present`). For dates, `added:2020..today` works.
+- **The palette does not highlight the matched letters.**
+- **The palette's fuzzy matching is greedy**, with a preference for word
+  starts, so it can miss the best alignment in a long title. Only actions
+  use it.
+- **The first palette search costs about 60 ms** on 200,000 tracks while it
+  loads the names.

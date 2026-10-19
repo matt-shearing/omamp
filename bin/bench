@@ -1,0 +1,43 @@
+#!/bin/sh
+# Builds the benchmark and times the library core on a synthetic library of
+# 200,000 tracks (rows only), then a scan and stat-only rescan of real files
+# (hard links of one small tagged file). Everything goes in build/bench, on
+# disk, and nothing touches your own library.
+#
+#   bin/bench [--tracks N] [--files N]    defaults: 200000 tracks, 100000 files
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+TRACKS=200000
+FILES=100000
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --tracks) TRACKS="$2"; shift 2 ;;
+        --files) FILES="$2"; shift 2 ;;
+        *) echo "usage: bin/bench [--tracks N] [--files N]" >&2; exit 1 ;;
+    esac
+done
+
+WORK="$ROOT/build/bench"
+mkdir -p "$WORK/build"
+cd "$WORK/build"
+qmake6 "$ROOT/tests/bench/bench.pro" >/dev/null
+make -j"${JOBS:-$(nproc)}" >/dev/null
+BENCH="$WORK/build/omamp_bench"
+
+echo "## Synthetic library: $TRACKS tracks"
+echo
+"$BENCH" generate "$WORK/library.db" --tracks "$TRACKS"
+echo
+"$BENCH" run "$WORK/library.db"
+
+if [ "$FILES" -gt 0 ]; then
+    echo
+    echo "## Scanning $FILES files"
+    echo
+    "$ROOT/tests/make-fixtures" "$WORK/fixtures" >/dev/null
+    rm -rf "$WORK/files" "$WORK/files-templates"
+    "$BENCH" files "$WORK/files" "$WORK/fixtures/Compilations/Summer Mix/01 Heatwave.mp3" \
+        --files "$FILES" --db "$WORK/files-library.db"
+    rm -rf "$WORK/files" "$WORK/files-templates"
+fi

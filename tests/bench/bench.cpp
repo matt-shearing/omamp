@@ -1,0 +1,383 @@
+// Performance tests for the library core, without a window.
+//
+//   omamp_bench generate <library.db> [--tracks N]   a synthetic library (rows only, no files)
+//   omamp_bench run <library.db> [--runs N]          time opening, search and queries
+//   omamp_bench files <folder> <template-file> [--files N] [--db path]
+//                                                     scan and rescan N hard links of one file
+//
+// The generator streams: rows go in through prepared statements and are
+// committed every few thousand, so memory stays flat however many tracks.
+
+#include <QCoreApplication>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QRandomGenerator>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QTextStream>
+#include <algorithm>
+#include <cmath>
+
+#include <sys/resource.h>
+#include <unistd.h>
+
+#include "library.h"
+#include "query.h"
+#include "scanner.h"
+#include "volumes.h"
+
+static QTextStream out(stdout), err(stderr);
+
+static const QStringList adjectives = {
+    "Neon", "Silver", "Midnight", "Velvet", "Electric", "Golden", "Broken", "Crystal", "Hollow", "Wild",
+    "Quiet", "Burning", "Frozen", "Distant", "Lunar", "Solar", "Paper", "Iron", "Scarlet", "Northern",
+    "Southern", "Eastern", "Western", "Lost", "Secret", "Little", "Great", "Last", "First", "Endless",
+    "Restless", "Sleepy", "Shiny", "Rusty", "Copper", "Amber", "Blue", "Black", "White", "Green"};
+static const QStringList nouns = {
+    "Coast", "Highway", "Garden", "Engine", "River", "Mountain", "Harbour", "Signal", "Mirror", "Echo",
+    "Forest", "Desert", "Ocean", "Machine", "Parade", "Theory", "Kingdom", "Station", "Satellite", "Lantern",
+    "Horizon", "Canyon", "Valley", "Island", "Avenue", "Circus", "Orchestra", "Choir", "Collective", "Brothers",
+    "Sisters", "Society", "Club", "Band", "Project", "Union", "Riders", "Drifters", "Dreamers", "Wolves"};
+static const QStringList words = {
+    "love", "night", "drive", "heart", "light", "rain", "fire", "summer", "winter", "dance", "dream", "road",
+    "home", "city", "stars", "moon", "sun", "shadow", "girl", "boy", "time", "world", "blue", "gold", "wave",
+    "run", "fall", "rise", "song", "storm", "sky", "sea", "train", "radio", "telephone", "window", "door",
+    "morning", "evening", "tonight", "forever", "never", "again", "goodbye", "hello", "yesterday", "tomorrow",
+    "electric", "magnetic", "paradise", "highway", "memory", "kiss", "echo", "river", "garden", "silence"};
+static const QStringList genres = {
+    "Rock", "Pop", "Jazz", "Blues", "Metal", "Electronic", "Synthwave", "Hip Hop", "Soul", "Funk", "Country",
+    "Folk", "Reggae", "Punk", "Indie", "Ambient", "Classical", "Soundtrack", "Disco", "House", "Techno",
+    "Trance", "Drum and Bass", "R&B", "Gospel", "Latin", "World", "New Age", "Christmas", "Alternative",
+    "Grunge", "Ska", "Swing", "Bluegrass", "Opera", "Chillout", "Lo-fi", "Shoegaze", "Post-rock", "Dub"};
+static const QStringList formats = {"flac", "flac", "mp3", "mp3", "mp3", "m4a", "ogg", "opus"};
+
+static qint64 peakRssMb() {
+    rusage usage {};
+    getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_maxrss / 1024;
+}
+
+static bool check(QSqlQuery &q) {
+    if (q.exec())
+        return true;
+    err << "SQL error: " << q.lastError().text() << Qt::endl;
+    return false;
+}
+
+static int generate(const QString &path, int trackCount) {
+    QFile::remove(path);
+    QFile::remove(path + "-wal");
+    QFile::remove(path + "-shm");
+    Library library(path);
+    QString error;
+    if (!library.open(&error)) {
+        err << error << Qt::endl;
+        return 1;
+    }
+    QSqlDatabase db = library.db();
+    QSqlQuery(db).exec("PRAGMA synchronous = OFF");
+    QRandomGenerator rng(20261019);
+    auto pick = [&](const QStringList &list) { return list[rng.bounded(list.size())]; };
+    auto title = [&] {
+        QStringList t;
+        const int n = 1 + rng.bounded(4);
+        for (int i = 0; i < n; ++i)
+            t << pick(words);
+        t[0][0] = t[0][0].toUpper();
+        return t.join(' ');
+    };
+
+    QElapsedTimer timer;
+    timer.start();
+    db.transaction();
+    QSqlQuery q(db);
+    q.exec("INSERT INTO volumes (key, kind, label, fs_type, source, root_path, online, last_seen, added) "
+           "VALUES ('uuid:BENCH-0000', 'local', 'bench', 'ext4', '/dev/bench', '/bench', 1, 0, 0)");
+
+    // Artists: every adjective-noun pair, "Neon Coast" among them.
+    QStringList artistNames;
+    for (const QString &a : adjectives)
+        for (const QString &n : nouns)
+            artistNames << a + ' ' + n;
+    QSqlQuery addArtist(db);
+    addArtist.prepare("INSERT INTO artists (id, name) VALUES (?, ?)");
+    for (int i = 0; i < artistNames.size(); ++i) {
+        addArtist.addBindValue(i + 1);
+        addArtist.addBindValue(artistNames[i]);
+        check(addArtist);
+    }
+    QSqlQuery addGenre(db);
+    addGenre.prepare("INSERT INTO genres (id, name) VALUES (?, ?)");
+    for (int i = 0; i < genres.size(); ++i) {
+        addGenre.addBindValue(i + 1);
+        addGenre.addBindValue(genres[i]);
+        check(addGenre);
+    }
+
+    QSqlQuery addFolder(db), addAlbum(db), addTrack(db), linkArtist(db), linkGenre(db);
+    addFolder.prepare("INSERT INTO folders (id, volume_id, rel_path, is_root, added) VALUES (?, 1, ?, 0, 0)");
+    addAlbum.prepare("INSERT INTO albums (id, title, album_artist, artist_key, title_key, year, compilation) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?)");
+    addTrack.prepare(
+        "INSERT INTO tracks (id, volume_id, folder_id, rel_path, file_name, format, size, mtime_ns, title, artist, "
+        "album_artist, sort_artist, album, album_id, genre, year, track_no, track_total, disc_no, disc_total, "
+        "compilation, duration_ms, bitrate, sample_rate, channels, rating, play_count, last_played, added, "
+        "content_type) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 44100, 2, ?, ?, ?, ?, ?)");
+    linkArtist.prepare("INSERT OR IGNORE INTO track_artists (track_id, artist_id, role, position) VALUES (?, ?, ?, ?)");
+    linkGenre.prepare("INSERT OR IGNORE INTO track_genres (track_id, genre_id, position) VALUES (?, ?, ?)");
+    QSqlQuery(db).exec("INSERT INTO folders (id, volume_id, rel_path, is_root, added) VALUES (1, 1, '', 1, 0)");
+
+    int trackId = 0, albumId = 0;
+    const qint64 now = 1792000000;
+    while (trackId < trackCount) {
+        ++albumId;
+        // A skewed pick, so some artists have many albums and most have few.
+        const int artistIndex = int(std::pow(rng.generateDouble(), 2.5) * artistNames.size());
+        const QString albumArtist = artistNames[artistIndex];
+        const bool compilation = rng.bounded(100) < 5;
+        const QString album = title();
+        const int year = 1960 + rng.bounded(66);
+        const int discs = rng.bounded(100) < 10 ? 2 : 1;
+        const int perDisc = 6 + rng.bounded(9);
+        const QString genre1 = pick(genres), genre2 = rng.bounded(100) < 20 ? pick(genres) : QString();
+        const QString genre = genre2.isEmpty() || genre2 == genre1 ? genre1 : genre1 + "; " + genre2;
+        const QString shownArtist = compilation ? QString("Various Artists") : albumArtist;
+        // Random titles repeat, so the album number keeps folders apart.
+        const QString folder = QString("%1/%2 (%3) %4").arg(shownArtist, album).arg(year).arg(albumId);
+
+        addFolder.addBindValue(albumId + 1);
+        addFolder.addBindValue(folder);
+        check(addFolder);
+        addAlbum.addBindValue(albumId);
+        addAlbum.addBindValue(album);
+        addAlbum.addBindValue(shownArtist);
+        addAlbum.addBindValue(shownArtist.toLower());
+        addAlbum.addBindValue(album.toLower() + QString(" #%1").arg(albumId)); // titles repeat; keep albums apart
+        addAlbum.addBindValue(year);
+        addAlbum.addBindValue(compilation ? 1 : 0);
+        check(addAlbum);
+
+        for (int disc = 1; disc <= discs && trackId < trackCount; ++disc) {
+            for (int n = 1; n <= perDisc && trackId < trackCount; ++n) {
+                ++trackId;
+                QStringList artists{compilation ? artistNames[rng.bounded(artistNames.size())] : albumArtist};
+                if (rng.bounded(100) < 8)
+                    artists << artistNames[rng.bounded(artistNames.size())];
+                const QString trackTitle = title();
+                const QString format = pick(formats);
+                const QString fileName = QString("%1-%2 %3").arg(disc).arg(n, 2, 10, QChar('0')).arg(trackTitle);
+                const bool rated = rng.bounded(100) < 40;
+                const int plays = rng.bounded(100) < 50 ? 0 : rng.bounded(200);
+                const QList<QVariant> values = {
+                    trackId, albumId + 1, folder + '/' + fileName + '.' + format, fileName, format,
+                    qint64(3000000 + rng.bounded(40000000)), qint64(now - rng.bounded(300000000)) * 1000000000LL,
+                    trackTitle, artists.join("; "), compilation ? QString() : albumArtist, shownArtist, album,
+                    albumId, genre, year, n, perDisc, disc, discs, compilation ? 1 : 0,
+                    120000 + rng.bounded(300000), format == "flac" ? 900 + rng.bounded(300) : 128 + rng.bounded(192),
+                    rated ? QVariant(20 * (1 + rng.bounded(5))) : QVariant(QMetaType(QMetaType::Int)), plays,
+                    plays ? QVariant(now - rng.bounded(100000000)) : QVariant(QMetaType(QMetaType::LongLong)),
+                    now - rng.bounded(300000000), genre1 == "Classical" ? "classical" : "music"};
+                for (const QVariant &v : values)
+                    addTrack.addBindValue(v);
+                if (!check(addTrack))
+                    return 1;
+                for (int a = 0; a < artists.size(); ++a) {
+                    linkArtist.addBindValue(trackId);
+                    linkArtist.addBindValue(artistNames.indexOf(artists[a]) + 1);
+                    linkArtist.addBindValue("artist");
+                    linkArtist.addBindValue(a);
+                    check(linkArtist);
+                }
+                if (!compilation) {
+                    linkArtist.addBindValue(trackId);
+                    linkArtist.addBindValue(artistIndex + 1);
+                    linkArtist.addBindValue("album_artist");
+                    linkArtist.addBindValue(0);
+                    check(linkArtist);
+                }
+                linkGenre.addBindValue(trackId);
+                linkGenre.addBindValue(genres.indexOf(genre1) + 1);
+                linkGenre.addBindValue(0);
+                check(linkGenre);
+                if (!genre2.isEmpty() && genre2 != genre1) {
+                    linkGenre.addBindValue(trackId);
+                    linkGenre.addBindValue(genres.indexOf(genre2) + 1);
+                    linkGenre.addBindValue(1);
+                    check(linkGenre);
+                }
+                if (trackId % 5000 == 0) {
+                    db.commit();
+                    db.transaction();
+                    err << "\r" << trackId << " tracks" << Qt::flush;
+                }
+            }
+        }
+    }
+    db.commit();
+    QSqlQuery(db).exec("ANALYZE");
+    err << "\r";
+    out << QString("Generated %1 tracks, %2 albums, %3 artists in %4 s (peak memory %5 MB)")
+               .arg(trackId)
+               .arg(albumId)
+               .arg(artistNames.size())
+               .arg(timer.elapsed() / 1000.0, 0, 'f', 1)
+               .arg(peakRssMb())
+        << Qt::endl;
+    return 0;
+}
+
+// Median of several runs, in milliseconds.
+template <typename F> static double timeIt(int runs, F &&body) {
+    QList<double> times;
+    for (int i = 0; i < runs; ++i) {
+        QElapsedTimer t;
+        t.start();
+        body();
+        times << t.nsecsElapsed() / 1e6;
+    }
+    std::sort(times.begin(), times.end());
+    return times[times.size() / 2];
+}
+
+static int runBench(const QString &path, int runs) {
+    if (!QFile::exists(path)) {
+        err << path << " does not exist; run generate first" << Qt::endl;
+        return 1;
+    }
+    out << "| What | Median of " << runs << " (ms) | Rows |\n|---|---:|---:|\n";
+    auto row = [&](const QString &what, double ms, qint64 rows) {
+        out << "| " << what << " | " << QString::number(ms, 'f', 1) << " | " << rows << " |\n" << Qt::flush;
+    };
+
+    // Opening: connect, pragmas and the schema check, as the window does first.
+    row("Open the library", timeIt(runs, [&] {
+            Library l(path);
+            l.open();
+        }), 0);
+
+    Library library(path);
+    if (!library.open())
+        return 1;
+    qint64 rows = 0;
+    // What a track list needs to draw its first screen: the count and one page.
+    // (Timed before row() is called: the order arguments are evaluated in is
+    // unspecified, so rows could be read before the timing fills it.)
+    double ms = timeIt(runs, [&] {
+        Query::Options o;
+        o.limit = 100;
+        rows = Query::run(library, "", o).total;
+    });
+    row("First page (count + 100 sorted rows)", ms, rows);
+
+    const QList<QPair<QString, QString>> queries = {
+        {"Word search (FTS): coast", "coast"},
+        {"Two words (FTS): midnight highway", "midnight highway"},
+        {"Short word (no index): go", "go"},
+        {"artist:\"neon coast\" year:1997..2001", "artist:\"neon coast\" year:1997..2001"},
+        {"rating:4.. -genre:christmas", "rating:4.. -genre:christmas"},
+        {"genre:rock OR genre:metal", "genre:rock OR genre:metal"},
+        {"artist:=\"Neon Coast\" (multi-value table)", "artist:=\"Neon Coast\""},
+        {"title:/^love/ (regex)", "title:/^love/"},
+    };
+    for (const auto &q : queries) {
+        Query::Options o;
+        o.limit = 100;
+        qint64 total = 0;
+        const double ms = timeIt(runs, [&] {
+            const Query::Result r = Query::run(library, q.second, o);
+            if (!r.ok())
+                err << q.second << ": " << r.error << Qt::endl;
+            total = r.total;
+        });
+        row("query " + q.first + " (page of 100 + count)", ms, total);
+    }
+    // The worst case: every row, sorted, loaded into memory.
+    ms = timeIt(std::min(runs, 3), [&] { rows = Query::run(library, "").tracks.size(); });
+    row("query \"\" with no limit (all rows, sorted)", ms, rows);
+    row("stats", timeIt(runs, [&] { library.stats(); }), 0);
+    out << "\nPeak memory: " << peakRssMb() << " MB\n"
+        << "Database size: " << QString::number(QFileInfo(path).size() / 1e6, 'f', 0) << " MB\n"
+        << Qt::flush;
+    return 0;
+}
+
+// A stat-only rescan needs real files. Hard links of one small tagged file
+// give as many as wanted without the disk space.
+static int files(const QString &folder, const QString &templateFile, int count, const QString &dbPath) {
+    QDir().mkpath(folder);
+    QDir().mkpath(folder + "-templates");
+    const QString suffix = QFileInfo(templateFile).suffix();
+    QElapsedTimer timer;
+    timer.start();
+    for (int i = 0; i < count; ++i) {
+        const QString dir = QString("%1/artist%2/album%3").arg(folder).arg(i / 12 / 80).arg(i / 12);
+        const QString file = QString("%1/%2.%3").arg(dir).arg(i % 12 + 1, 2, 10, QChar('0')).arg(suffix);
+        if (QFileInfo::exists(file))
+            continue;
+        if (i % 12 == 0)
+            QDir().mkpath(dir); // one new album folder every 12 files
+        // ext4 allows 65,000 links to one file, so start a fresh copy every 50,000.
+        const QString source = QString("%1-templates/template-%2.%3").arg(folder).arg(i / 50000).arg(suffix);
+        if (!QFileInfo::exists(source) && !QFile::copy(templateFile, source)) {
+            err << "Can't copy " << templateFile << Qt::endl;
+            return 1;
+        }
+        if (link(QFile::encodeName(source).constData(), QFile::encodeName(file).constData()) != 0) {
+            err << "Can't link " << file << Qt::endl;
+            return 1;
+        }
+    }
+    out << "Made " << count << " links in " << timer.elapsed() / 1000.0 << " s\n";
+    QFile::remove(dbPath);
+    Library library(dbPath);
+    if (!library.open())
+        return 1;
+    VolumeResolver resolver;
+    Scanner scanner(library, resolver);
+    ScanResult first = scanner.scan({folder});
+    if (!first.ok) {
+        err << first.error << Qt::endl;
+        return 1;
+    }
+    out << "| What | ms | Files |\n|---|---:|---:|\n"
+        << "| First scan (TagLib on " << Scanner::defaultWorkers() << " threads) | " << first.elapsedMs << " | "
+        << first.files << " |\n";
+    ScanResult again = scanner.scan({folder});
+    out << "| Rescan, nothing changed (stat only) | " << again.elapsedMs << " | " << again.unchanged << " |\n"
+        << "\nPeak memory: " << peakRssMb() << " MB\n"
+        << Qt::flush;
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    QCoreApplication app(argc, argv);
+    QStringList args = app.arguments().mid(1);
+    auto option = [&](const QString &name, int fallback) {
+        const int at = args.indexOf(name);
+        if (at < 0 || at + 1 >= args.size())
+            return fallback;
+        const int value = args[at + 1].toInt();
+        args.remove(at, 2);
+        return value;
+    };
+    QString dbOption;
+    if (const int at = args.indexOf("--db"); at >= 0 && at + 1 < args.size()) {
+        dbOption = args[at + 1];
+        args.remove(at, 2);
+    }
+    const int tracks = option("--tracks", 200000);
+    const int runs = option("--runs", 7);
+    const int fileCount = option("--files", 100000);
+    if (args.value(0) == "generate" && args.size() == 2)
+        return generate(args[1], tracks);
+    if (args.value(0) == "run" && args.size() == 2)
+        return runBench(args[1], runs);
+    if (args.value(0) == "files" && args.size() == 3)
+        return files(args[1], args[2], fileCount, dbOption.isEmpty() ? args[1] + "/../files-library.db" : dbOption);
+    err << "usage: omamp_bench generate <db> [--tracks N] | run <db> [--runs N] | "
+           "files <folder> <template> [--files N] [--db path]"
+        << Qt::endl;
+    return 1;
+}

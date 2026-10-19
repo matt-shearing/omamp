@@ -9,6 +9,7 @@
 
 class Job;
 class Library;
+struct TrackTags;
 
 struct ScanResult {
     bool ok = true;
@@ -116,6 +117,14 @@ public:
     // root_path when offline).
     static QStringList roots(Library &library);
     static QList<LibraryRoot> libraryRoots(Library &library);
+
+    // Rewrites one track's row from tags just read from its file, exactly as
+    // a scan would (artists, genres, album, search index), keeping its id,
+    // rating, play count and history. For the tag writer, which has just
+    // written the file and must not wait for a rescan. Runs inside the
+    // caller's transaction, if any.
+    static bool updateTrackRow(Library &library, qint64 trackId, const TrackTags &tags, qint64 size,
+                               qint64 mtimeNs, QString *error = nullptr);
 
 private:
     struct Scope;

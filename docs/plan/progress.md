@@ -1405,3 +1405,312 @@ Night Ride theme (Matt's current Omarchy theme). The files sat in
 - **The palette doesn't highlight matched letters** (a 1B gap).
 - **Checked offscreen only**, in the default and Night Ride themes, never on
   screen and never on Matt's library.
+
+## Phase 2 backend: masks, tag writing, organise, audits and duplicates (20 October 2026)
+
+The core and the command line for Phase 2 are built; the window is not (1D
+is working in `src/app/` at the same time). Omamp can now write tags safely
+and undo them, rename and move files by a mask with a preview and undo, fill
+tags from file names, list the Files to Edit checks, and find duplicates by
+tags, by bytes and by Chromaprint fingerprint. All tests pass. Nothing is
+pushed.
+
+### What was built
+
+```text
+src/core/mask.{h,cpp}        the mask language: parser, evaluator, safe names, tag from file names
+src/core/tagwriter.{h,cpp}   TagLib 2 writes with copy, check and rename; the journal; undo
+src/core/organise.{h,cpp}    plan, apply and undo moves; companion files; undoBatch() for any batch
+src/core/audit.{h,cpp}       the Files to Edit checks, as queries or SQL
+src/core/duplicates.{h,cpp}  duplicates by tags, content and fingerprint; the fpcalc job
+src/core/scanner.*           + Scanner::updateTrackRow(), the scanner's own row writer for one track
+src/core/migrations.cpp      + step 6: the fingerprints table
+src/cli/cli.cpp              + tag, tag-from-filename, organise, undo, journal, audit, duplicates
+tests/mask_tests.cpp         the mask language (22 tests)
+tests/tidy_tests.cpp         tag writing, undo, organise, audits, duplicates, schema 6, the commands (21 tests)
+docs/masks.md                the mask reference, with examples
+```
+
+**Masks** (`docs/masks.md` is the reference). Every field the plan names,
+`:n` padding, `@n` alphabetical groups, `<Folder:n>`, `<Path:n>`,
+`<Auto Number>`, and the functions `$If` (with `=` and `!=`), `$IfEmpty`,
+`$First`, `$Replace`, `$RemovePrefix`, `$MovePrefix`, `$Left`, `$Right`,
+`$Mid`, `$Trim`, `$Upper`, `$Lower`, `$Title`, `$Len` and `$Pad`. `/` and
+`\` written in the mask make folders; a slash inside a tag does not. Each
+folder and file name is made safe (Windows' characters, trailing dots and
+spaces, leading dots, reserved names, 255 bytes), and the rules are
+settable. Parse errors carry the character position. Patterns for tagging
+from file names reuse the parser and add `<Skip>`.
+
+**Tag writing.** Each file is copied to `.omamp-<random>-<name>` beside
+itself, written there with TagLib, read back field by field (and its audio
+length checked), and renamed over the original only if the original has not
+changed meanwhile. Then one transaction journals each change and rewrites
+the track's row with the scanner's own writer, so the new size and
+modification time are recorded and a rescan reads nothing. A failure
+affects only its own file; the copy is removed and the original is left
+exactly as it was. Fields: title, artist(s), album artist(s), album,
+genre(s), composer(s), year, original year, track and disc numbers and
+totals, comment, BPM, compilation, lyrics (USLT, `LYRICS`, `©lyr`), rating,
+embedded pictures (set or remove, all of them), and custom1 to custom5
+(database only). MP3s keep their ID3v2 version; multi-value fields are one
+"A; B" string in ID3v2 and separate values in Vorbis comments and MP4.
+
+**Ratings** stay in the database unless the setting `tags.write_ratings`
+is `1`. Then MP3s get POPM (every existing POPM frame is updated, or one is
+added with the e-mail in `tags.popm_email`, default MediaMonkey's
+`no@email`) at MediaMonkey's steps, and other formats get `FMPS_RATING`.
+
+**Journal and undo.** Every change is a row in `tag_journal`: batch, track,
+field, old value, new value, source and time. Batches are named
+`tag-…`, `organise-…` or `undo-…` with a UTC time. `undo(batch)` restores
+the old values in the files and the database, marks the batch's rows undone
+and journals itself as an `undo-…` batch whose source is `undo:<batch>`, so
+undoing an undo redoes. `omamp undo` with no batch takes the newest batch
+that is neither an undo nor undone. A picture's old value is kept whole
+(JSON with base64 data); its new value only as a hash, since undo never
+needs it.
+
+**Organise.** `plan()` evaluates the mask per track and settles clashes
+with " (2)", " (3)" against other files in the batch and files on disk,
+without touching anything. `apply()` moves with `renameat2(RENAME_NOREPLACE)`
+(or `link` and `unlink` where a filesystem can't refuse to replace), so it
+never overwrites; across filesystems it copies beside the target, compares
+SHA-1, keeps the modification time, renames into place the same way and
+then deletes the original. Each move updates the track's volume, folder and
+path (its id stays) and journals `path` as `volume:relative path` in one
+transaction; if the database refuses, the file is moved back. A track's
+`.lrc` moves with it; a folder whose every audio file moves to one place
+takes its pictures, cue sheets, logs and playlists along. Emptied folders
+are removed up to the library folder and journalled, so undo recreates
+them. Undo moves everything back in reverse order.
+
+**Audits.** Sixteen checks with ids, titles, a group for the tree and a
+sentence each: unknown title, artist, album, genre and year; missing
+artwork; several artists without an album artist; album artist, year or
+genre differing within an album; no track number; track numbers with gaps
+or repeats; not levelled; dead links; offline; not tagged from MusicBrainz.
+Seven are query-language text, the rest SQL over `tracks t`; both compile
+to a `Query::Compiled`.
+
+**Duplicates.** By tags (artist and title with case, accents, punctuation
+and a leading "The" ignored, and lengths within two seconds unless turned
+off), by content (the scanner's `quick_hash`), and by fingerprint.
+`Fingerprinter` runs `fpcalc -raw -json -length 120` four processes at a
+time and stores the raw fingerprint per track with its size and
+modification time, so it is computed again only when the file changes.
+Fingerprints match when at least 85 % of their bits agree at the best offset
+of up to three frames. Each group puts a suggested keeper first: online,
+then lossless, then the highest bitrate, the most plays, the best rating,
+the oldest in the library, with the reason. Nothing is deleted.
+
+**Schema 6** adds `fingerprints (track_id, size, mtime_ns, duration,
+fingerprint, computed)` and an index on `tag_journal(changed_at)`. It is
+numbered 6 because 1D's sort indexes are step 5.
+
+### Test results
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 100ms     (player)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 669ms     (library)
+Totals: 24 passed, 0 failed, 0 skipped, 0 blacklisted, 24ms      (query)
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 78ms       (palette)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 2576ms    (Phase 1C)
+Totals: 12 passed, 0 failed, 0 skipped, 0 blacklisted, 825ms     (library window)
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1361ms     (advanced window)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 5ms       (masks)
+Totals: 21 passed, 0 failed, 0 skipped, 0 blacklisted, 1379ms    (Phase 2: tags, organise, audits, duplicates)
+```
+
+The Phase 2 tests make their files with `ffmpeg` in temporary folders. The
+tag writer and organiser are fenced into the test folder with
+`setSandbox()`, every path in every result is checked to lie inside it, and
+the tree of files is compared before and after dry runs and undos. They
+cover: a round trip of every field in MP3, FLAC, Ogg Vorbis, Opus and M4A,
+including ratings in the file, lyrics and a picture, with the database row
+matching the file and a rescan finding nothing to do; ratings and custom
+fields staying in the database by default; dry runs; a failure between
+writing the copy and replacing the original, in the middle of a batch,
+leaving that file byte-identical and no temporary files; a file changed by
+something else during the write being left alone; undo of a batch with
+pictures across FLAC and MP3, and redo; the sandbox; organise with clashes
+in the batch and on disk, a `.lrc`, a cover, emptied folders, ratings and
+playlist entries following, a clean rescan, and an undo back to the exact
+tree; the copy path across filesystems (through the `setCrossDevice` seam);
+a file appearing at a target after planning; destinations, `<Auto Number>`,
+a mask error's position and a track outside every library folder; every
+audit's count on the query tests' fixture library, before and after
+changes; duplicates by tags (with and without lengths, with missing files),
+by content and by fingerprint (pink noise as FLAC and as MP3, against other
+noise); the schema 4 to 6 upgrade; and each new command with `--json`.
+
+### Decisions
+
+- **Ratings and play counts stay in the database** by default, as the plan
+  says. Play counts are never written to files yet; nothing in Phase 2
+  changes them.
+- **A text field's `:n` cuts it to n characters.** MediaMonkey pads with
+  spaces, which makes poor file names. Numbers are zero-padded.
+- **`<Album Artist>` falls back** to "Various Artists" for a compilation and
+  to the artist otherwise, matching the library's sort artist. A mask that
+  needs the raw tag can test `$If(<Album Artist>=<Artist>,…)`.
+- **`<Folder:n>` counts up from the file and `<Path:n>` down from the
+  library folder.** MediaMonkey's documentation is vague here; these are the
+  useful readings.
+- **`<Auto Number>` is the track's place in the batch**, in the query's
+  order, not per folder.
+- **Empty folder names are dropped and an empty file name becomes
+  "Untitled"**, rather than making folders called `_`.
+- **Windows-safe names by default**, since a NAS is usually shared over SMB.
+- **A leading dot is replaced**, because the scanner skips hidden files and
+  a hidden file would drop out of the library.
+- **Organise refuses a track that is in no library folder** unless a
+  destination is given, so it can never file music at the root of a disk.
+- **Unplannable tracks (offline, missing) are skipped, not failed**, and
+  their folder's companion files stay with them.
+- **A whole-folder move takes these extensions along:** jpg, jpeg, png, gif,
+  webp, bmp, cue, log, nfo, txt, pdf, m3u, m3u8 and lrc (settable).
+- **Organise keeps the album row.** A move changes only the path; an album
+  grouped by folder (no album artist) keeps its old group until the next
+  tag edit or full rescan of that file.
+- **Journal values for paths are `volume id:relative path`**, so undo
+  works after the volume is remounted elsewhere. Companion files and removed
+  folders are journalled as absolute paths.
+- **A picture edit replaces every embedded picture** with one front cover,
+  and its undo restores all of them.
+- **`tag_journal.source` tells batches apart** (`edit`,
+  `tag-from-filename`, `organise`, `undo:<batch>`); no new columns.
+- **Fingerprint pairs are prefiltered** by sharing at least three exact
+  fingerprint values (ignoring values shared by more than 200 prints) and a
+  length within five seconds, so the bit-by-bit comparison is not quadratic.
+- **`tag --set rating=` takes stars** (0 to 5, halves allowed), like the
+  query language; the API takes 0 to 100.
+- **`omamp tag` requires a query**, so `omamp tag --set genre=X` can't
+  silently rewrite a whole library.
+
+### Known gaps
+
+- **No window.** 1D owns `src/app/`; the APIs below are what it needs.
+- **The temporary copy is a full copy.** Writing tags to a large FLAC on a
+  NAS copies the whole file across the network twice (copy, then the
+  rename is local to the share). Writing in place would be faster and less
+  safe; the plan chose safety.
+- **File ownership and extended attributes** are not kept by the copy; the
+  written file belongs to the user who ran Omamp.
+- **The watcher sees the temporary file** (it has an audio extension) and
+  queues a rescan of its folder, which finds nothing new. Harmless, but a
+  little work.
+- **A crash between a move and its database commit** leaves the file moved
+  and the row pointing at the old place. The next scan's moved-file matching
+  repairs it (same content hash), but it is not journalled.
+- **Case-only renames on a case-insensitive share** ("abba" to "ABBA" over
+  SMB) get " (2)", because the new name already "exists".
+- **Missing artwork** counts albums the artwork cache has not looked at yet
+  as missing; `omamp art all` settles them.
+- **Fingerprints need some length.** fpcalc can't fingerprint the one-second
+  fixture files; real songs are fine.
+- **Synchronising tags** (MediaMonkey's "Update tags from the library")
+  and **Clean Tags** are not built.
+- **Per-row overrides** in the preview are an API (edit `OrganisePlan`
+  before `apply()`), with no command-line form.
+- **Not tried on Matt's library or a NAS.** Everything ran in temporary
+  folders on tmpfs.
+
+### What the window needs (tag editor, organise preview, audits, duplicates, undo)
+
+All of these run on the calling thread and block it. Run them on a worker
+thread with its own `Library` on the same file, as scans do, and pass a
+`Job` for progress (`progressChanged(phase, done, total)`) and Cancel
+(`job.cancel()` from the main thread). Reload the track list and tree when
+they finish.
+
+**Tag editor (Ctrl+E).**
+
+```cpp
+#include "tagwriter.h"
+TagWriter writer(library, &job);
+QMap<QString, QString> v = writer.currentValues(trackId);   // file + database values, per field
+// Multi-select: read each track's values and show a field as "(several)" when they differ.
+QList<TagEdit> edits = {{id, "title", "New"}, {id, "genre", "Rock; Pop"},
+                        {id, "rating", "80"}, {id, "artwork", {}, pngBytes, "image/png"}};
+TagBatchResult r = writer.apply(edits);          // r.batch, r.files[i].ok / .error / .changes
+TagWriteOptions o; o.dryRun = true;              // a preview of exactly what would change
+TagWriter::fields();                             // field names; canonicalField() takes aliases
+TagReader::embeddedPicture(path);                // the current front cover for the Artwork tab
+```
+
+`currentValues()["artwork"]` is a JSON list of pictures (type, mime,
+description, base64 data). `"lyrics"` holds the unsynchronised lyrics.
+Ratings are 0 to 100; an empty value clears any field.
+
+**Organise preview.**
+
+```cpp
+#include "organise.h"
+Organiser organiser(library, &job);
+OrganiseOptions options;                         // mask, destination, sanitise, moveCompanions,
+options.mask = "<Album Artist>/<Album>/<Track#:2> <Title>";   // companionExtensions, removeEmptyFolders
+OrganisePlan plan = organiser.plan(ids, options); // plan.error + plan.errorPosition for the mask field
+// Show plan.items: oldPath, newPath, status (move, renamed, unchanged, offline, missing, error), note,
+// and plan.folderCompanions. The user may edit item.newPath before:
+OrganiseResult r = organiser.apply(plan, options);   // r.batch for undo; r.items[i].status moved/failed/skipped
+```
+
+Re-plan as the user types the mask: `plan()` only reads. For live
+feedback on the mask alone, `Mask::parse(text)` gives `error` and
+`position`, and `Mask::evaluate(parsed, Mask::fromTrack(library, id))`
+gives one track's new path cheaply. `Mask::fieldNames()` and
+`Mask::functionNames()` fill a completion list.
+
+**Tag from file names.** `Mask::matchFilename(pattern, path)` gives
+`values` (canonical field to text) or `error` and `position`; turn the
+values into `TagEdit`s with `TagWriteOptions::source = "tag-from-filename"`.
+
+**Files to Edit nodes.**
+
+```cpp
+#include "audit.h"
+for (const Audits::Count &c : Audits::counts(library))   // c.audit.id, title, group, description; c.count
+    ...;                                                  // one tree node per check, grouped by c.audit.group
+Query::Compiled where = Audits::compile(*Audits::audit("unknown-artist"));
+// Use it as the track list uses Query::compile(): where.where, where.params, where.order().
+```
+
+Node keys could be `audit:<id>`. Counts take a few milliseconds each on the
+fixture library; on 200,000 tracks run them on the worker thread.
+
+**Duplicates.**
+
+```cpp
+#include "duplicates.h"
+Fingerprinter(library, &job).run();              // only for By::Fingerprint; needs fpcalc (findProgram())
+Duplicates::Options o; o.by = Duplicates::By::Tags;   // Content, Fingerprint; matchLength, includeMissing
+Duplicates::Report r = Duplicates::find(library, o);  // r.groups[i].tracks (keeper first), keeperId, reason
+```
+
+Show each group with its keeper ticked and the reason beside it; deleting
+is the user's own action.
+
+**Undo and the journal.**
+
+```cpp
+QString last = Journal::lastUndoable(library);   // for Ctrl+Z and an "Undo …" menu entry
+QJsonObject r = undoBatch(library, last, &job);  // tag or organise, chosen from the batch
+QList<Journal::Batch> recent = Journal::batches(library, 50);   // a history list: kind(), tracks, undone()
+QList<Journal::Entry> changes = Journal::entries(library, batch);
+```
+
+**Settings** (in the `settings` table): `tags.write_ratings` (`1` writes
+ratings into files) and `tags.popm_email`.
+
+**Command line.**
+
+```text
+omamp tag <query> --set field=value ... [--set-mask field=<mask>] [--dry-run] [--json]
+omamp tag-from-filename <query> --pattern '<Track#> - <Title>' [--dry-run] [--json]
+omamp organise <query> --mask '<mask>' [--to <folder>] [--keep-folders] --dry-run|--apply [--json]
+omamp undo [batch] [--json]
+omamp journal [batch] [--limit n] [--json]
+omamp audit [check] [--limit n] [--json]
+omamp duplicates [--by tags|content|fingerprint] [--any-length] [--json]
+```

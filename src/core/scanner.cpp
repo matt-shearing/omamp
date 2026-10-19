@@ -591,6 +591,33 @@ struct Scanner::Run {
     QHash<qint64, QString> volumeRoots;
 };
 
+static void tidy(QSqlDatabase db);
+
+bool Scanner::updateTrackRow(Library &library, qint64 trackId, const TrackTags &tags, qint64 size, qint64 mtimeNs,
+                             QString *error) {
+    QSqlQuery q(library.db());
+    q.prepare("SELECT volume_id, rel_path FROM tracks WHERE id = ?");
+    q.addBindValue(trackId);
+    if (!q.exec() || !q.next()) {
+        if (error)
+            *error = QString("Track %1 is not in the library").arg(trackId);
+        return false;
+    }
+    const qint64 volume = q.value(0).toLongLong();
+    const QString rel = q.value(1).toString();
+    q.finish();
+    ReadResult r{{{rel, folderOf(rel), size, mtimeNs}, volume, trackId}, QString(), tags};
+    ScanResult ignored;
+    Writer writer(library.db(), volume);
+    if (!writer.write(r, trackId, false, ignored)) {
+        if (error)
+            *error = writer.lastError;
+        return false;
+    }
+    tidy(library.db());
+    return true;
+}
+
 QStringList Scanner::roots(Library &library) {
     QStringList out;
     for (const LibraryRoot &root : libraryRoots(library))

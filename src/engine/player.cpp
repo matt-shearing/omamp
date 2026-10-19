@@ -715,3 +715,10 @@ void Player::setPreferredEngine(const QString &name) {
     }
     emit playbackSettingsChanged();
 }
+
+QVariantMap Player::trackAt(int row) const {
+    if (row < 0 || row >= m_playlist.count())
+        return {};
+    const Playlist::Track &t = m_playlist.at(row);
+    return {{"path", t.path}, {"title", t.title}, {"artist", t.artist}, {"durationMs", t.durationMs}};
+}

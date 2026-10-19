@@ -8,6 +8,22 @@ import QtQuick.Controls
 FocusScope {
     id: pane
     signal leave() // to the track list
+    // A command on a node, run by the window: new-playlist, new-autoplaylist,
+    // new-folder, rename, delete, move, play, queue, append, export,
+    // edit-autoplaylist, import, save-now-playing, new-collection,
+    // edit-collection, restore-collections. node is {row, kind, id, label}.
+    signal nodeAction(string id, var node)
+    // Party mode: playlists can't be changed.
+    property bool locked: false
+
+    function nodeAt(row) {
+        return { row: row, kind: library.tree.kind(row), key: library.tree.key(row),
+                 id: library.tree.value(row), label: library.tree.data(library.tree.index(row, 0), 257) }
+    }
+    function openMenu(row, item, x, y) {
+        menu.node = nodeAt(row)
+        menu.popup(item, x, y)
+    }
 
     function choose(row) {
         list.currentIndex = row
@@ -83,6 +99,15 @@ FocusScope {
                 library.selectNode(row)
                 pane.leave()
                 break
+            case Qt.Key_Delete: {
+                const k = tree.kind(row)
+                if (k === "playlist" || k === "autoplaylist" || k === "plfolder" || k === "collection")
+                    pane.nodeAction("delete", pane.nodeAt(row))
+                break
+            }
+            case Qt.Key_Menu:
+                pane.openMenu(row, list, list.width / 2, Math.min(list.height - 40, 24 * (row + 1) - list.contentY))
+                break
             default: return
             }
             list.positionViewAtIndex(list.currentIndex, ListView.Contain)
@@ -112,6 +137,29 @@ FocusScope {
             border.color: theme.accent
 
             HoverHandler { id: hover }
+            // Tracks dragged from the list land on a static playlist.
+            readonly property bool dropTarget: (node.kind === "playlist") && !pane.locked
+            required property string kind
+            required property var key
+            DropArea {
+                id: drop
+                anchors.fill: parent
+                keys: ["omamp-tracks"]
+                enabled: node.dropTarget
+                onDropped: (event) => {
+                    const ids = event.source && event.source.trackIds ? event.source.trackIds : []
+                    if (ids.length > 0) library.playlists.addTracks(library.tree.value(node.index), ids)
+                    event.accept()
+                }
+            }
+            Rectangle {
+                anchors.fill: parent
+                visible: drop.containsDrag
+                color: Qt.alpha(theme.accent, 0.25)
+                border.width: 1
+                border.color: theme.accent
+                radius: parent.radius
+            }
             ToolTip.visible: hover.hovered && node.description !== ""
             ToolTip.delay: 700
             ToolTip.text: node.description
@@ -125,8 +173,20 @@ FocusScope {
                 font.pixelSize: 12
                 color: theme.c.muted
             }
+            // Folders, playlists and auto-playlists each have a small mark.
             Text {
-                anchors { left: arrow.right; leftMargin: 2; right: count.left; rightMargin: 6
+                id: mark
+                anchors { left: arrow.right; leftMargin: visible ? 2 : 0; verticalCenter: parent.verticalCenter }
+                visible: node.kind === "plfolder" || node.kind === "playlist" || node.kind === "autoplaylist"
+                width: visible ? 18 : 0
+                text: node.kind === "plfolder" ? String.fromCodePoint(0xF024B)
+                    : node.kind === "autoplaylist" ? String.fromCodePoint(0xF0DF2) : String.fromCodePoint(0xF0CB8)
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 13
+                color: node.kind === "autoplaylist" ? theme.accent : theme.c.muted
+            }
+            Text {
+                anchors { left: mark.right; leftMargin: 2; right: count.left; rightMargin: 6
                           verticalCenter: parent.verticalCenter }
                 elide: Text.ElideRight
                 text: node.label
@@ -145,8 +205,15 @@ FocusScope {
 
             MouseArea {
                 anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onPressed: (mouse) => {
                     pane.forceActiveFocus()
+                    if (mouse.button === Qt.RightButton) {
+                        list.currentIndex = node.index
+                        const p = mapToItem(list, mouse.x, mouse.y)
+                        pane.openMenu(node.index, list, p.x, p.y)
+                        return
+                    }
                     if (node.expandable && mouse.x < arrow.x + arrow.width + 2) {
                         library.tree.toggle(node.index)
                         return
@@ -159,5 +226,71 @@ FocusScope {
                 }
             }
         }
+    }
+
+    // The node's menu: what can be done with a playlist, a folder, a
+    // collection or the groups that hold them.
+    Menu {
+        id: menu
+        property var node: ({})
+        readonly property string kind: node.kind || ""
+        readonly property bool isList: kind === "playlist" || kind === "autoplaylist"
+        readonly property bool isPlaylistNode: isList || kind === "plfolder"
+        readonly property bool inPlaylists: isPlaylistNode || node.key === "playlists"
+        readonly property bool edit: !pane.locked
+
+        MenuItem { text: qsTr("Play"); visible: menu.isList; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("play", menu.node) }
+        MenuItem { text: qsTr("Play next"); visible: menu.isList; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("queue", menu.node) }
+        MenuItem { text: qsTr("Add to Now Playing"); visible: menu.isList; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("append", menu.node) }
+        MenuItem { text: qsTr("Edit auto-playlist…"); visible: menu.kind === "autoplaylist"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("edit-autoplaylist", menu.node) }
+        MenuItem { text: qsTr("Save as a playlist…"); visible: menu.kind === "nowplaying"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("save-now-playing", menu.node) }
+        MenuItem { text: menu.kind === "plfolder" ? qsTr("New playlist in this folder…") : qsTr("New playlist…")
+                   visible: menu.node.key === "playlists" || menu.kind === "plfolder"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("new-playlist", menu.node) }
+        MenuItem { text: menu.kind === "plfolder" ? qsTr("New auto-playlist in this folder…") : qsTr("New auto-playlist…")
+                   visible: menu.node.key === "playlists" || menu.kind === "plfolder"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("new-autoplaylist", menu.node) }
+        MenuItem { text: qsTr("New folder…")
+                   visible: menu.node.key === "playlists" || menu.kind === "plfolder"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("new-folder", menu.node) }
+        MenuItem { text: qsTr("Import playlists…"); visible: menu.node.key === "playlists"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("import", menu.node) }
+        MenuItem { text: qsTr("Save Now Playing as a playlist…"); visible: menu.node.key === "playlists"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("save-now-playing", menu.node) }
+        MenuItem { text: qsTr("Export…"); visible: menu.isList; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("export", menu.node) }
+        MenuItem { text: qsTr("Rename…"); visible: menu.isPlaylistNode; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("rename", menu.node) }
+        Menu {
+            id: moveMenu
+            title: qsTr("Move to folder")
+            enabled: menu.isPlaylistNode && menu.edit
+            Instantiator {
+                model: menu.isPlaylistNode ? library.playlists.folderChoices(menu.node.id || 0) : []
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.name
+                    onTriggered: library.playlists.moveTo(menu.node.id, modelData.id)
+                }
+                onObjectAdded: (index, object) => moveMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => moveMenu.removeItem(object)
+            }
+        }
+        MenuItem { text: qsTr("Delete…"); visible: menu.isPlaylistNode; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("delete", menu.node) }
+        MenuItem { text: qsTr("New collection…"); visible: menu.node.key === "collections"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("new-collection", menu.node) }
+        MenuItem { text: qsTr("Put back Music, Classical, Audiobooks and Podcasts"); visible: menu.node.key === "collections"
+                   height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("restore-collections", menu.node) }
+        MenuItem { text: qsTr("Edit collection…"); visible: menu.kind === "collection"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("edit-collection", menu.node) }
+        MenuItem { text: qsTr("Delete collection…"); visible: menu.kind === "collection"; height: visible ? implicitHeight : 0
+                   enabled: menu.edit; onTriggered: pane.nodeAction("delete", menu.node) }
     }
 }

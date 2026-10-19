@@ -26,6 +26,14 @@
         <file alias="ConfirmSheet.qml">ConfirmSheet.qml</file>
         <file alias="DuplicatesView.qml">DuplicatesView.qml</file>
         <file alias="PrimaryButton.qml">PrimaryButton.qml</file>
+        <file alias="NameSheet.qml">NameSheet.qml</file>
+        <file alias="PlaylistView.qml">PlaylistView.qml</file>
+        <file alias="AutoPlaylistSheet.qml">AutoPlaylistSheet.qml</file>
+        <file alias="CollectionSheet.qml">CollectionSheet.qml</file>
+        <file alias="AutoDjSheet.qml">AutoDjSheet.qml</file>
+        <file alias="PartySheet.qml">PartySheet.qml</file>
+        <file alias="SettingsSheet.qml">SettingsSheet.qml</file>
+        <file alias="PartyDisplay.qml">PartyDisplay.qml</file>
         <file alias="i18n/en.json">i18n/en.json</file>
     </qresource>
 </RCC>

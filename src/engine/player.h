@@ -123,6 +123,8 @@ public:
     Q_INVOKABLE void clear();
     Q_INVOKABLE void openFolder();
     Q_INVOKABLE void dismissError();
+    // One row of Now Playing for QML: {path, title, artist, durationMs}.
+    Q_INVOKABLE QVariantMap trackAt(int row) const;
 
     // From the library window: tracks whose tags are already known.
     // playTracks replaces the list and plays from start ("play now"),

@@ -1,0 +1,46 @@
+{
+  "id": "a1b2c3d4-0002-4000-8000-000000000002",
+  "title": "Night Drive (Deluxe Edition)",
+  "status": "Official",
+  "date": "2017",
+  "country": "US",
+  "barcode": "",
+  "disambiguation": "20th anniversary",
+  "artist-credit": [
+    {"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+  ],
+  "release-group": {
+    "id": "b0000000-0000-4000-8000-0000000000aa",
+    "title": "Night Drive",
+    "primary-type": "Album",
+    "secondary-types": [],
+    "first-release-date": "1996-11-01"
+  },
+  "label-info": [],
+  "genres": [],
+  "media": [
+    {
+      "position": 1,
+      "format": "Digital Media",
+      "title": "",
+      "track-count": 5,
+      "tracks": [
+        {"id": "f1000000-0000-4000-8000-000000000001", "position": 1, "number": "1", "title": "Midnight Highway (Remastered)", "length": 5100,
+         "recording": {"id": "91000000-0000-4000-8000-000000000001", "title": "Midnight Highway (Remastered)", "length": 5100,
+                       "artist-credit": [{"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast"}}]}},
+        {"id": "f1000000-0000-4000-8000-000000000002", "position": 2, "number": "2", "title": "Coastline (Remastered)", "length": 7100,
+         "recording": {"id": "91000000-0000-4000-8000-000000000002", "title": "Coastline (Remastered)", "length": 7100,
+                       "artist-credit": [{"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast"}}]}},
+        {"id": "f1000000-0000-4000-8000-000000000003", "position": 3, "number": "3", "title": "Afterglow (Remastered)", "length": 9100,
+         "recording": {"id": "91000000-0000-4000-8000-000000000003", "title": "Afterglow (Remastered)", "length": 9100,
+                       "artist-credit": [{"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast"}}]}},
+        {"id": "f1000000-0000-4000-8000-000000000004", "position": 4, "number": "4", "title": "Night Drive (Demo)", "length": 240000,
+         "recording": {"id": "91000000-0000-4000-8000-000000000004", "title": "Night Drive (Demo)", "length": 240000,
+                       "artist-credit": [{"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast"}}]}},
+        {"id": "f1000000-0000-4000-8000-000000000005", "position": 5, "number": "5", "title": "Coastline (Live)", "length": 300000,
+         "recording": {"id": "91000000-0000-4000-8000-000000000005", "title": "Coastline (Live)", "length": 300000,
+                       "artist-credit": [{"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast"}}]}}
+      ]
+    }
+  ]
+}

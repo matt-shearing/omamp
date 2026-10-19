@@ -1,0 +1,39 @@
+{
+  "images": [
+    {
+      "approved": true,
+      "back": true,
+      "comment": "",
+      "edit": 2,
+      "front": false,
+      "id": 2002,
+      "image": "{{BASE}}/img/back-original.png",
+      "thumbnails": {
+        "250": "{{BASE}}/img/back-250.png",
+        "500": "{{BASE}}/img/back-500.png",
+        "1200": "{{BASE}}/img/back-1200.png",
+        "large": "{{BASE}}/img/back-500.png",
+        "small": "{{BASE}}/img/back-250.png"
+      },
+      "types": ["Back"]
+    },
+    {
+      "approved": true,
+      "back": false,
+      "comment": "",
+      "edit": 1,
+      "front": true,
+      "id": 1001,
+      "image": "{{BASE}}/img/front-original.png",
+      "thumbnails": {
+        "250": "{{BASE}}/img/front-250.png",
+        "500": "{{BASE}}/img/front-500.png",
+        "1200": "{{BASE}}/img/front-1200.png",
+        "large": "{{BASE}}/img/front-500.png",
+        "small": "{{BASE}}/img/front-250.png"
+      },
+      "types": ["Front"]
+    }
+  ],
+  "release": "https://musicbrainz.org/release/a1b2c3d4-0001-4000-8000-000000000001"
+}

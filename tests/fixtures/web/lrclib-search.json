@@ -1,0 +1,24 @@
+[
+  {
+    "id": 501,
+    "name": "Midnight Highway (Live)",
+    "trackName": "Midnight Highway (Live)",
+    "artistName": "Neon Coast",
+    "albumName": "Live at the Pier",
+    "duration": 410,
+    "instrumental": false,
+    "plainLyrics": "Live words",
+    "syncedLyrics": null
+  },
+  {
+    "id": 502,
+    "name": "Midnight Highway",
+    "trackName": "Midnight Highway",
+    "artistName": "Neon Coast",
+    "albumName": "Night Drive (Deluxe)",
+    "duration": 246,
+    "instrumental": false,
+    "plainLyrics": "Engine hum\nRoad goes on",
+    "syncedLyrics": "[00:10.00]Engine hum\n[00:12.50]Road goes on"
+  }
+]

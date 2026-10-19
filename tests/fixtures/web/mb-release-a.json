@@ -1,0 +1,121 @@
+{
+  "id": "a1b2c3d4-0001-4000-8000-000000000001",
+  "title": "Night Drive",
+  "status": "Official",
+  "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+  "date": "1997-05-12",
+  "country": "GB",
+  "barcode": "5012345678900",
+  "disambiguation": "",
+  "quality": "normal",
+  "packaging": "Jewel Case",
+  "text-representation": {"language": "eng", "script": "Latn"},
+  "artist-credit": [
+    {
+      "name": "Neon Coast",
+      "joinphrase": "",
+      "artist": {
+        "id": "c0000000-0000-4000-8000-0000000000c1",
+        "name": "Neon Coast",
+        "sort-name": "Neon Coast",
+        "disambiguation": "",
+        "type": "Group"
+      }
+    }
+  ],
+  "release-group": {
+    "id": "b0000000-0000-4000-8000-0000000000aa",
+    "title": "Night Drive",
+    "primary-type": "Album",
+    "secondary-types": [],
+    "first-release-date": "1996-11-01",
+    "disambiguation": ""
+  },
+  "label-info": [
+    {
+      "catalog-number": "NC 001",
+      "label": {"id": "d0000000-0000-4000-8000-0000000000d1", "name": "Coastal Records", "sort-name": "Coastal Records"}
+    }
+  ],
+  "genres": [
+    {"id": "e1", "name": "electronic", "count": 2, "disambiguation": ""},
+    {"id": "e2", "name": "synthwave", "count": 5, "disambiguation": ""}
+  ],
+  "media": [
+    {
+      "position": 1,
+      "format": "CD",
+      "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31",
+      "title": "",
+      "track-count": 3,
+      "track-offset": 0,
+      "tracks": [
+        {
+          "id": "f0000000-0000-4000-8000-000000000001",
+          "position": 1,
+          "number": "1",
+          "title": "Midnight Highway",
+          "length": 5000,
+          "artist-credit": [
+            {"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+          ],
+          "recording": {
+            "id": "90000000-0000-4000-8000-000000000001",
+            "title": "Midnight Highway",
+            "length": 5000,
+            "video": false,
+            "disambiguation": "",
+            "isrcs": ["GBNCA9700001"],
+            "artist-credit": [
+              {"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+            ]
+          }
+        },
+        {
+          "id": "f0000000-0000-4000-8000-000000000002",
+          "position": 2,
+          "number": "2",
+          "title": "Coastline",
+          "length": 7000,
+          "artist-credit": [
+            {"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+          ],
+          "recording": {
+            "id": "90000000-0000-4000-8000-000000000002",
+            "title": "Coastline",
+            "length": 7000,
+            "video": false,
+            "disambiguation": "",
+            "isrcs": ["GBNCA9700002"],
+            "artist-credit": [
+              {"name": "Neon Coast", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+            ]
+          }
+        },
+        {
+          "id": "f0000000-0000-4000-8000-000000000003",
+          "position": 3,
+          "number": "3",
+          "title": "Afterglow",
+          "length": 9000,
+          "artist-credit": [
+            {"name": "Neon Coast", "joinphrase": " feat. ", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}},
+            {"name": "Lia", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c2", "name": "Lia", "sort-name": "Lia"}}
+          ],
+          "recording": {
+            "id": "90000000-0000-4000-8000-000000000003",
+            "title": "Afterglow",
+            "length": 9000,
+            "video": false,
+            "disambiguation": "",
+            "isrcs": [],
+            "artist-credit": [
+              {"name": "Neon Coast", "joinphrase": " feat. ", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}},
+              {"name": "Lia", "joinphrase": "", "artist": {"id": "c0000000-0000-4000-8000-0000000000c2", "name": "Lia", "sort-name": "Lia"}}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

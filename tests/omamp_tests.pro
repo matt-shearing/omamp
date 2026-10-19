@@ -13,11 +13,11 @@ DEFINES += OMAMP_TESTS_DIR=\\\"$$PWD\\\"
 # Where the QML lives, so the palette test can load CommandPalette.qml.
 DEFINES += OMAMP_APP_DIR=\\\"$$PWD/../src/app\\\"
 
-HEADERS += ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h fixture_library.h \
+HEADERS += mockhttp.h ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h fixture_library.h \
            ../src/app/librarycontroller.h ../src/app/librarytree.h ../src/app/tracklistmodel.h \
            ../src/app/columnbrowser.h ../src/app/albumgridmodel.h
 SOURCES += main.cpp omamp_tests.cpp library_tests.cpp query_tests.cpp palette_tests.cpp watcher_tests.cpp \
-           librarywindow_tests.cpp mask_tests.cpp tidy_tests.cpp playlist_tests.cpp engine_tests.cpp \
+           librarywindow_tests.cpp mask_tests.cpp tidy_tests.cpp playlist_tests.cpp engine_tests.cpp web_tests.cpp \
            ../src/app/artprovider.cpp \
            ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp \
            ../src/app/librarycontroller.cpp ../src/app/librarytree.cpp ../src/app/tracklistmodel.cpp \

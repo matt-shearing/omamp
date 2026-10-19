@@ -1,0 +1,23 @@
+{
+  "scrobbles": {
+    "@attr": {"accepted": 2, "ignored": 0},
+    "scrobble": [
+      {
+        "artist": {"corrected": "0", "#text": "Neon Coast"},
+        "album": {"corrected": "0", "#text": "Night Drive"},
+        "track": {"corrected": "0", "#text": "Midnight Highway"},
+        "ignoredMessage": {"code": "0", "#text": ""},
+        "albumArtist": {"corrected": "0", "#text": "Neon Coast"},
+        "timestamp": "1792494000"
+      },
+      {
+        "artist": {"corrected": "0", "#text": "Neon Coast"},
+        "album": {"corrected": "0", "#text": "Night Drive"},
+        "track": {"corrected": "0", "#text": "Coastline"},
+        "ignoredMessage": {"code": "0", "#text": ""},
+        "albumArtist": {"corrected": "0", "#text": "Neon Coast"},
+        "timestamp": "1792494300"
+      }
+    ]
+  }
+}

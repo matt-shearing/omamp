@@ -1,0 +1,35 @@
+{
+  "created": "2026-10-20T12:00:00.000Z",
+  "count": 1,
+  "offset": 0,
+  "recordings": [
+    {
+      "id": "90000000-0000-4000-8000-000000000002",
+      "score": 100,
+      "title": "Coastline",
+      "length": 7000,
+      "video": null,
+      "artist-credit": [
+        {"name": "Neon Coast", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+      ],
+      "first-release-date": "1996-11-01",
+      "releases": [
+        {
+          "id": "a1b2c3d4-0001-4000-8000-000000000001",
+          "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+          "count": 1,
+          "title": "Night Drive",
+          "status": "Official",
+          "release-group": {"id": "b0000000-0000-4000-8000-0000000000aa", "title": "Night Drive", "primary-type": "Album"},
+          "date": "1997-05-12",
+          "country": "GB",
+          "track-count": 3,
+          "media": [
+            {"position": 1, "format": "CD", "track": [{"id": "f0000000-0000-4000-8000-000000000002", "number": "2", "title": "Coastline", "length": 7000}], "track-count": 3, "track-offset": 1}
+          ]
+        }
+      ],
+      "isrcs": ["GBNCA9700002"]
+    }
+  ]
+}

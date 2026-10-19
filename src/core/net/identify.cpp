@@ -8,6 +8,7 @@
 #include "textmatch.h"
 
 #include <QDir>
+#include <cmath>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QSaveFile>
@@ -306,7 +307,11 @@ Candidate Identifier::score(const Cluster &cluster, const MusicBrainz::Release &
     const double trackScore = files ? trackTotal / files : 0;
     double countScore = 0;
     if (files && tracks)
-        countScore = files == tracks ? 1.0 : files < tracks ? double(files) / tracks : 0.5 * tracks / files;
+        // A partial album is plausible but costs more than a full match
+        // gains; extra files cost twice as much.
+        countScore = files == tracks ? 1.0
+                     : files < tracks ? std::pow(double(files) / tracks, 2)
+                                      : 0.5 * tracks / files;
     const double albumScore = cluster.album.isEmpty() ? 0.5 : TextMatch::similarity(cluster.album, release.title);
     const double artistScore =
         cluster.artist.isEmpty() ? 0.5 : TextMatch::similarity(cluster.artist, MusicBrainz::creditText(release.credits));

@@ -244,14 +244,18 @@ AlbumResult fetchForAlbum(Library &library, Net::HttpClient &http, qint64 albumI
             result.error = error;
             return result;
         }
+        // The closest titles first: "Night Drive" before "Night Drive
+        // (Deluxe Edition)", whatever the search's own order.
+        QList<QPair<double, const MusicBrainz::Release *>> close;
         for (const MusicBrainz::Release &r : found) {
             const double title = TextMatch::similarity(r.title, result.album);
             const double artist = TextMatch::similarity(MusicBrainz::creditText(r.credits), result.artist);
             if (r.searchScore >= 80 && title >= 0.85 && (result.artist.isEmpty() || artist >= 0.7))
-                tries.append({r.id, r.releaseGroupId});
-            if (tries.size() >= 3)
-                break;
+                close.append({title + r.searchScore / 1000.0, &r});
         }
+        std::stable_sort(close.begin(), close.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+        for (int i = 0; i < close.size() && i < 3; ++i)
+            tries.append({close[i].second->id, close[i].second->releaseGroupId});
     }
     if (tries.isEmpty()) {
         result.status = "no-match";

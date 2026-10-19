@@ -17,6 +17,7 @@
 #include "mmimport.h"
 #include "playlists.h"
 #include "stats.h"
+#include "webcli.h"
 
 #include <QDateTime>
 
@@ -99,7 +100,10 @@ Options:
   --set f=v      tag: set a field (repeat it); fields: title, artist, albumartist, album,
                  genre, composer, year, originalyear, track, tracktotal, disc, disctotal,
                  comment, bpm, compilation, lyrics, rating (stars), artwork (an image
-                 file), custom1..custom5. An empty value clears the field.
+                 file), custom1..custom5, isrc, label, catalognumber, releasecountry,
+                 mbrecordingid, mbreleasetrackid, mbreleaseid, mbartistid, mbalbumartistid,
+                 mbreleasegroupid, lrcfile (the .lrc beside the track). An empty value
+                 clears the field.
   --set-mask f=m tag: set a field from a mask, per track: --set-mask 'album=<Folder:1>'
   --apply        organise: move the files
   --mask <mask>  organise: where files go (see docs/masks.md)
@@ -1558,11 +1562,14 @@ int importCommand(Library &library, const Options &o, QTextStream &out, QTextStr
 
 } // namespace
 
-bool isCommand(const QString &first) { return commands.contains(first); }
+bool isCommand(const QString &first) { return commands.contains(first) || WebCli::isCommand(first); }
 
 int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver) {
     Options o;
     const QString command = arguments.value(0);
+    // The web commands (Phase 4) parse their own options.
+    if (WebCli::isCommand(command))
+        return WebCli::run(arguments, out, err, resolver);
     for (int i = 1; i < arguments.size(); ++i) {
         const QString &a = arguments[i];
         auto value = [&](QString *target) {
@@ -1672,7 +1679,11 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
     }
 
     if (command == "help" || command == "--help" || command == "-h") {
-        out << usage << Qt::flush;
+        // The web commands' lines go after the others, before the options.
+        QString text = QString::fromUtf8(usage);
+        const int options = text.indexOf("\nOptions:");
+        text.insert(options, QString::fromUtf8(WebCli::usage));
+        out << text << Qt::flush;
         return 0;
     }
     if (command == "version" || command == "--version") {

@@ -1,0 +1,41 @@
+{
+  "created": "2026-10-20T12:00:00.000Z",
+  "count": 2,
+  "offset": 0,
+  "releases": [
+    {
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "score": 100,
+      "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+      "count": 1,
+      "title": "Night Drive (Deluxe Edition)",
+      "status": "Official",
+      "artist-credit": [
+        {"name": "Neon Coast", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+      ],
+      "release-group": {"id": "b0000000-0000-4000-8000-0000000000aa", "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc", "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc", "title": "Night Drive", "primary-type": "Album"},
+      "date": "2017",
+      "country": "US",
+      "release-events": [{"date": "2017", "area": {"id": "489ce91b-6658-3307-9877-795b68554c98", "name": "United States", "iso-3166-1-codes": ["US"]}}],
+      "track-count": 5,
+      "media": [{"format": "Digital Media", "disc-count": 0, "track-count": 5}]
+    },
+    {
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "score": 98,
+      "count": 1,
+      "title": "Night Drive",
+      "status": "Official",
+      "artist-credit": [
+        {"name": "Neon Coast", "artist": {"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast", "sort-name": "Neon Coast"}}
+      ],
+      "release-group": {"id": "b0000000-0000-4000-8000-0000000000aa", "title": "Night Drive", "primary-type": "Album"},
+      "date": "1997-05-12",
+      "country": "GB",
+      "barcode": "5012345678900",
+      "label-info": [{"catalog-number": "NC 001", "label": {"id": "d0000000-0000-4000-8000-0000000000d1", "name": "Coastal Records"}}],
+      "track-count": 3,
+      "media": [{"format": "CD", "disc-count": 1, "track-count": 3}]
+    }
+  ]
+}

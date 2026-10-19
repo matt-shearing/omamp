@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "results": [
+    {
+      "id": "acou0000-0000-4000-8000-000000000001",
+      "score": 0.97,
+      "recordings": [
+        {
+          "id": "90000000-0000-4000-8000-000000000001",
+          "title": "Midnight Highway",
+          "duration": 5,
+          "artists": [{"id": "c0000000-0000-4000-8000-0000000000c1", "name": "Neon Coast"}],
+          "releases": [{"id": "a1b2c3d4-0001-4000-8000-000000000001"}],
+          "releasegroups": [{"id": "b0000000-0000-4000-8000-0000000000aa"}]
+        }
+      ]
+    },
+    {
+      "id": "acou0000-0000-4000-8000-000000000002",
+      "score": 0.31,
+      "recordings": [
+        {
+          "id": "99999999-0000-4000-8000-000000000009",
+          "title": "Something Else",
+          "duration": 200,
+          "artists": [{"id": "c9", "name": "Someone Else"}],
+          "releases": [{"id": "a1b2c3d4-0009-4000-8000-000000000009"}]
+        }
+      ]
+    }
+  ]
+}

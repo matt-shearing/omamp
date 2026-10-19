@@ -1,6 +1,14 @@
 #include "librarycontroller.h"
 
+#include "organise.h"
+#include "organisemodel.h"
+#include "tageditor.h"
+#include "tagfromname.h"
+#include "tagwriter.h"
+
 #include "artwork.h"
+#include "audit.h"
+#include "duplicatesmodel.h"
 #include "job.h"
 #include "library.h"
 #include "player.h"
@@ -9,8 +17,13 @@
 #include "volumes.h"
 #include "watcher.h"
 
+#include <QDateTime>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QLocale>
+#include <QSet>
+#include <QSqlError>
 #include <QProcess>
 #include <QSqlQuery>
 
@@ -41,6 +54,19 @@ LibraryController::LibraryController(const QString &databasePath, QObject *paren
         if (m_albumGrid.active())
             prefetchArtwork();
     });
+    connect(&m_tree, &LibraryTree::auditCountsWanted, this, &LibraryController::countAudits);
+    m_trash = [](const QString &path, QString *error) {
+        QFile file(path);
+        if (file.moveToTrash())
+            return true;
+        if (error)
+            *error = file.errorString();
+        return false;
+    };
+    m_tagEditor = new TagEditor(this, this);
+    m_organiser = new OrganiseModel(this, this);
+    m_tagFromName = new TagFromNameModel(this, this);
+    m_duplicates = new DuplicatesModel(this, this);
 }
 
 LibraryController::~LibraryController() {
@@ -50,6 +76,10 @@ LibraryController::~LibraryController() {
         delete m_prefetch;
     }
     m_palette.setLibrary(nullptr);
+    if (m_auditThread) {
+        m_auditThread->wait();
+        delete m_auditThread;
+    }
     if (m_scanThread) {
         if (m_job)
             m_job->cancel();
@@ -90,6 +120,7 @@ bool LibraryController::activate() {
     selectNode(0);
     updatePlayingTrack();
     startWatcher();
+    refreshUndo();
     emit readyChanged();
     return true;
 }
@@ -151,41 +182,61 @@ void LibraryController::startScan(const QStringList &folders) {
         setMessage(tr("A scan is already running"));
         return;
     }
-    m_job = new Job("scan", this);
-    connect(m_job, &Job::progressChanged, this, [this](const QString &phase, qint64 done, qint64 total) {
+    const QString text = folders.isEmpty() ? tr("Rescanning the library") : tr("Adding %1").arg(folders.join(", "));
+    runJob("scan", text,
+           [folders](Library &library, Job *job) {
+               Scanner scanner(library, VolumeResolver(), job);
+               const ScanResult result = folders.isEmpty() ? scanner.rescanAll() : scanner.scan(folders);
+               return result.toJson();
+           },
+           [this](const QJsonObject &result) { onScanFinished(result); });
+}
+
+bool LibraryController::runJob(const QString &kind, const QString &text, JobWork work, JobDone done) {
+    if (!activate())
+        return false;
+    if (m_scanThread) {
+        setMessage(m_jobKind == "scan" ? tr("Wait for the scan to finish") : tr("Wait for the running job to finish"));
+        return false;
+    }
+    m_job = new Job(kind, this);
+    m_jobKind = kind;
+    m_jobDone = std::move(done);
+    connect(m_job, &Job::progressChanged, this, [this, text](const QString &phase, qint64 doneCount, qint64 total) {
         const QLocale locale;
+        const QString what = phase.isEmpty() ? text : phase;
         if (total > 0)
-            m_jobText = tr("%1: %2 of %3").arg(phase, locale.toString(done), locale.toString(total));
+            m_jobText = tr("%1: %2 of %3").arg(what, locale.toString(doneCount), locale.toString(total));
+        else if (doneCount > 0)
+            m_jobText = tr("%1: %2 files").arg(what, locale.toString(doneCount));
         else
-            m_jobText = tr("%1: %2 files").arg(phase, locale.toString(done));
-        m_jobProgress = total > 0 ? double(done) / total : -1;
+            m_jobText = what;
+        m_jobProgress = total > 0 ? double(doneCount) / total : -1;
         emit jobChanged();
     });
-    m_jobText = folders.isEmpty() ? tr("Rescanning the library") : tr("Adding %1").arg(folders.join(", "));
+    m_jobText = text;
     m_jobProgress = -1;
 
     const QString path = m_path;
     Job *job = m_job;
-    m_scanThread = QThread::create([this, path, folders, job] {
-        // Its own connection, on this thread, for the whole scan.
+    m_scanThread = QThread::create([this, path, job, work = std::move(work)] {
+        // Its own connection, on this thread, for the whole job.
         Library library(path);
         QString why;
         QJsonObject json;
-        if (!library.open(&why)) {
+        if (!library.open(&why))
             json = QJsonObject{{"ok", false}, {"error", why}};
-        } else {
-            Scanner scanner(library, VolumeResolver(), job);
-            const ScanResult result = folders.isEmpty() ? scanner.rescanAll() : scanner.scan(folders);
-            json = result.toJson();
-        }
-        QMetaObject::invokeMethod(this, [this, json] { onScanFinished(json); }, Qt::QueuedConnection);
+        else
+            json = work(library, job);
+        QMetaObject::invokeMethod(this, [this, json] { finishJob(json); }, Qt::QueuedConnection);
     });
-    m_scanThread->setObjectName("omamp-scan");
+    m_scanThread->setObjectName("omamp-" + kind);
     m_scanThread->start(QThread::LowPriority);
     emit jobChanged();
+    return true;
 }
 
-void LibraryController::onScanFinished(const QJsonObject &result) {
+void LibraryController::finishJob(const QJsonObject &result) {
     if (m_scanThread) {
         m_scanThread->wait();
         delete m_scanThread;
@@ -195,10 +246,19 @@ void LibraryController::onScanFinished(const QJsonObject &result) {
         m_job->deleteLater();
         m_job = nullptr;
     }
+    const QString kind = m_jobKind;
+    m_jobKind.clear();
     m_jobText.clear();
     m_jobProgress = -1;
     emit jobChanged();
+    JobDone done = std::move(m_jobDone);
+    m_jobDone = nullptr;
+    if (done)
+        done(result);
+    emit jobFinished(kind, result);
+}
 
+void LibraryController::onScanFinished(const QJsonObject &result) {
     const QLocale locale;
     if (!result.value("ok").toBool(true)) {
         setMessage(tr("Scan failed: %1").arg(result.value("error").toString()));
@@ -341,6 +401,7 @@ void LibraryController::refreshAll() {
     m_albumGrid.refresh();
     m_palette.refresh();
     updatePlayingTrack();
+    refreshUndo();
     ++m_revision;
     emit revisionChanged();
 }

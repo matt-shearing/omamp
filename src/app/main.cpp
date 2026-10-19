@@ -17,8 +17,10 @@
 #include "devhooks.h"
 #include "librarycontroller.h"
 #include "mpris.h"
+#include "organisemodel.h"
 #include "player.h"
 #include "portal.h"
+#include "tageditor.h"
 #include "theme.h"
 #include "translator.h"
 
@@ -82,6 +84,10 @@ int main(int argc, char *argv[]) {
     FolderPicker libraryPicker;
     library.setPlayer(&player);
     library.setPicker(&libraryPicker);
+    // The tag editor's picture and organise's destination each get their own.
+    FolderPicker artworkPicker, destinationPicker;
+    library.tagEditor()->setPicker(&artworkPicker);
+    library.organiser()->setPicker(&destinationPicker);
     // The track list marks the track that is playing.
     auto markPlaying = [&] {
         const int row = player.currentIndex();

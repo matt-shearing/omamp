@@ -30,12 +30,13 @@ public:
         DimRole,        // offline volume and everything under it
         KindRole,
         KeyRole,
+        DescriptionRole, // a sentence for a tooltip (Files to Edit), or empty
     };
 
     struct Node {
         QString key;   // unique and stable across reloads: "artist:12", "folder:3:Rock/Album"
         QString kind;  // entire, group, collection, artist, albumartist, album, letter, genre, decade,
-                       // year, rating, composer, volume, folder, nowplaying, playlist
+                       // year, rating, composer, volume, folder, nowplaying, playlist, audit, duplicates
         QString label;
         int depth = 0;
         bool expandable = false, expanded = false, dim = false;
@@ -43,6 +44,7 @@ public:
         QString where = "1"; // the scope
         QVariantList params;
         QVariant value;      // what the children loader needs (an id, a name, a path)
+        QString description;
     };
 
     explicit LibraryTree(QObject *parent = nullptr);
@@ -76,8 +78,17 @@ public:
     // Reads the tree again after a scan, keeping what was open.
     Q_INVOKABLE void reload();
 
+    // Files to Edit: how many tracks each check finds, by audit id. The
+    // counts are made on a worker thread (they scan the library), so the
+    // nodes show without a number until they arrive.
+    void setAuditCounts(const QHash<QString, qint64> &counts);
+    bool hasAuditCounts() const { return !m_auditCounts.isEmpty(); }
+    bool filesToEditOpen() const;
+
 signals:
     void countChanged();
+    // Files to Edit opened (or reloaded while open): its counts are wanted.
+    void auditCountsWanted();
 
 private:
     QVector<Node> topLevel() const;
@@ -88,4 +99,5 @@ private:
 
     QSqlDatabase m_db;
     QVector<Node> m_nodes;
+    QHash<QString, qint64> m_auditCounts;
 };

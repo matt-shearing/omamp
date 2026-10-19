@@ -3329,3 +3329,230 @@ and 672). After it, with `QT_QPA_PLATFORM=offscreen`,
   9/9, TidyWindowKeysTests 5/5, OwnWritesTests 6/6 each time).
 - The full suite, twice: every class passed both times. The only skips are
   the opt-in ones (four engine CPU benchmarks, the live web smoke test).
+
+## Phase 5 engine: streaming (20 October 2026)
+
+The player can now play tracks mirrored from a Navidrome (Subsonic) server,
+on both engines. The play queue holds the track's library reference,
+`subsonic://<source>/<song>`; the Player asks a resolver for the signed
+stream URL when it loads or queues the track, hands the URL to the engine,
+and keeps it nowhere else. The native engine also gained what Phase 3 left
+out: device latency in the position, following the default output, and
+crossfades on manual skips. All tests pass except the known-flaky
+`TidyWindowKeysTests::editTagsFromTheKeyboardAndUndo` (see Results).
+Nothing has been heard and no real server was contacted.
+
+### Design
+
+```text
+queue entry (path, trackId) ──Player::urlFor──> Resolver ──> QUrl with t=/s= (memory only)
+        │                                                       │
+        └── engine.load(path, url) / queueNext / skipTo ────────┘
+            the engine opens url, reports and keeps path
+```
+
+- **Resolver** (`Player::Resolver`, `std::function<QUrl(path, trackId,
+  QString *error)>`). The Player calls it only for paths with a scheme
+  (`Playlist::isReference`); local files are unchanged. Without a resolver,
+  http(s) entries play as they are and other references fail with a message.
+  `src/app/streamresolver.{h,cpp}` is the app's resolver: its own `Library`
+  connection (opened only when the library file exists, like the play
+  recorder), `Stats::trackIdForPath` when the queue has no track id, then
+  `Library::playableUrl`. It keeps resolved URLs in memory for ten minutes,
+  because building one reads the keyring (`secret-tool`). The Player also
+  reuses the queued row's URL while that row stays queued.
+- **main.cpp**: one change. A `StreamResolver` is made before the Player and
+  passed to the new `Player(statePath, resolver)` constructor, so a stream
+  restored from the saved queue resolves on the first load.
+- **No token anywhere it could stay.** `Playlist::Track` gained `trackId`.
+  The saved state writes a reference as `{path, title, artist, durationMs,
+  trackId}` (local files stay plain strings, so old files read as before)
+  and never writes the URL; an entry whose path would need redacting is not
+  saved or restored. `AudioEngine::redact()` blanks `t`, `s`, `p`,
+  `apiKey`, `token` and similar query values and `user:password@` in every
+  error the engines or the Player show. `trackFailed`, `source()`, markers
+  and `trackAt()` carry the path. With `OMAMP_FFMPEG_LOG` set, FFmpeg's log
+  goes through `redact()` too.
+- **Engine interface**: `load(path, url = {})`, `queueNext(path, url = {})`,
+  `skipTo(path, url = {})`, `buffering()` and `bufferingChanged()`.
+- **Qt engine**: plays the URL (`QUrl`, not `fromLocalFile`), reports the
+  path, treats `LoadingMedia` and `StalledMedia` while playing as
+  buffering, and redacts Qt's error text.
+- **Decoder over the network** (`streaming.{h,cpp}` holds the options):
+  - `rw_timeout` and `timeout` 15 s; `reconnect=1`,
+    `reconnect_on_network_error=1`, `reconnect_delay_max=4`,
+    `reconnect_delay_total_max=12`; `user_agent` `Omamp/<version>`.
+  - `reconnect_streamed=0`, deliberately. On a server that ignores ranges,
+    FFmpeg's reconnect asks for the rest with a Range header, gets the whole
+    file back, and plays it as the continuation. A test caught it. Such a
+    stream now fails and the Player moves on.
+  - Read-ahead: the URL is opened through FFmpeg's `async:` protocol, a
+    4 MB buffer filled on FFmpeg's own thread, so a network stall is absorbed
+    there rather than in the half-second ring.
+  - An interrupt callback on every decoder. On the worker's thread a pending
+    jump (load, seek, stop, skip) abandons a network wait at once; a
+    background open gives up when it is dequeued; closing the engine stops
+    them all. So a skip away from a hung server, or quitting, never waits
+    out the timeout.
+  - A stream that broke off is told from a clean end by its length: the
+    server's `Content-Length` against the bytes read, else the audio's
+    duration against what was decoded; knowing neither, only a real error
+    counts. (FFmpeg reports the clean end of a chunked answer as an I/O
+    error, and an early close as the end.) A broken stream gives
+    `trackFailed` with the reason where its audio stops; the Player shows
+    "Can't play Artist - Title: reason" and skips on.
+  - Seeking uses byte ranges where the server serves them. Where it doesn't,
+    the decoder reads on to a later point, or opens the stream again and
+    reads up to an earlier one, still sample-exact.
+- **Buffering**: the native engine reports buffering when it is playing and
+  the sink has taken nothing for 250 ms with the ring empty (a stream
+  connecting or stalling). The sink pads with silence and the position
+  holds. `Player::buffering` and `Player::statusText` ("Buffering…") carry
+  it to QML. The window doesn't show it yet.
+- **Gapless and crossfade into streams**: the next track still opens on its
+  own thread, so local to remote and remote to remote join sample for
+  sample, and crossfades work as before when the stream gives a duration.
+  `Worker::seek` no longer waits for the next track's open.
+- **Device latency**: `PcmSink::queuedFrames()` is the audio taken but not
+  yet heard. `DeviceSink` estimates it as frames pulled since the stream
+  started less `QAudioSink::processedUSecs()`, clamped to half a second.
+  The position subtracts it, and markers (track changes, failures, end of
+  queue) fire when their frame is heard. After a seek the clock holds at the
+  target until the new audio reaches the speakers.
+- **Following the default output**: `DeviceSink` listens to
+  `QMediaDevices::audioOutputsChanged` and, when the default device's id
+  changes while a stream is open, opens a new `QAudioSink` on it at the same
+  rate, carrying on from the same reader. The up to 100 ms in the old
+  device's buffer is lost. If the new device won't open, the sink stops.
+- **Crossfade on manual skips**: with crossfade on and the player playing,
+  next, previous and picking a track call `skipTo`. The engine restarts the
+  heard track from where the device has got to, opens the new one in the
+  background (waiting up to 100 ms, enough for a local file), and fades
+  between them with the usual equal-power curves over the crossfade length
+  (at most half the new track). A stream that takes longer to open fades in
+  when it arrives, with the old track playing on. With crossfade off a skip
+  cuts over with the 5 ms fades, as before.
+- **A crossfade bug fixed**: the Player requeues when the next track starts,
+  which is during a crossfade, and the worker ignored queue commands during
+  a fade, so a third track never played. The queue is now deferred to the
+  end of the fade.
+
+### Tests without sound or servers
+
+`tests/streaming_tests.cpp` (`OMAMP_TESTS=streaming`), 27 tests.
+`tests/audiohttp.h` is an HTTP/1.1 server on 127.0.0.1, one blocking thread
+per connection, serving the engine fixtures at `/stream/<name>` with or
+without byte ranges, in pieces with delays, chunked, after a delay, as 404,
+or breaking off after N bytes (once or every time). It records each request.
+The tests shorten the timeouts (`rw_timeout` 3 s, reconnect to 1 s) through
+`Streaming::setOptions`. Every engine runs into a `BufferSink`, and
+`OMAMP_NO_AUDIO_DEVICE=1` still makes a device sink abort.
+
+| Test | What it shows |
+|---|---|
+| Redaction | `t`, `s`, `p`, `apiKey` and `user:password@` blanked; `id`, `u`, `f` and local paths untouched |
+| Open a stream | Sample-identical to the file; `User-Agent: Omamp/…` sent; seekable with ranges |
+| Server errors | 404 and a refused connection give a message without the token |
+| Seek with ranges | Exact samples at 1500, 500, 2000, 0 and 2999 ms in the sawtooth |
+| Seek without ranges | Exact samples forwards and backwards (read on, or reopen) |
+| Slow, chunked, with and without read-ahead | Sample-identical, no error at the chunked end |
+| Disconnect with ranges | Resumed with a Range request; sample-identical |
+| Disconnect without ranges | Ends within seconds and reports "the stream broke off" |
+| Gapless local → remote, remote → remote | 288,000 frames; largest difference from the uncut original below 1e-4 |
+| Engine seek in a stream | Exact samples after the seek; position right |
+| Player through the resolver | Two streams play gaplessly; resolver called with path and track id; saved state has the references and no token, URL or salt; restored with tags |
+| Player skips failures | 404, unresolvable ("no longer in the library") and broken-off streams each skipped with "Can't play Artist - Title[: reason]", never the token |
+| Buffering | A server answering after 1.2 s: buffering on while it waits, "Buffering…", position held at 0, then off and playing |
+| Skip away from a hung server | The next track plays within 3 s while the server would hang for 20 s; closing doesn't wait |
+| Qt engine | Plays a stream, advances to a queued stream, reports the path, fails a 404 without the token |
+| Device latency | Estimate math; with 100 ms in a fake device the position is 100 ms behind, the track change waits until heard, and the clock holds after a seek |
+| Skip with crossfade 1 s | Mid-fade both tones at 0.35 (cos 45°); after it only the new one; no jump where the old track restarts |
+| Skip without crossfade | A cut within a few milliseconds |
+| Three tracks with crossfade | The third plays (the bug above) |
+| Player skip with crossfade | Stays playing; the new play is counted |
+
+### Results
+
+`bin/test` with JOBS=4:
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped   player
+Totals: 16 passed, 0 failed, 0 skipped   library
+Totals: 24 passed, 0 failed, 0 skipped   query
+Totals:  8 passed, 0 failed, 0 skipped   palette
+Totals: 16 passed, 0 failed, 0 skipped   watcher
+Totals: 17 passed, 0 failed, 0 skipped   window
+Totals:  3 passed, 0 failed, 0 skipped   advanced window
+Totals:  4 passed, 0 failed, 0 skipped   advanced parts
+Totals: 22 passed, 0 failed, 0 skipped   mask
+Totals: 21 passed, 0 failed, 0 skipped   tidy
+Totals: 22 passed, 0 failed, 0 skipped   playlists
+Totals: 36 passed, 0 failed, 4 skipped   engine
+Totals: 25 passed, 0 failed, 1 skipped   web
+Totals:  9 passed, 0 failed, 0 skipped   tidy window
+Totals:  3 passed, 1 failed, 0 skipped   tidy window keys (editTagsFromTheKeyboardAndUndo)
+Totals: 19 passed, 0 failed, 0 skipped   nas
+Totals:  9 passed, 0 failed, 0 skipped   subsonic
+Totals: 10 passed, 0 failed, 0 skipped   p3 window
+Totals:  7 passed, 0 failed, 0 skipped   p3 window keys
+Totals: 27 passed, 0 failed, 0 skipped   streaming
+```
+
+The one failure is `TidyWindowKeysTests::editTagsFromTheKeyboardAndUndo`,
+known to be flaky on main and being fixed separately. Run alone twice, it
+passed once and failed once (a tag write that doesn't finish in 30 s); it
+touches no playback code. The streaming, engine and player classes passed
+three runs in a row.
+
+### Decisions
+
+- **The queue keeps references, the engine gets URLs.** A stream URL is
+  made when needed and dropped with the track; it never reaches the saved
+  state, a playlist, the window or a log.
+- **`reconnect_streamed` off**: resuming a stream without ranges plays the
+  wrong audio, so it fails instead.
+- **Read-ahead with `async:`** rather than a thread of our own: FFmpeg's
+  wrapper keeps seeking and the interrupt callback working.
+- **A broken stream is a failure, not an end**: the Player says why and
+  moves on, as for a broken file.
+- **A skip's crossfade uses the crossfade setting**; same-album skips fade
+  too, since the listener asked for the change. Automatic transitions keep
+  the same-album rule.
+- **Latency from `processedUSecs`**, not `bytesFree`, since in pull mode
+  the device buffer's free space doesn't say what has been heard. If a
+  backend reports processed time as pulled time, the estimate is zero and
+  nothing changes.
+- **A new default output keeps the engine's rate**; PipeWire resamples.
+
+### The native engine as the default
+
+Recommendation: **make the native engine the default once someone has
+listened to it for a day** on Matt's desktop: local FLAC and MP3, a
+Navidrome stream, a headphone plug and unplug, pause, seek and a skip with
+crossfade on. It now has everything the Qt engine has plus gapless playback,
+crossfade, ReplayGain, the equaliser, skip on failure, streaming with
+buffering and clean error handling, latency-corrected position and
+following the default device. The Qt engine stays as the fallback
+(`OMAMP_ENGINE=qt`). What still argues for waiting is only that no note has
+gone through `DeviceSink` on real hardware.
+
+### Known gaps
+
+- **Nobody has listened to it**, and no real Navidrome was used. The latency
+  estimate and the device switch rely on `QAudioSink` on PipeWire behaving
+  as documented; neither is covered by a test.
+- **The window doesn't show "Buffering…"** yet: `Player::statusText` is
+  ready for the deck.
+- **Plays and ratings aren't sent to Subsonic** (`RemoteSources::scrobble`,
+  `setRating`); the play recorder counts them locally only.
+- **The library controller sets no `trackId`** on queued tracks, so the
+  resolver looks the id up by path (one indexed query). That file belongs
+  to the window work.
+- **Transcoded streams** (no length, no ranges) seek by reading on or
+  reopening, and crossfade only if their tail arrives in time, as for any
+  file without a duration.
+- **A server that hangs on the next track** delays the join: when the
+  current track ends the worker waits for the open (up to the 15 s
+  timeout), playing silence and showing "Buffering…".
+- **`StreamResolver`'s Subsonic path** is tested only through the core
+  tests of `playableUrl`; the streaming tests use a resolver of their own.

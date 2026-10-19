@@ -5,9 +5,12 @@
 #include <QString>
 #include <QTimer>
 #include <QVector>
+#include <atomic>
 #include <memory>
 
+class QAudioDevice;
 class QAudioSink;
+class QMediaDevices;
 
 // Where the native engine's audio goes. The engine hands the sink a reader;
 // the sink pulls interleaved float stereo from it at its own pace.
@@ -34,12 +37,23 @@ public:
     virtual void suspend() = 0;
     virtual void resume() = 0;
     virtual void stop() = 0;
+    // Frames already taken from the reader but not yet heard: the audio
+    // waiting in the device's buffer. The engine takes them off its
+    // position, so the clock and track changes follow the speakers.
+    virtual qint64 queuedFrames() const { return 0; }
 };
 
 // The sound card through QAudioSink (PipeWire on Omarchy), in pull mode.
 // Refuses to start when OMAMP_NO_AUDIO_DEVICE is set, so a test can never
 // make a sound by mistake.
-class DeviceSink : public PcmSink {
+//
+// It follows the default output: when the desktop's default device changes
+// (headphones plugged in, a Bluetooth speaker connecting or leaving), the
+// stream is opened again on the new default, at the same rate, and carries
+// on from the same reader.
+class DeviceSink : public QObject, public PcmSink {
+    Q_OBJECT
+
 public:
     DeviceSink();
     ~DeviceSink() override;
@@ -50,13 +64,50 @@ public:
     void suspend() override;
     void resume() override;
     void stop() override;
+    qint64 queuedFrames() const override;
+
+    // Opens the stream again on the current default output, if it differs
+    // from the one in use. Returns false if the new device won't open.
+    bool followDefaultOutput();
+
+    // The latency estimate on its own: frames pulled since the stream
+    // started, less what the device says it has processed, kept between
+    // zero and half a second. Public for the tests.
+    static qint64 queuedEstimate(qint64 pulledFrames, qint64 processedUSecs, int rate);
 
 private:
     class Pull;
+    bool openOn(const QAudioDevice &device);
+    void closeSink();
+
     int m_rate = 48000;
+    PcmReader *m_reader = nullptr;
     std::unique_ptr<Pull> m_device;
     QAudioSink *m_sink = nullptr;
+    QByteArray m_deviceId;
+    QMediaDevices *m_devices = nullptr;
     bool m_suspended = false;
+};
+
+// Wraps another sink and reports a fixed amount of audio as still in the
+// device: the tests' stand-in for a sound card's buffer.
+class LatencySink : public PcmSink {
+public:
+    LatencySink(PcmSink *inner, qint64 queued) : m_inner(inner), m_queued(queued) {}
+    QString kind() const override { return m_inner->kind(); }
+    int sampleRate() const override { return m_inner->sampleRate(); }
+    bool start(PcmReader *reader) override { return m_inner->start(reader); }
+    bool started() const override { return m_inner->started(); }
+    void suspend() override { m_inner->suspend(); }
+    void resume() override { m_inner->resume(); }
+    void stop() override { m_inner->stop(); }
+    qint64 queuedFrames() const override { return m_queued; }
+    void setQueuedFrames(qint64 frames) { m_queued = frames; }
+    PcmSink *inner() const { return m_inner.get(); }
+
+private:
+    std::unique_ptr<PcmSink> m_inner;
+    qint64 m_queued;
 };
 
 // Audio pulled into memory as fast as asked, never to a device. Tests pull

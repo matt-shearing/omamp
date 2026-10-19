@@ -19,9 +19,15 @@ protected:
         if (frames <= 0)
             return 0;
         m_reader->readPcm(reinterpret_cast<float *>(data), frames);
+        pulled += frames;
         return frames * qint64(2 * sizeof(float));
     }
     qint64 writeData(const char *, qint64) override { return -1; }
+
+public:
+    // Frames handed to the current QAudioSink since it started. QAudioSink
+    // may pull on a thread of its own.
+    std::atomic<qint64> pulled{0};
 
 private:
     PcmReader *m_reader;
@@ -33,6 +39,13 @@ DeviceSink::DeviceSink() {
     const int preferred = QMediaDevices::defaultAudioOutput().preferredFormat().sampleRate();
     if (preferred >= 8000 && preferred <= 384000)
         m_rate = preferred;
+    // A new default output (headphones, a Bluetooth speaker) takes over
+    // the stream while it plays.
+    m_devices = new QMediaDevices(this);
+    connect(m_devices, &QMediaDevices::audioOutputsChanged, this, [this] {
+        if (m_sink)
+            followDefaultOutput();
+    });
 }
 
 DeviceSink::~DeviceSink() { stop(); }
@@ -42,22 +55,68 @@ bool DeviceSink::start(PcmReader *reader) {
         return true;
     if (qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"))
         qFatal("DeviceSink: refusing to open the sound card under OMAMP_NO_AUDIO_DEVICE");
+    m_reader = reader;
+    m_suspended = false;
+    return openOn(QMediaDevices::defaultAudioOutput());
+}
+
+bool DeviceSink::openOn(const QAudioDevice &device) {
+    if (qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"))
+        qFatal("DeviceSink: refusing to open the sound card under OMAMP_NO_AUDIO_DEVICE");
+    closeSink();
+    if (device.isNull())
+        return false;
     QAudioFormat format;
+    // The engine's rate stays as it was; a device that prefers another one
+    // is resampled by PipeWire.
     format.setSampleRate(m_rate);
     format.setChannelCount(2);
     format.setSampleFormat(QAudioFormat::Float);
-    m_device = std::make_unique<Pull>(reader);
-    m_sink = new QAudioSink(QMediaDevices::defaultAudioOutput(), format);
+    if (!m_device)
+        m_device = std::make_unique<Pull>(m_reader);
+    m_device->pulled = 0;
+    m_sink = new QAudioSink(device, format);
+    m_deviceId = device.id();
     // About 100 ms in the device: enough to ride out a busy desktop, short
     // enough that pause and seek feel immediate.
     m_sink->setBufferSize(qsizetype(m_rate / 10) * 2 * qsizetype(sizeof(float)));
     m_sink->start(m_device.get());
-    m_suspended = false;
     if (m_sink->error() == QtAudio::OpenError) {
         stop();
         return false;
     }
+    if (m_suspended)
+        m_sink->suspend();
     return true;
+}
+
+bool DeviceSink::followDefaultOutput() {
+    const QAudioDevice device = QMediaDevices::defaultAudioOutput();
+    if (!m_sink || device.id() == m_deviceId)
+        return true;
+    // The audio still in the old device's buffer (at most 100 ms) is lost;
+    // the reader carries on where it was.
+    return openOn(device);
+}
+
+void DeviceSink::closeSink() {
+    if (m_sink) {
+        m_sink->stop();
+        delete m_sink;
+        m_sink = nullptr;
+    }
+    m_deviceId.clear();
+}
+
+qint64 DeviceSink::queuedEstimate(qint64 pulledFrames, qint64 processedUSecs, int rate) {
+    const qint64 heard = processedUSecs * rate / 1000000;
+    return qBound<qint64>(qint64(0), pulledFrames - heard, qint64(rate / 2));
+}
+
+qint64 DeviceSink::queuedFrames() const {
+    if (!m_sink || !m_device)
+        return 0;
+    return queuedEstimate(m_device->pulled.load(), m_sink->processedUSecs(), m_rate);
 }
 
 void DeviceSink::suspend() {
@@ -75,11 +134,7 @@ void DeviceSink::resume() {
 }
 
 void DeviceSink::stop() {
-    if (m_sink) {
-        m_sink->stop();
-        delete m_sink;
-        m_sink = nullptr;
-    }
+    closeSink();
     m_device.reset();
 }
 

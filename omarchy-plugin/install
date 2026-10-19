@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Link the Omamp bar widget into Omarchy's plugin folder and put it on the bar.
+# Nothing else on the desktop changes, and nothing needs sudo.
+#
+#   omarchy-plugin/install                 link it and add it to the bar
+#   omarchy-plugin/install --no-bar        link it only; add it later in Setup > Bar
+#   omarchy-plugin/install --section left  choose the bar section
+#
+# The plugin is a symlink to this folder, so `git pull` updates it. QML edits
+# need `omarchy-restart-shell` to show up.
+
+set -euo pipefail
+
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ID="contra.omamp"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+SHELL_JSON="$HOME/.config/omarchy/shell.json"
+
+add_bar="true"
+section=""
+
+while (( $# > 0 )); do
+  case "$1" in
+  --no-bar) add_bar="false" ;;
+  --section)
+    [[ -n ${2:-} ]] || { echo "install: --section needs a value" >&2; exit 1; }
+    section="$2"
+    shift
+    ;;
+  -h | --help)
+    sed -n '3,11p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+    exit 0
+    ;;
+  *)
+    echo "install: unknown option: $1" >&2
+    exit 1
+    ;;
+  esac
+  shift
+done
+
+# Never clobber a real copy someone put there by hand.
+if [[ -e $PLUGIN_DIR && ! -L $PLUGIN_DIR ]]; then
+  echo "  $PLUGIN_DIR exists and is not a symlink; leaving it alone" >&2
+  exit 1
+fi
+mkdir -p "$(dirname "$PLUGIN_DIR")"
+ln -sfn "$SRC" "$PLUGIN_DIR"
+echo "  plugin   $PLUGIN_DIR -> $SRC"
+
+if [[ $add_bar == "true" ]]; then
+  # The bar only places widgets the running shell already knows about.
+  omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+  if grep -q "\"$PLUGIN_ID\"" "$SHELL_JSON" 2>/dev/null; then
+    echo "  bar      already on the bar; position unchanged"
+  elif [[ -n $section ]]; then
+    omarchy bar put "$PLUGIN_ID" --section "$section"
+    echo "  bar      added to the $section section"
+  elif grep -q '"contra.nightride"' "$SHELL_JSON" 2>/dev/null; then
+    # Next to the other music widget, if it is there.
+    omarchy bar put "$PLUGIN_ID" --after contra.nightride
+    echo "  bar      added after contra.nightride"
+  else
+    omarchy bar put "$PLUGIN_ID" --section right
+    echo "  bar      added to the right section"
+  fi
+fi
+
+echo
+echo "Restart the shell to load it: omarchy-restart-shell"
+echo "The widget shows only while Omamp is running."

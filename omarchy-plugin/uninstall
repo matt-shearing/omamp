@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Take the Omamp widget off the bar and remove the plugin link. Omamp itself
+# is untouched.
+
+set -euo pipefail
+
+PLUGIN_ID="contra.omamp"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+SHELL_JSON="$HOME/.config/omarchy/shell.json"
+
+if grep -q "\"$PLUGIN_ID\"" "$SHELL_JSON" 2>/dev/null; then
+  omarchy plugin disable "$PLUGIN_ID"
+  echo "  bar      removed"
+else
+  echo "  bar      not on the bar"
+fi
+
+if [[ -L $PLUGIN_DIR ]]; then
+  rm "$PLUGIN_DIR"
+  echo "  plugin   $PLUGIN_DIR removed"
+elif [[ -e $PLUGIN_DIR ]]; then
+  echo "  plugin   $PLUGIN_DIR is a real folder, not our link; leaving it" >&2
+else
+  echo "  plugin   not installed"
+fi
+
+echo
+echo "Restart the shell to finish: omarchy-restart-shell"

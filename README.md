@@ -36,6 +36,12 @@ see and control it.
 
 ![Omamp in Omarchy's default theme](docs/omamp-default.png)
 
+## Omarchy bar plugin
+
+`omarchy-plugin/` adds Omamp to the Omarchy bar: the track and play state in the bar, and a panel with seek, transport, shuffle, repeat and volume. Install it with `omarchy-plugin/install`. See [its README](omarchy-plugin/README.md).
+
+![The Omamp bar plugin](docs/omarchy-plugin.png)
+
 ## Keys
 
 | Key | Does |

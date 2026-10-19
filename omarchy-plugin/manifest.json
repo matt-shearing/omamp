@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "contra.omamp",
+  "name": "Omamp",
+  "version": "0.1.0",
+  "author": "contra",
+  "license": "MIT",
+  "description": "Omamp in the bar: what is playing while Omamp is open, and a panel with the green clock, title strip, seek, transport, stop, shuffle, repeat, Omamp's volume, and a button that brings its window forward.",
+  "keywords": ["omamp", "winamp", "music", "player", "mpris", "now-playing"],
+  "kinds": ["service", "bar-widget"],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omamp",
+    "description": "Now playing in Omamp, with a panel for seek, transport, shuffle, repeat and volume. Hidden while Omamp is closed.",
+    "category": "Media",
+    "aliases": ["omamp", "winamp", "music", "player", "now-playing"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "maxLabelWidth": 220,
+      "showClock": false,
+      "showWhenClosed": false,
+      "scrollAction": "Previous/next track"
+    },
+    "schema": [
+      {
+        "key": "maxLabelWidth",
+        "type": "integer",
+        "label": "Maximum label width (px)",
+        "min": 60,
+        "max": 600,
+        "step": 10,
+        "defaultValue": 220,
+        "description": "A longer \"Artist – Title\" pans slowly inside this width instead of stretching the bar."
+      },
+      {
+        "key": "showClock",
+        "type": "boolean",
+        "label": "Show the elapsed time in the bar",
+        "defaultValue": false
+      },
+      {
+        "key": "showWhenClosed",
+        "type": "boolean",
+        "label": "Keep an icon in the bar while Omamp is closed",
+        "defaultValue": false,
+        "description": "A dimmed icon that opens Omamp when clicked. Off, the widget appears only while Omamp is running."
+      },
+      {
+        "key": "scrollAction",
+        "type": "enum",
+        "label": "Mouse wheel over the widget",
+        "options": ["Previous/next track", "Volume", "Nothing"],
+        "defaultValue": "Previous/next track",
+        "description": "Previous/next matches Omarchy's own media widget. Volume changes Omamp's volume, not the system's."
+      }
+    ]
+  }
+}

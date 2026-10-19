@@ -120,8 +120,8 @@ Auto-DJ sources, sync lists and the CLI. It starts from MediaMonkey's quick
 search and adds fields, ranges and regular expressions:
 
 ```text
-daft punk                          words anywhere (AND)
-artist:"daft punk" year:1997..2001
+neon coast                         words anywhere (AND)
+artist:"neon coast" year:1997..2001
 rating:4.. -genre:christmas        ranges and NOT
 genre:rock OR genre:metal
 title:/^live/                      regular expression

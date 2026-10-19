@@ -1,0 +1,78 @@
+#!/bin/bash
+# Makes the audio the engine tests measure. Every pair of "part" files is
+# one continuous signal cut in two at a sample that falls mid-frame for every
+# codec, so a gapless join can be checked sample for sample against the
+# uncut original.
+#
+#   tests/make-engine-fixtures <folder>
+#
+# The tests run this into a temporary folder; nothing here is checked in.
+set -euo pipefail
+
+out="${1:?usage: make-engine-fixtures <folder>}"
+mkdir -p "$out"
+cd "$out"
+
+ff() { ffmpeg -nostdin -hide_banner -loglevel error -y "$@"; }
+
+# The uncut original: 6 s at 48 kHz, a different tone on each side, as
+# 32-bit float so the reference is exact.
+cut=144123          # 3.0026 s: not a multiple of any codec's frame size
+total=288000
+ff -f lavfi -i "aevalsrc=0.5*sin(2*PI*441*t)|0.5*sin(2*PI*661.5*t):s=48000:d=6" -c:a pcm_f32le src.wav
+
+part() { # part <n> <codec args...>: both halves with one codec
+    local ext="$1"
+    shift
+    ff -i src.wav -af "atrim=end_sample=$cut" -map_metadata -1 "$@" "part1.$ext"
+    ff -i src.wav -af "atrim=start_sample=$cut,asetpts=PTS-STARTPTS" -map_metadata -1 "$@" "part2.$ext"
+}
+part flac -c:a flac
+part mp3 -c:a libmp3lame -b:a 192k
+part opus -c:a libopus -b:a 128k
+part m4a -c:a aac -b:a 192k
+
+# The same tones at 44.1 kHz, cut in two, for the join through the resampler.
+ff -f lavfi -i "aevalsrc=0.5*sin(2*PI*441*t)|0.5*sin(2*PI*661.5*t):s=44100:d=6" -c:a pcm_f32le src44.wav
+ff -i src44.wav -af "atrim=end_sample=132413" -c:a flac rs1.flac
+ff -i src44.wav -af "atrim=start_sample=132413,asetpts=PTS-STARTPTS" -c:a flac rs2.flac
+
+# A sawtooth whose 16-bit value is the sample index mod 32768, for exact seeks.
+ff -f lavfi -i "aevalsrc=mod(n\,32768)/32768-0.5|mod(n\,32768)/32768-0.5:s=44100:d=3" -c:a flac -sample_fmt s16 ramp.flac
+
+# aevalsrc rather than sine, whose level is 1/8, with both channels written
+# out, since ffmpeg's mono-to-stereo upmix lowers the level by 3 dB.
+sine() { # sine <hz> <amplitude> <seconds> [channels]
+    local e="$2*sin(2*PI*$1*t)"
+    if [ "${4:-2}" = 2 ]; then e="$e|$e"; fi
+    printf 'aevalsrc=%s:s=48000:d=%s' "$e" "$3"
+}
+
+# Tones for crossfade: two albums, and a second track of the first album.
+tone() { # tone <file> <hz> <seconds> <album>
+    ff -f lavfi -i "$(sine "$2" 0.5 "$3")" \
+        -metadata album="$4" -metadata album_artist="Fixture" -metadata title="$(basename "$1" .flac)" \
+        -c:a flac "$1"
+}
+tone a.flac 1000 3 "Album A"
+tone b.flac 3000 3 "Album B"
+tone c.flac 3000 3 "Album A"
+tone short1.flac 1000 1 "Short"
+tone short2.flac 3000 1 "Short"
+
+# ReplayGain: a quiet tone with track and album gains, and one whose +12 dB
+# would clip if the peak were ignored.
+ff -f lavfi -i "$(sine 1000 0.25 2)" \
+    -metadata REPLAYGAIN_TRACK_GAIN="-6.00 dB" -metadata REPLAYGAIN_TRACK_PEAK=0.25 \
+    -metadata REPLAYGAIN_ALBUM_GAIN="-3.00 dB" -metadata REPLAYGAIN_ALBUM_PEAK=0.25 -c:a flac rg.flac
+ff -f lavfi -i "$(sine 1000 0.25 2)" \
+    -metadata REPLAYGAIN_TRACK_GAIN="+12.00 dB" -metadata REPLAYGAIN_TRACK_PEAK=0.5 -c:a flac loud.flac
+
+# Single tones for the equaliser, and mono, which must play at full level
+# on both sides.
+for hz in 125 1000 4000; do
+    ff -f lavfi -i "$(sine "$hz" 0.25 1)" -c:a flac "eq$hz.flac"
+done
+ff -f lavfi -i "$(sine 1000 0.5 1 1)" -c:a flac mono.flac
+
+printf 'not really audio\n' > broken.mp3

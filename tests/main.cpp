@@ -2,7 +2,7 @@
 // Totals line; the exit code is non-zero if any of them failed.
 //
 // OMAMP_TESTS=query,palette runs only the named classes (player, library,
-// query, palette, watcher, window, mask, tidy), for a quick loop or a machine that must stay silent.
+// query, palette, watcher, window, mask, tidy, engine), for a quick loop or a machine that must stay silent.
 #include <QGuiApplication>
 #include <QtTest>
 
@@ -14,11 +14,15 @@ int runWatcherTests(int argc, char **argv);
 int runLibraryWindowTests(int argc, char **argv);
 int runMaskTests(int argc, char **argv);
 int runTidyTests(int argc, char **argv);
+int runEngineTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
     qputenv("QT_QPA_PLATFORM", "offscreen");
     qputenv("QT_QUICK_BACKEND", "software");
+    // Never out of the speakers: the native engine's device sink aborts and
+    // the Qt engine leaves out its audio output.
+    qputenv("OMAMP_NO_AUDIO_DEVICE", "1");
     QGuiApplication app(argc, argv);
     const QStringList only = qEnvironmentVariable("OMAMP_TESTS").split(',', Qt::SkipEmptyParts);
     auto wanted = [&](const char *name) { return only.isEmpty() || only.contains(QLatin1String(name)); };
@@ -39,5 +43,7 @@ int main(int argc, char **argv) {
         failures += runMaskTests(argc, argv);
     if (wanted("tidy"))
         failures += runTidyTests(argc, argv);
+    if (wanted("engine"))
+        failures += runEngineTests(argc, argv);
     return failures ? 1 : 0;
 }

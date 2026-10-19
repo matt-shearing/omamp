@@ -1714,3 +1714,242 @@ omamp journal [batch] [--limit n] [--json]
 omamp audit [check] [--limit n] [--json]
 omamp duplicates [--by tags|content|fingerprint] [--any-length] [--json]
 ```
+
+## Phase 3 core: playlists, statistics, Auto-DJ and MediaMonkey (20 October 2026)
+
+The library side of Phase 3, built overnight while other agents built the new
+audio engine (`src/engine/`) and the window (`src/app/`). Nothing here
+touches either; the hooks they need are listed at the end.
+
+### What was built
+
+- **Schema step 7.** `playlists` gains `position`, `seed`, `note` and
+  `source`. `playlist_items` is rebuilt so `track_id` may be NULL (set to
+  NULL when the track row goes) and each entry keeps its `path`, `title`,
+  `artist`, `duration_ms` and `added`. `play_history` gains `source`, so an
+  import's rows can be removed exactly. `import_journal` records every change
+  an import makes.
+- **Playlists** (`src/core/playlists.h`, `Playlists::`): static playlists,
+  auto-playlists and folders, nested to any depth; create, rename, move
+  (refusing loops), delete (cascading), resolve by id, name or
+  `Folder/Name`; add at a position, remove by entry id or position, move a
+  group of entries, reorder, clear. Duplicates are allowed. Missing, offline
+  and unmatched entries stay in the list. Auto-playlists are query text,
+  evaluated live; a random one keeps its stored seed until `reroll()`.
+- **Collections** (`Collections::`): create, read, update and delete over the
+  existing table, with columns and tree nodes as JSON arrays, sort as query
+  sort text, view and visibility. `ensureDefaults()` puts back Music,
+  Classical, Audiobooks and Podcasts; `trackIds()` applies the collection's
+  sort.
+- **Playlist files** (`src/core/m3u.h`, `PlaylistFiles::`): M3U, M3U8 and PLS
+  import (byte-order mark, Latin-1 fallback, relative paths, `file://`,
+  `#EXTINF`), a folder of playlists as nested folders, and M3U8 or PLS export
+  with absolute or relative paths, written atomically. `Matcher` matches a
+  path exactly, then ignoring case; a path's last two or three parts; or
+  artist, title and length. The MediaMonkey importer reuses it.
+- **Play statistics** (`src/core/stats.h`, `Stats::`): `recordPlay()` with
+  the scrobbling rule (counted at 50 % or 4 minutes; skipped under 10 % or
+  on a user skip; otherwise ignored); top tracks, artists, albums, years and
+  genres for all time (from the counters) or since a time (from
+  `play_history`); recent plays; never played; a summary; and
+  `trackIdForPath()`.
+- **Auto-DJ** (`src/core/autodj.h`, `AutoDj::Dj`): sources (library,
+  collection, playlist, query); keeps `upcoming` tracks queued; artist
+  separation; leaves out tracks played in the last X days; weights by rating
+  and boosts never-played tracks; excludes audiobooks and podcasts; online
+  tracks only; relaxes one rule at a time when nothing fits; repeatable from
+  a seed. Settings live in the `settings` table under `autodj`.
+- **Party mode** (`PartyMode::`): presets jukebox, dj and display; a list of
+  allowed actions; an optional PIN stored as a salted SHA-256 iterated
+  100,000 times and compared in constant time. Settings live under
+  `party_mode`.
+- **MediaMonkey import** (`src/core/mmimport.h`, `MmImport::`): copies
+  `MM.DB` or `MM5.DB` to a temporary folder, opens the copy read-only with
+  the SQLite C library and registers `IUNICODE` and `NUMERICSTRING`; any
+  other unknown collation gets a case-insensitive stand-in through
+  `sqlite3_collation_needed`. It reads only the columns that exist. It maps
+  Windows paths with `--map` rules (drive letters from `Medias` for MM4's
+  `:\` paths, and UNC prefixes), then matches by path tail, then by tags and
+  length. A dry run is the default; `--apply` writes in one transaction,
+  journalled under one batch, and `undo()` reverses it while keeping plays
+  made since. It imports ratings, play and skip counts, last played, date
+  added, custom 1 to 5, play history (without duplicates), static playlists,
+  and AutoPlaylists, translated to the query language or kept as snapshots
+  with their criteria in the note.
+- **Commands**:
+  `omamp playlist list|show|create|add|remove|move|rename|delete|clear|reroll|import|export`,
+  `omamp autoplaylist create|set`,
+  `omamp collection list|show|create|remove|restore-defaults`,
+  `omamp stats --top … [--since …]`, `omamp stats --recent`,
+  `omamp stats --never`, `omamp autodj --source … --count n --seed n`,
+  `omamp import mediamonkey <db> --map … --dry-run|--apply [--overwrite]`,
+  `omamp import undo [batch]`, and `omamp undo <mmimport batch>`. All take
+  `--json`.
+- **Docs**: [playlists.md](../playlists.md) and
+  [mediamonkey-import.md](../mediamonkey-import.md).
+
+### Test results
+
+`bin/test` with `JOBS=4`, a throwaway `HOME`, no audio server and no session
+bus:
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 57ms      (player)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 482ms     (library)
+Totals: 24 passed, 0 failed, 0 skipped, 0 blacklisted, 25ms      (query)
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 71ms       (palette)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 2489ms    (watcher, Phase 1C)
+Totals: 17 passed, 0 failed, 0 skipped, 0 blacklisted, 879ms     (window)
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1410ms     (window)
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 3094ms     (window)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 7ms       (masks)
+Totals: 21 passed, 0 failed, 0 skipped, 0 blacklisted, 1248ms    (Phase 2: tags, organise, audits, duplicates)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 10534ms   (Phase 3 core: playlists, statistics, Auto-DJ, MediaMonkey)
+```
+
+The new class is the last line (`OMAMP_TESTS=playlists`). It covers:
+
+- the schema 6 to 7 upgrade keeping old entries;
+- static playlists end to end: duplicates, insert, move, remove, reorder,
+  positions kept contiguous, name and path resolution, ambiguous names,
+  folders, loops refused, cascading deletes, a deleted track's entry kept
+  with its path, and a missing one shown as missing;
+- auto-playlists: bad queries refused, live updates, and a random pick that
+  holds until rerolled;
+- collections: defaults, restoring them, a custom one with columns and tree
+  nodes, its sort, and validation;
+- M3U with a byte-order mark, relative, absolute and `file://` paths, a
+  Windows path matched by its `#EXTINF` tags, a stream and a missing file;
+  exported relative and absolute and read back identically; PLS both ways;
+  a Latin-1 file with backslashes; and a folder tree;
+- the play rule at its edges, and statistics by every grouping, for all time
+  and since a date;
+- Auto-DJ: repeatability, artist separation, the recently-played rule,
+  relaxing on a two-track source, refill, each kind of source, rating
+  weights and the never-played boost over hundreds of picks, and saved
+  settings;
+- party mode presets, PIN storage and checks;
+- path mapping, OLE dates, and criteria translation including failures;
+- a synthetic MM4 database (collated columns, `Medias`, `Played`, nested
+  playlists, a translatable and an untranslatable AutoPlaylist) through a
+  dry run (nothing written, exact report), apply, the original file left
+  byte-identical, a second import changing nothing, undo keeping a later
+  play, and `--overwrite`; an MM5-shaped database with missing columns; and
+  files that are not MediaMonkey databases;
+- every new command with `--json`.
+
+### Decisions
+
+- **Entries outlive tracks.** MediaMonkey drops dead links from playlists;
+  Omamp keeps them as unmatched entries with their path, so an exported
+  playlist is never shorter than the one imported, and a track that comes
+  back can be matched again later.
+- **An auto-playlist's sort and limit live in its query text**, not in the
+  `sort` and `item_limit` columns from schema step 1, which stay unused.
+  There is one place to read and edit.
+- **A random auto-playlist stores its seed.** MediaMonkey re-rolls on every
+  use, but playing the list must not reshuffle it; `reroll` asks for a new
+  one.
+- **All-time statistics read the counters; `--since` reads the history.**
+  The counters include imported and tag-read counts that have no dates; the
+  history is exact but only as old as Omamp (or the imported `Played`
+  table). All-time listening time is plays times length, an estimate.
+- **The import merges by default.** Ratings and custom fields only fill
+  gaps; counts take the larger, last played the later, date added the
+  earlier. Importing twice therefore changes nothing, and an import that
+  changes nothing writes no batch.
+- **The import has its own journal.** Undoing a `tag_journal` batch writes
+  tags into files, and an import must never touch files. The import's undo
+  takes back only what the import added to a count, and leaves alone any
+  value changed after the import.
+- **MediaMonkey's database is read with the SQLite C library**, linked
+  through pkg-config (`sqlite3`), not through the Qt driver's handle. It is
+  the same library QSQLITE uses on Arch, and it avoids depending on the
+  driver's internals.
+- **Path-tail matching and suggested maps.** Without `--map`, the importer
+  still matches tracks whose last folders and file name are unique, and it
+  suggests the `--map` rule those matches imply.
+- **The PIN hash is iterated SHA-256 with a random salt**, not bcrypt or
+  Argon2, to stay inside Qt without another library. A four-digit PIN can
+  be guessed offline whatever the hash, so this keeps the PIN from a casual
+  reader of the database, not from a determined one.
+- **`--count n` takes a number only for `omamp autodj`**, so
+  `omamp query --count` keeps its old meaning.
+
+### Known gaps
+
+- **Not yet tried on a real MediaMonkey database.** The column names follow
+  MM4's published schema. `SkipCount`, `Custom1..5`, the encoding of
+  `Medias.DriveLetter`, `Played`, and above all the format of
+  `Playlists.QueryData` are unverified (see
+  [mediamonkey-import.md](../mediamonkey-import.md)). OLE dates are read as
+  UTC. Real AutoPlaylists will probably arrive as snapshots until the
+  translator learns MediaMonkey's real format.
+- **No rule builder yet.** The window's auto-playlist editor over
+  `Query::parse()`'s tree is window work.
+- **No `omamp party` command.** Party mode is backend only, as planned; a PIN
+  typed on the command line would sit in the shell's history.
+- **Not imported from MediaMonkey:** the classification fields (tempo, mood,
+  occasion, quality), MM5's `Custom6..10`, album ratings, bookmarks and
+  volume-levelling values.
+- **Playlists inherit nothing from collections.** MediaMonkey shows a
+  playlist with its members' collection columns; the window decides.
+- **Editing a large playlist rewrites every position in it.** That is fine
+  up to tens of thousands of entries; a 200,000-entry static playlist would
+  want gapped positions.
+
+### What the window and the player need
+
+**Recording plays.** The player calls this once per playback of a track:
+when the track ends, is skipped, or another track starts. `playedMs` is the
+time actually heard; sum the position changes while playing, because a seek
+forward is not listening. Call it on the thread that owns the window's
+`Library`.
+
+```cpp
+#include "stats.h"
+const qint64 id = Stats::trackIdForPath(library, path);   // 0: not in the library; record nothing
+if (id)
+    Stats::recordPlay(library, id, playedMs, durationMs, /*userSkipped=*/pressedNext);
+```
+
+Refresh any play counts on screen afterwards (the track list's model).
+
+**Refilling the queue for Auto-DJ.** Keep one `AutoDj::Dj` while Auto-DJ is
+on. Make a new one when the source or the settings change, and call
+`reload()` after a scan.
+
+```cpp
+#include "autodj.h"
+AutoDj::Settings s = AutoDj::Settings::load(library);
+AutoDj::Dj dj(library, s);                        // or (library, s, seed) to repeat a run
+// After each track change, with the ids played lately and queued, oldest first:
+for (const AutoDj::Pick &p : dj.refill(historyAndQueueIds, queuedAfterCurrent))
+    appendToQueue(library.absolutePath(p.trackId));
+// dj.error() says why nothing came back (an empty source).
+```
+
+**Party mode.** Ask before every guarded action, and grey out or hide what
+is not allowed.
+
+```cpp
+PartyMode::Settings party = PartyMode::Settings::load(library);
+if (!PartyMode::allowed(party, PartyMode::Action::Skip))
+    return;
+PartyMode::enable(library, "jukebox", pin);       // pin may be empty
+if (!PartyMode::disable(library, typedPin))
+    showWrongPin();
+```
+
+The actions are `Play`, `Skip`, `Seek`, `Volume`, `AddToQueue`,
+`RemoveFromQueue`, `Reorder`, `EditTags`, `EditPlaylists`, `Settings`,
+`Library` and `Quit`.
+
+**Playlists in the tree.** `librarytree.cpp` already reads the tables. It
+should now order siblings by `position, name`, show folders
+(`kind = 'folder'`) and any playlist with children as parents, and fill a
+playlist node from `Playlists::items()` (which runs an auto-playlist's query
+with its stored seed) rather than `track_id IN (SELECT …)`, so duplicates,
+order and unmatched entries show. Dropping tracks on a playlist maps to
+`Playlists::addTracks(…, at)`, dragging within one to `moveItems()`, and
+Delete to `removeItems()`.

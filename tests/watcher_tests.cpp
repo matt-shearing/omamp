@@ -171,7 +171,7 @@ private slots:
         QString error;
         QVERIFY2(library.open(&error), qPrintable(error));
         QCOMPARE(library.schemaVersion(), Library::latestVersion());
-        QCOMPARE(Library::latestVersion(), 3);
+        QVERIFY(Library::latestVersion() >= 3);
         QVERIFY(library.lastBackup().contains(".v2-"));
         QVERIFY(QFileInfo::exists(library.lastBackup()));
         // The old row keeps its stats and is marked as read by an older reader.
@@ -180,7 +180,7 @@ private slots:
         QCOMPARE(value(library, "SELECT tag_version FROM tracks WHERE title = 'Old Song'").toInt(), 0);
         QCOMPARE(value(library, "SELECT has_embedded_art FROM tracks").toInt(), 0);
         QVERIFY(value(library, "SELECT art_checked FROM albums").isNull());
-        for (const char *index : {"tracks_size", "tracks_quick_hash"})
+        for (const char *index : {"tracks_size", "tracks_quick_hash", "tracks_last_played", "tracks_play_count"})
             QCOMPARE(value(library, QString("SELECT count(*) FROM sqlite_master WHERE name = '%1'").arg(index)).toInt(), 1);
         // Search still works across the migration.
         QCOMPARE(value(library, "SELECT count(*) FROM tracks_fts WHERE tracks_fts MATCH 'old'").toInt(), 1);

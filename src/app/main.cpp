@@ -12,6 +12,7 @@
 #include <QStandardPaths>
 #include <QUrl>
 
+#include "artprovider.h"
 #include "cli.h"
 #include "devhooks.h"
 #include "librarycontroller.h"
@@ -98,6 +99,11 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("theme", &theme);
     engine.rootContext()->setContextProperty("backend", &player);
     engine.rootContext()->setContextProperty("library", &library);
+    // The command palette (Ctrl+K) searches the library once it is open, and
+    // lists the actions Main.qml registers before that.
+    engine.rootContext()->setContextProperty("commandPalette", library.palette());
+    // Album and track pictures: image://omamp-art/album/<id>/<size>.
+    engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider);
     engine.rootContext()->setContextProperty(
         "settingsUrl", QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
                                            "/omamp/window.conf"));

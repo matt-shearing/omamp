@@ -58,6 +58,36 @@ Rectangle {
             }
         }
 
+        // The folder watcher, and the covers being made, when no scan runs.
+        RowLayout {
+            objectName: "watchStatus"
+            visible: !library.busy && (watchText.text !== "" || library.artworkBusy)
+            spacing: 8
+            Rectangle { width: 1; height: 16; color: theme.c.lighter_background }
+            Text {
+                id: watchText
+                readonly property var w: library.watcher
+                Layout.maximumWidth: 420
+                elide: Text.ElideRight
+                text: !w ? ""
+                      : w.busy ? qsTr("Updating changed folders…")
+                      : w.degraded ? qsTr("Watching %Ln folders; the rest are checked every 15 minutes", "", w.watchedFolders)
+                      : w.running && w.watchedFolders > 0
+                        ? qsTr("Watching %Ln folders", "", w.watchedFolders)
+                          + (w.networkRoots.length > 0 ? "  ·  " + qsTr("%Ln shares checked every 15 minutes", "", w.networkRoots.length) : "")
+                      : w.networkRoots.length > 0 ? qsTr("%Ln shares checked every 15 minutes", "", w.networkRoots.length)
+                      : ""
+                font.pixelSize: 12
+                color: w && w.degraded ? theme.c.yellow : theme.c.light_foreground
+            }
+            Text {
+                visible: library.artworkBusy
+                text: "·  " + qsTr("Finding album covers…")
+                font.pixelSize: 12
+                color: theme.c.light_foreground
+            }
+        }
+
         Item { Layout.fillWidth: true }
 
         Text {

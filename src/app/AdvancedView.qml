@@ -6,29 +6,66 @@ import QtQuick.Layouts
 // Advanced mode: the deck as a strip across the top, the library below it.
 //
 //   deck strip
-//   [Add folder] [Rescan]  [ search ......................... ]  [Columns]
-//   tree        | track list (or Now Playing)
+//   [Add folder] [Rescan]  [ search .............. ]  [Browser] [Grid] [Info] [Columns]
+//   tree | column browser (Genre | Artist | Album)  | info
+//        | track list, or the album grid           |
 //   jobs and status
 FocusScope {
     id: view
     property bool showRemaining: false
     property int treeWidth: 250
     property string columns: ""
+    // The optional parts, kept by the window between runs.
+    property bool browserVisible: false
+    property bool infoVisible: false
+    property bool gridVisible: false
+    property int browserHeight: 190
+    property int infoWidth: 290
     signal clockClicked()
     signal layoutEdited()
+    signal toggleBrowser()
+    signal toggleInfo()
+    signal toggleGrid()
 
     readonly property bool nowPlaying: library.currentKind === "nowplaying"
+    readonly property bool showingBrowser: browserVisible && !nowPlaying
+    readonly property bool showingGrid: gridVisible && !nowPlaying
 
     function focusSearch() { search.forceActiveFocus(); search.selectAll() }
-    function focusList() { if (nowPlaying) nowPlayingList.forceActiveFocus(); else table.forceActiveFocus() }
+    function focusList() {
+        if (nowPlaying) nowPlayingList.forceActiveFocus()
+        else if (showingGrid) grid.forceActiveFocus()
+        else table.forceActiveFocus()
+    }
     function focusTree() { tree.forceActiveFocus() }
+    function focusBrowser() { if (showingBrowser) browserPanes.focusPane(0) }
     function columnState() { return table.columnState() }
     function currentTreeWidth() { return Math.round(tree.width) }
+    function currentBrowserHeight() { return Math.round(browserPanes.height) }
+    function currentInfoWidth() { return Math.round(info.width) }
     function jumpToEnd() { table.jumpToEnd() }
+    // Puts text in the search box and searches at once.
+    function setSearchText(text) {
+        search.text = text
+        typing.stop()
+        library.tracks.filter = text
+    }
 
     Component.onCompleted: {
         if (columns !== "") table.restoreColumns(columns)
         focusList()
+    }
+
+    Connections {
+        target: library
+        function onSearchSet(text) {
+            if (search.text !== text) search.text = text
+            typing.stop()
+        }
+        function onRevealRow(row) {
+            table.showRow(row)
+            if (!view.showingGrid) table.forceActiveFocus()
+        }
     }
 
     Rectangle { anchors.fill: parent; color: theme.c.background }
@@ -45,7 +82,7 @@ FocusScope {
             onClockClicked: view.clockClicked()
         }
 
-        // Library actions and the search.
+        // Library actions, the search, and the view switches.
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 8
@@ -73,6 +110,7 @@ FocusScope {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.maximumWidth: 640
+                Layout.minimumWidth: 160
                 implicitHeight: 32
                 radius: Math.min(4, theme.radius)
                 color: theme.c.darker_background
@@ -90,6 +128,7 @@ FocusScope {
                 }
                 TextInput {
                     id: search
+                    objectName: "searchBox"
                     anchors { left: magnifier.right; leftMargin: 8; right: clear.left; rightMargin: 4
                               verticalCenter: parent.verticalCenter }
                     font.pixelSize: 13
@@ -150,13 +189,44 @@ FocusScope {
             }
             Item { Layout.fillWidth: library.tracks.filterError === "" }
 
+            // The view switches: each says what it shows and is lit while on.
+            Repeater {
+                model: [
+                    { name: "browserButton", label: qsTr("Browser"), on: view.browserVisible, tip: qsTr("Genre, artist and album columns (Ctrl+B)") },
+                    { name: "gridButton", label: qsTr("Albums"), on: view.gridVisible, tip: qsTr("Album covers instead of the track list (G)") },
+                    { name: "infoButton", label: qsTr("Info"), on: view.infoVisible, tip: qsTr("Details of the chosen track (I)") }
+                ]
+                Button {
+                    required property var modelData
+                    required property int index
+                    objectName: modelData.name
+                    text: modelData.label
+                    flat: true
+                    checkable: false
+                    font.pixelSize: 13
+                    // Lit while on: a tinted fill and an accent edge.
+                    background: Rectangle {
+                        radius: Math.min(4, theme.radius)
+                        color: modelData.on ? Qt.alpha(theme.accent, 0.16)
+                             : parent.hovered ? Qt.alpha(theme.c.selection, 0.5) : "transparent"
+                        border.width: modelData.on ? 1 : 0
+                        border.color: Qt.alpha(theme.accent, 0.7)
+                    }
+                    implicitHeight: 34; topInset: 0; bottomInset: 0
+                    enabled: index === 2 || !view.nowPlaying
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: modelData.tip
+                    onClicked: index === 0 ? view.toggleBrowser() : index === 1 ? view.toggleGrid() : view.toggleInfo()
+                }
+            }
             Button {
                 id: columnsButton
                 text: qsTr("Columns")
                 flat: true
                 font.pixelSize: 13
                 implicitHeight: 34; topInset: 0; bottomInset: 0
-                visible: !view.nowPlaying
+                visible: !view.nowPlaying && !view.showingGrid
                 onClicked: table.openColumns(columnsButton)
             }
         }
@@ -178,26 +248,74 @@ FocusScope {
                 id: tree
                 SplitView.preferredWidth: view.treeWidth
                 SplitView.minimumWidth: 150
-                onLeave: view.focusList()
+                onLeave: view.showingBrowser ? view.focusBrowser() : view.focusList()
                 onWidthChanged: view.layoutEdited()
             }
 
-            Item {
+            SplitView {
+                id: middle
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 300
-                TrackTable {
-                    id: table
-                    anchors.fill: parent
-                    visible: !view.nowPlaying
-                    onLeave: view.focusTree()
-                    onLayoutEdited: view.layoutEdited()
+                orientation: Qt.Vertical
+
+                handle: Rectangle {
+                    implicitHeight: 5
+                    color: SplitHandle.pressed || SplitHandle.hovered ? theme.c.selection : theme.c.lighter_background
+                    Rectangle { anchors.centerIn: parent; height: 1; width: parent.width; color: theme.c.lighter_background }
                 }
-                NowPlayingList {
-                    id: nowPlayingList
-                    anchors.fill: parent
-                    visible: view.nowPlaying
-                    onLeave: view.focusTree()
+
+                BrowserPanes {
+                    id: browserPanes
+                    visible: view.showingBrowser
+                    SplitView.preferredHeight: view.browserHeight
+                    SplitView.minimumHeight: 90
+                    onLeave: view.focusList()
+                    onLeaveLeft: view.focusTree()
+                    onHeightChanged: view.layoutEdited()
                 }
+
+                Item {
+                    SplitView.fillHeight: true
+                    SplitView.minimumHeight: 120
+                    TrackTable {
+                        id: table
+                        anchors.fill: parent
+                        visible: !view.nowPlaying && !view.showingGrid
+                        onLeave: view.showingBrowser ? view.focusBrowser() : view.focusTree()
+                        onLayoutEdited: view.layoutEdited()
+                    }
+                    AlbumGrid {
+                        id: grid
+                        anchors.fill: parent
+                        visible: view.showingGrid
+                        onLeave: view.showingBrowser ? view.focusBrowser() : view.focusTree()
+                        onOpenAlbum: (albumId) => {
+                            if (library.showAlbum(albumId) >= 0) {
+                                view.toggleGrid()
+                                view.focusList()
+                            }
+                        }
+                    }
+                    NowPlayingList {
+                        id: nowPlayingList
+                        anchors.fill: parent
+                        visible: view.nowPlaying
+                        onLeave: view.focusTree()
+                    }
+                }
+            }
+
+            InfoPanel {
+                id: info
+                visible: view.infoVisible
+                SplitView.preferredWidth: view.infoWidth
+                SplitView.minimumWidth: 220
+                onWidthChanged: view.layoutEdited()
+                // The track under the cursor, or the album chosen in the grid;
+                // 0 shows the track that is playing.
+                chosenTrack: view.nowPlaying ? 0
+                           : view.showingGrid ? (library.albumGrid.currentAlbum > 0 ? library.firstTrackOfAlbum(library.albumGrid.currentAlbum) : 0)
+                           : library.tracks.currentRow >= 0 ? library.tracks.trackId(library.tracks.currentRow) : 0
             }
         }
 

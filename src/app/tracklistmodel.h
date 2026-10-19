@@ -77,6 +77,19 @@ public:
 
     // The tree node: a SQL condition over `tracks t` and its parameters.
     void setScope(const QString &where, const QVariantList &params);
+    // The column browser's choice, a third condition over `tracks t`.
+    // reloadNow false only stores it, for a caller that reloads anyway (the
+    // browser answering baseChanged()).
+    void setBrowse(const QString &where, const QVariantList &params, bool reloadNow = true);
+    // The node and the search together (what the column browser counts
+    // within), and everything that decides the list (what the album grid
+    // shows).
+    QString baseWhere() const { return QString("(%1) AND (%2)").arg(m_scopeWhere, m_filterWhere); }
+    QVariantList baseParams() const { return m_scopeParams + m_filterParams; }
+    QString fullWhere() const { return QString("(%1) AND (%2)").arg(baseWhere(), m_browseWhere); }
+    QVariantList fullParams() const { return baseParams() + m_browseParams; }
+    QString scopeWhere() const { return m_scopeWhere; }
+    QVariantList scopeParams() const { return m_scopeParams; }
     void setFilter(const QString &text);
     void setPlayingPath(const QString &path);
     void setCurrentRow(int row);
@@ -85,7 +98,8 @@ public:
     // descending, the third goes back to the library order (-1).
     Q_INVOKABLE void sortBy(int column);
     Q_INVOKABLE void setSort(int column, bool descending);
-    // Runs the query again, keeping the order, the selection and the current track.
+    // Runs the query again, keeping the order, the selection and the current
+    // track. Emits aboutToRefresh() first, so a view can keep its place.
     Q_INVOKABLE void refresh();
 
     // Selection. modifiers are Qt.ShiftModifier and Qt.ControlModifier, as
@@ -108,6 +122,7 @@ public:
 
     // The tracks behind these rows, in the same order, read in batches.
     QVector<Row> rows(const QList<int> &rows) const;
+    QVector<Row> rowsForIds(const QVector<qint64> &ids) const { return fetch(ids); }
     QVector<qint64> ids() const { return m_ids; }
 
     static QString clock(qint64 ms);
@@ -120,8 +135,13 @@ signals:
     void currentRowChanged();
     void selectionChanged();
     void playingPathChanged();
-    // The list was reloaded (scope, filter or sort changed).
+    // The list was reloaded (scope, filter, browser or sort changed, or a refresh).
     void reloaded();
+    // The node or the search changed and the list is about to reload: the
+    // column browser recounts its panes and sets its condition here.
+    void baseChanged();
+    // refresh() is about to reload the same list with new data.
+    void aboutToRefresh();
 
 private:
     static constexpr int pageSize = 128;
@@ -146,6 +166,8 @@ private:
     QString m_filter, m_filterError;
     QString m_filterWhere = "1";
     QVariantList m_filterParams;
+    QString m_browseWhere = "1";
+    QVariantList m_browseParams;
     int m_sortColumn = -1;
     bool m_sortDescending = false;
     double m_lastQueryMs = 0;

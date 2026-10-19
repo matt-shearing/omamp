@@ -39,6 +39,13 @@ ApplicationWindow {
         property int advancedHeight: 820
         property int treeWidth: 250
         property string columns: ""
+        // Advanced mode's optional parts.
+        property bool browserVisible: false
+        property string browserArtistMode: "albumartist"
+        property int browserHeight: 190
+        property bool infoVisible: false
+        property int infoWidth: 290
+        property bool gridVisible: false
     }
 
     function rememberLayout() {
@@ -48,6 +55,8 @@ ApplicationWindow {
             if (advancedLoader.item) {
                 prefs.columns = advancedLoader.item.columnState()
                 prefs.treeWidth = advancedLoader.item.currentTreeWidth()
+                if (prefs.browserVisible) prefs.browserHeight = advancedLoader.item.currentBrowserHeight()
+                if (prefs.infoVisible) prefs.infoWidth = advancedLoader.item.currentInfoWidth()
             }
         } else {
             prefs.deckWidth = width
@@ -64,9 +73,150 @@ ApplicationWindow {
         if (on && advancedLoader.item) advancedLoader.item.focusList()
     }
 
+    // The column browser, the info panel and the album grid: each switched
+    // by a key and a button, and remembered.
+    function toggleBrowser() {
+        if (!advanced) setAdvanced(true)
+        if (prefs.browserVisible && advancedLoader.item) prefs.browserHeight = advancedLoader.item.currentBrowserHeight()
+        prefs.browserVisible = !prefs.browserVisible
+        if (advancedLoader.item) {
+            if (prefs.browserVisible) advancedLoader.item.focusBrowser()
+            else advancedLoader.item.focusList()
+        }
+    }
+    function toggleInfo() {
+        if (!advanced) setAdvanced(true)
+        if (prefs.infoVisible && advancedLoader.item) prefs.infoWidth = advancedLoader.item.currentInfoWidth()
+        prefs.infoVisible = !prefs.infoVisible
+    }
+    function toggleGrid() {
+        if (!advanced) setAdvanced(true)
+        prefs.gridVisible = !prefs.gridVisible
+        if (advancedLoader.item) advancedLoader.item.focusList()
+    }
+
+    // The browser counts and filters only while it shows; the grid reads
+    // its albums only while it shows.
+    Binding { target: library.browser; property: "enabled"; value: win.advanced && prefs.browserVisible }
+    Binding { target: library.browser; property: "artistMode"; value: prefs.browserArtistMode }
+    Binding { target: library.albumGrid; property: "active"; value: win.advanced && prefs.gridVisible && library.currentKind !== "nowplaying" }
+    Connections {
+        target: library.browser
+        function onArtistModeChanged() { prefs.browserArtistMode = library.browser.artistMode }
+    }
+
     onClosing: rememberLayout()
-    Component.onCompleted: if (advanced) library.activate()
+    Component.onCompleted: {
+        if (advanced) library.activate()
+        registerActions()
+    }
     onAdvancedChanged: if (advanced) library.activate()
+
+    // ---- The command palette (Ctrl+K) ------------------------------------
+
+    function registerActions() {
+        const p = commandPalette
+        p.addAction("play-pause", qsTr("Play/Pause"), ["pause", "resume"], "Space")
+        p.addAction("play", qsTr("Play"), ["start"], "X")
+        p.addAction("stop", qsTr("Stop"), [], "V")
+        p.addAction("next", qsTr("Next track"), ["skip", "forward"], "B")
+        p.addAction("previous", qsTr("Previous track"), ["back"], "Z")
+        p.addAction("shuffle", qsTr("Shuffle on or off"), ["random"], "S")
+        p.addAction("repeat", qsTr("Repeat on or off"), ["loop"], "R")
+        p.addAction("volume-up", qsTr("Volume up"), ["louder"], "+")
+        p.addAction("volume-down", qsTr("Volume down"), ["quieter"], "−")
+        p.addAction("time", qsTr("Show time left or time played"), ["remaining", "elapsed", "clock"], "T")
+        p.addAction("advanced", qsTr("Switch between the deck and the library"), ["advanced", "library", "deck", "mode"], "Tab")
+        p.addAction("search", qsTr("Search the library"), ["find", "filter"], "/")
+        p.addAction("browser", qsTr("Show or hide the column browser"), ["genre", "facets", "filters", "columns"], "Ctrl+B")
+        p.addAction("grid", qsTr("Show albums as a grid of covers"), ["album", "art", "covers", "grid"], "G")
+        p.addAction("info", qsTr("Show or hide the info panel"), ["details", "properties", "tags"], "I")
+        p.addAction("add-folder", qsTr("Add a folder to the library…"), ["open", "import", "scan"], "O")
+        p.addAction("rescan", qsTr("Rescan the library"), ["scan", "refresh", "update"], "F5")
+        p.addAction("cancel-job", qsTr("Cancel the running scan"), ["stop", "abort"], "")
+        p.addAction("entire", qsTr("Go to Entire Library"), ["all", "tracks"], "")
+        p.addAction("now-playing", qsTr("Go to Now Playing"), ["queue", "playlist"], "")
+        p.addAction("play-selection", qsTr("Play the selected tracks"), ["enter"], "Enter")
+        p.addAction("queue-selection", qsTr("Play the selected tracks next"), ["queue", "enqueue"], "")
+        p.addAction("append-selection", qsTr("Add the selected tracks to Now Playing"), ["enqueue", "append"], "")
+        p.addAction("select-all", qsTr("Select every track in the list"), [], "Ctrl+A")
+        p.addAction("show-folder", qsTr("Show the track in its folder"), ["file manager", "reveal"], "")
+        p.addAction("clear-browser", qsTr("Clear the column browser"), ["reset", "all"], "")
+        p.addAction("prefetch-art", qsTr("Find covers for every album"), ["artwork", "pictures"], "")
+        p.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help", "keys"], "?")
+        p.addAction("quit", qsTr("Quit"), ["exit", "close"], "Q")
+    }
+
+    function updateActions() {
+        const p = commandPalette
+        p.setActionEnabled("rescan", !library.busy)
+        p.setActionEnabled("cancel-job", library.busy)
+        const listed = advanced && library.ready && library.currentKind !== "nowplaying"
+        for (const id of ["play-selection", "queue-selection", "append-selection", "select-all", "show-folder"])
+            p.setActionEnabled(id, listed && !prefs.gridVisible && library.tracks.count > 0)
+        p.setActionEnabled("clear-browser", prefs.browserVisible && library.browser.filtering)
+    }
+
+    function runAction(id) {
+        const view = advancedLoader.item
+        switch (id) {
+        case "play-pause": backend.toggle(); break
+        case "play": backend.play(); break
+        case "stop": backend.stop(); break
+        case "next": backend.next(); break
+        case "previous": backend.previous(); break
+        case "shuffle": backend.shuffle = !backend.shuffle; break
+        case "repeat": backend.repeat = !backend.repeat; break
+        case "volume-up": backend.volume += 5; break
+        case "volume-down": backend.volume -= 5; break
+        case "time": showRemaining = !showRemaining; break
+        case "advanced": setAdvanced(!advanced); break
+        case "search": setAdvanced(true); if (advancedLoader.item) advancedLoader.item.focusSearch(); break
+        case "browser": toggleBrowser(); break
+        case "grid": toggleGrid(); break
+        case "info": toggleInfo(); break
+        case "add-folder": advanced ? library.addFolder() : backend.openFolder(); break
+        case "rescan": setAdvanced(true); library.rescan(); break
+        case "cancel-job": library.cancelJob(); break
+        case "entire": setAdvanced(true); library.selectNode(0); break
+        case "now-playing": {
+            setAdvanced(true)
+            const row = library.tree.reveal(["playlists", "nowplaying"])
+            if (row >= 0) library.selectNode(row)
+            break
+        }
+        case "play-selection": library.playSelection(); break
+        case "queue-selection": library.queueSelection(); break
+        case "append-selection": library.appendSelection(); break
+        case "select-all": library.tracks.selectAll(); break
+        case "show-folder": library.showInFolder(library.tracks.currentRow); break
+        case "clear-browser": library.browser.clear(); break
+        case "prefetch-art": setAdvanced(true); library.prefetchArtwork(); break
+        case "shortcuts": helpVisible = true; break
+        case "quit": Qt.quit(); break
+        }
+    }
+
+    function showInList() {
+        setAdvanced(true)
+        if (prefs.gridVisible) prefs.gridVisible = false
+        if (advancedLoader.item) advancedLoader.item.focusList()
+    }
+
+    Connections {
+        target: commandPalette
+        function onActionTriggered(id) { win.runAction(id) }
+        function onArtistActivated(artistId, name) { win.showInList(); library.showArtist(artistId) }
+        function onAlbumActivated(albumId, title, albumArtist) { win.showInList(); library.showAlbum(albumId) }
+        function onTrackActivated(trackId) { win.showInList(); library.showTrack(trackId) }
+        function onSearchRequested(text) {
+            win.setAdvanced(true)
+            if (advancedLoader.item) {
+                advancedLoader.item.setSearchText(text)
+                advancedLoader.item.focusList()
+            }
+        }
+    }
 
     function clock(ms) {
         if (ms === undefined || ms < 0 || isNaN(ms)) ms = 0
@@ -110,6 +260,11 @@ ApplicationWindow {
     Shortcut { sequences: ["/", "Ctrl+F"]; context: Qt.ApplicationShortcut; enabled: win.advanced
                onActivated: advancedLoader.item.focusSearch() }
     Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: library.rescan() }
+    // B stays Winamp's "next", so the column browser takes Ctrl+B.
+    Shortcut { sequence: "Ctrl+B"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: win.toggleBrowser() }
+    Shortcut { sequence: "I"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: win.toggleInfo() }
+    Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: win.toggleGrid() }
+    Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; onActivated: palette.toggle() }
 
     Item {
         anchors.fill: parent
@@ -508,8 +663,26 @@ ApplicationWindow {
                 showRemaining: win.showRemaining
                 treeWidth: prefs.treeWidth
                 columns: prefs.columns
+                browserVisible: prefs.browserVisible
+                browserHeight: prefs.browserHeight
+                infoVisible: prefs.infoVisible
+                infoWidth: prefs.infoWidth
+                gridVisible: prefs.gridVisible
                 onClockClicked: win.showRemaining = !win.showRemaining
+                onToggleBrowser: win.toggleBrowser()
+                onToggleInfo: win.toggleInfo()
+                onToggleGrid: win.toggleGrid()
             }
+        }
+
+        // Ctrl+K: actions, artists, albums and tracks in one list.
+        CommandPalette {
+            id: palette
+            objectName: "commandPalette"
+            model: commandPalette
+            onAboutToShow: win.updateActions()
+            // Back to where the keys were.
+            onClosed: if (win.advanced && advancedLoader.item && !advancedLoader.item.activeFocus) advancedLoader.item.focusList()
         }
 
         DropArea {
@@ -559,7 +732,11 @@ ApplicationWindow {
                             ["Enter", qsTr("Play the list from this track")],
                             ["Menu", qsTr("Play next, add to Now Playing, show in folder")],
                             ["O", qsTr("Add a folder to the library")],
-                            ["F5", qsTr("Rescan the library")]
+                            ["F5", qsTr("Rescan the library")],
+                            ["Ctrl+K", qsTr("Command palette: actions, artists, albums, tracks")],
+                            ["Ctrl+B", qsTr("Show or hide the column browser")],
+                            ["G", qsTr("Album covers or the track list")],
+                            ["I", qsTr("Show or hide the info panel")]
                         ]]
                     ] : [
                         [qsTr("Keys"), [
@@ -575,6 +752,7 @@ ApplicationWindow {
                             ["O", qsTr("Add a music folder")],
                             ["T", qsTr("Show time left or time played")],
                             ["Tab", qsTr("Open the library (advanced mode)")],
+                            ["Ctrl+K", qsTr("Command palette")],
                             ["?", qsTr("Show or hide these keys")],
                             ["Q", qsTr("Quit")]
                         ]]

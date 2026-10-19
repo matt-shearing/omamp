@@ -65,6 +65,13 @@ public:
     Q_INVOKABLE QString key(int row) const;
     Q_INVOKABLE bool isExpanded(int row) const;
     Q_INVOKABLE bool isExpandable(int row) const;
+    // Opens each key in turn (each must show once the one before is open)
+    // and returns the row of the last, or -1.
+    Q_INVOKABLE int reveal(const QStringList &keys);
+
+    // The letter an album files under in the Album node: its first letter,
+    // upper case, or # for anything that isn't a letter.
+    static QString letterOf(const QString &title);
 
     // Reads the tree again after a scan, keeping what was open.
     Q_INVOKABLE void reload();

@@ -26,15 +26,6 @@ QString stars(int halfStars) {
     return QString(halfStars / 2, QChar(0x2605)) + (halfStars % 2 ? QStringLiteral("½") : QString());
 }
 
-// The letter an album files under: its first letter, upper case, or # for
-// anything that isn't a letter.
-QString letterOf(const QString &title) {
-    const QString t = title.trimmed();
-    if (t.isEmpty() || !t[0].isLetter())
-        return QStringLiteral("#");
-    return t.left(1).toUpper();
-}
-
 QString placeholders(int n) {
     QStringList marks;
     for (int i = 0; i < n; ++i)
@@ -43,6 +34,25 @@ QString placeholders(int n) {
 }
 
 } // namespace
+
+QString LibraryTree::letterOf(const QString &title) {
+    const QString t = title.trimmed();
+    if (t.isEmpty() || !t[0].isLetter())
+        return QStringLiteral("#");
+    return t.left(1).toUpper();
+}
+
+int LibraryTree::reveal(const QStringList &keys) {
+    int row = -1;
+    for (int i = 0; i < keys.size(); ++i) {
+        row = rowOfKey(keys[i]);
+        if (row < 0)
+            return -1;
+        if (i + 1 < keys.size())
+            expand(row);
+    }
+    return row;
+}
 
 LibraryTree::LibraryTree(QObject *parent) : QAbstractListModel(parent) {}
 

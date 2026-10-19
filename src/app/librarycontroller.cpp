@@ -1,15 +1,18 @@
 #include "librarycontroller.h"
 
+#include "artwork.h"
 #include "job.h"
 #include "library.h"
 #include "player.h"
 #include "portal.h"
 #include "scanner.h"
 #include "volumes.h"
+#include "watcher.h"
 
 #include <QFileInfo>
 #include <QLocale>
 #include <QProcess>
+#include <QSqlQuery>
 
 LibraryController::LibraryController(const QString &databasePath, QObject *parent)
     : QObject(parent), m_path(databasePath.isEmpty() ? Library::defaultPath() : databasePath) {
@@ -29,9 +32,24 @@ LibraryController::LibraryController(const QString &databasePath, QObject *paren
             selectNode(first - 1);
         }
     });
+    m_browser.setTracks(&m_tracks);
+    m_albumGrid.setTracks(&m_tracks);
+    connect(&m_tracks, &TrackListModel::playingPathChanged, this, &LibraryController::updatePlayingTrack);
+    // The grid's covers come from the cache; making the rest in the
+    // background the first time the grid shows lets them fill in.
+    connect(&m_albumGrid, &AlbumGridModel::activeChanged, this, [this] {
+        if (m_albumGrid.active())
+            prefetchArtwork();
+    });
 }
 
 LibraryController::~LibraryController() {
+    m_watcher.reset();
+    if (m_prefetch) {
+        m_prefetch->cancel();
+        delete m_prefetch;
+    }
+    m_palette.setLibrary(nullptr);
     if (m_scanThread) {
         if (m_job)
             m_job->cancel();
@@ -60,15 +78,34 @@ bool LibraryController::activate() {
     library->refreshVolumes(VolumeResolver());
     m_library = std::move(library);
     m_tree.setDatabase(m_library->db());
+    m_browser.setDatabase(m_library->db());
     m_tracks.setDatabase(m_library->db());
+    m_albumGrid.setDatabase(m_library->db());
+    m_palette.setLibrary(m_library.get());
     m_ready = true;
     if (!m_error.isEmpty()) {
         m_error.clear();
         emit errorChanged();
     }
-    emit readyChanged();
     selectNode(0);
+    updatePlayingTrack();
+    startWatcher();
+    emit readyChanged();
     return true;
+}
+
+void LibraryController::startWatcher() {
+    if (!m_watching || m_watcher)
+        return;
+    m_watcher = std::make_unique<Watcher>(m_path);
+    // A rescan by the watcher wrote to the library on its own thread; this
+    // arrives on the window's thread, after the batch is committed.
+    connect(m_watcher.get(), &Watcher::libraryChanged, this, &LibraryController::refreshAll);
+    connect(m_watcher.get(), &Watcher::watchLimitReached, this, [this](int watched, int limit) {
+        setMessage(tr("Watching %1 folders, the most allowed (%2); the rest are checked every 15 minutes")
+                       .arg(QLocale().toString(watched), QLocale().toString(limit)));
+    });
+    m_watcher->start();
 }
 
 QString LibraryController::currentLabel() const {
@@ -181,15 +218,10 @@ void LibraryController::onScanFinished(const QJsonObject &result) {
                                                       : tr("Scan finished: %1").arg(what));
     }
     if (m_ready) {
-        const QString key = m_tree.key(m_currentNode);
-        m_tree.reload();
-        const int row = m_tree.rowOfKey(key);
-        m_currentNode = row >= 0 ? row : 0;
-        emit currentNodeChanged();
-        // The node's scope may have new values (a new volume); reselecting
-        // keeps the list, the sort and the filter.
-        const LibraryTree::Node &n = m_tree.node(m_currentNode);
-        m_tracks.setScope(n.where, n.params);
+        refreshAll();
+        // A new library folder needs watching.
+        if (m_watcher)
+            m_watcher->reload();
     }
     emit scanFinished(result);
 }
@@ -284,4 +316,225 @@ void LibraryController::showInFolder(int row) {
     }
     if (!QProcess::startDetached("xdg-open", {QFileInfo(path).absolutePath()}))
         setMessage(tr("Can't run xdg-open"));
+}
+
+// ---- Phase 1D: refresh, info, going to things --------------------------------
+
+void LibraryController::refreshAll() {
+    if (!m_ready)
+        return;
+    const QString key = m_tree.key(m_currentNode);
+    m_tree.reload();
+    const int row = m_tree.rowOfKey(key);
+    m_currentNode = row >= 0 ? row : 0;
+    emit currentNodeChanged();
+    const LibraryTree::Node &n = m_tree.node(m_currentNode);
+    if (n.where == m_tracks.scopeWhere() && n.params == m_tracks.scopeParams()) {
+        // The same list with new data: keep the selection, the cursor and
+        // (in the view) the scroll position.
+        m_browser.recount();
+        m_tracks.refresh();
+    } else {
+        // The node's scope changed (a new volume, say): a new list.
+        m_tracks.setScope(n.where, n.params);
+    }
+    m_albumGrid.refresh();
+    m_palette.refresh();
+    updatePlayingTrack();
+    ++m_revision;
+    emit revisionChanged();
+}
+
+void LibraryController::updatePlayingTrack() {
+    qint64 id = 0;
+    const QString path = m_tracks.playingPath();
+    if (m_library && !path.isEmpty()) {
+        QSqlQuery q(m_library->db());
+        q.setForwardOnly(true);
+        q.exec("SELECT id, root_path FROM volumes WHERE online");
+        QList<QPair<qint64, QString>> volumes;
+        while (q.next())
+            volumes.append({q.value(0).toLongLong(), q.value(1).toString()});
+        for (const auto &v : volumes) {
+            const QString root = v.second == "/" ? QString() : v.second;
+            if (!path.startsWith(root + '/'))
+                continue;
+            QSqlQuery t(m_library->db());
+            t.prepare("SELECT id FROM tracks WHERE volume_id = ? AND rel_path = ?");
+            t.addBindValue(v.first);
+            t.addBindValue(path.mid(root.size() + 1));
+            if (t.exec() && t.next()) {
+                id = t.value(0).toLongLong();
+                break;
+            }
+        }
+    }
+    if (id != m_playingTrackId) {
+        m_playingTrackId = id;
+        emit playingTrackIdChanged();
+    }
+}
+
+QVariantMap LibraryController::trackInfo(qint64 trackId) const {
+    QVariantMap m;
+    if (!m_library || trackId <= 0)
+        return m;
+    QSqlQuery q(m_library->db());
+    q.setForwardOnly(true);
+    q.prepare("SELECT t.id, t.title, t.artist, t.album_artist, t.album, t.album_id, t.year, t.genre, t.format, "
+              "t.bitrate, t.sample_rate, t.channels, t.duration_ms, t.size, t.rg_track_gain, t.rg_track_peak, "
+              "t.rg_album_gain, t.rg_album_peak, t.rating, t.play_count, t.last_played, t.added, t.availability, "
+              "t.has_lyrics, t.has_embedded_art, t.track_no, t.disc_no, t.composer, t.file_name, t.rel_path, "
+              "v.root_path, v.online, coalesce(v.label, ''), t.bpm, t.compilation "
+              "FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.id = ?");
+    q.addBindValue(trackId);
+    if (!q.exec() || !q.next())
+        return m;
+    auto number = [&](int i) { return q.value(i).isNull() ? QVariant() : q.value(i); };
+    m["id"] = q.value(0);
+    m["title"] = q.value(1).toString().isEmpty() ? q.value(28).toString() : q.value(1).toString();
+    m["artist"] = q.value(2).toString();
+    m["albumArtist"] = q.value(3).toString();
+    m["album"] = q.value(4).toString();
+    m["albumId"] = q.value(5).toLongLong();
+    m["year"] = q.value(6).toInt();
+    m["genre"] = q.value(7).toString();
+    m["format"] = q.value(8).toString().toUpper();
+    m["bitrate"] = q.value(9).toInt();
+    m["sampleRate"] = q.value(10).toInt();
+    m["channels"] = q.value(11).toInt();
+    m["durationMs"] = q.value(12).toLongLong();
+    m["size"] = q.value(13).toLongLong();
+    m["trackGain"] = number(14);
+    m["trackPeak"] = number(15);
+    m["albumGain"] = number(16);
+    m["albumPeak"] = number(17);
+    m["rating"] = q.value(18).isNull() ? -1 : q.value(18).toInt();
+    m["plays"] = q.value(19).toInt();
+    m["lastPlayed"] = q.value(20).toLongLong();
+    m["added"] = q.value(21).toLongLong();
+    m["availability"] = q.value(22).toString();
+    m["hasLyrics"] = q.value(23).toBool();
+    m["hasEmbeddedArt"] = q.value(24).toBool();
+    m["trackNo"] = q.value(25).toInt();
+    m["discNo"] = q.value(26).toInt();
+    m["composer"] = q.value(27).toString();
+    const QString root = q.value(30).toString();
+    const bool online = q.value(31).toBool();
+    // Where the file is: its full path, or the volume's name and the path on
+    // it while the volume is offline.
+    m["path"] = online ? (root == "/" ? QString() : root) + '/' + q.value(29).toString()
+                       : QString("%1: %2").arg(q.value(32).toString().isEmpty() ? root : q.value(32).toString(),
+                                               q.value(29).toString());
+    m["online"] = online && q.value(22).toString() == "online";
+    m["bpm"] = q.value(33).toInt();
+    m["compilation"] = q.value(34).toBool();
+    return m;
+}
+
+qint64 LibraryController::firstTrackOfAlbum(qint64 albumId) const {
+    if (!m_library || albumId <= 0)
+        return 0;
+    QSqlQuery q(m_library->db());
+    q.prepare("SELECT id FROM tracks WHERE album_id = ? ORDER BY disc_no, track_no, rel_path LIMIT 1");
+    q.addBindValue(albumId);
+    return q.exec() && q.next() ? q.value(0).toLongLong() : 0;
+}
+
+int LibraryController::playAlbum(qint64 albumId) {
+    if (!m_player || !m_library || albumId <= 0)
+        return 0;
+    QSqlQuery q(m_library->db());
+    q.setForwardOnly(true);
+    q.prepare("SELECT id FROM tracks t WHERE t.album_id = ? ORDER BY t.disc_no, t.track_no, t.rel_path");
+    q.addBindValue(albumId);
+    QVector<qint64> ids;
+    if (q.exec())
+        while (q.next())
+            ids << q.value(0).toLongLong();
+    const QList<Playlist::Track> tracks = toPlaylist(m_tracks.rowsForIds(ids.mid(0, maxPlayNow)));
+    if (tracks.isEmpty()) {
+        setMessage(tr("That album is offline"));
+        return 0;
+    }
+    return m_player->playTracks(tracks, 0);
+}
+
+void LibraryController::setSearch(const QString &text) {
+    m_tracks.setFilter(text);
+    emit searchSet(text);
+}
+
+int LibraryController::showArtist(qint64 artistId) {
+    if (!activate())
+        return -1;
+    m_browser.clear();
+    if (!m_tracks.filter().isEmpty())
+        setSearch({});
+    const int row = m_tree.reveal({"artists", QString("artist:%1").arg(artistId)});
+    if (row >= 0)
+        selectNode(row);
+    return row;
+}
+
+int LibraryController::showAlbum(qint64 albumId) {
+    if (!activate())
+        return -1;
+    // The Album node files albums by the first letter of their tracks' album tag.
+    QSqlQuery q(m_library->db());
+    q.prepare("SELECT album FROM tracks WHERE album_id = ? LIMIT 1");
+    q.addBindValue(albumId);
+    if (!q.exec() || !q.next())
+        return -1;
+    const QString letter = "letter:" + LibraryTree::letterOf(q.value(0).toString().left(1));
+    m_browser.clear();
+    if (!m_tracks.filter().isEmpty())
+        setSearch({});
+    const int row = m_tree.reveal({"albums", letter, QString("%1/album:%2").arg(letter).arg(albumId)});
+    if (row >= 0)
+        selectNode(row);
+    return row;
+}
+
+int LibraryController::showTrack(qint64 trackId) {
+    if (!activate())
+        return -1;
+    int row = m_tracks.rowOfTrack(trackId);
+    if (row < 0 && m_browser.filtering()) {
+        m_browser.clear();
+        row = m_tracks.rowOfTrack(trackId);
+    }
+    if (row < 0 && !m_tracks.filter().isEmpty()) {
+        setSearch({});
+        row = m_tracks.rowOfTrack(trackId);
+    }
+    if (row < 0 && m_currentNode != 0) {
+        selectNode(0);
+        row = m_tracks.rowOfTrack(trackId);
+    }
+    if (row >= 0) {
+        m_tracks.select(row);
+        emit revealRow(row);
+    }
+    return row;
+}
+
+bool LibraryController::artworkBusy() const { return m_prefetch && m_prefetch->isRunning(); }
+
+void LibraryController::prefetchArtwork() {
+    if (!m_ready || artworkBusy())
+        return;
+    if (!m_prefetch) {
+        m_prefetch = new ArtworkPrefetch(m_path, m_artCacheDir);
+        connect(m_prefetch, &ArtworkPrefetch::finished, this, [this](int made) {
+            emit artworkBusyChanged();
+            if (made > 0) {
+                // Tiles that found no picture before ask again.
+                ++m_revision;
+                emit revisionChanged();
+            }
+        });
+    }
+    m_prefetch->start(96);
+    emit artworkBusyChanged();
 }

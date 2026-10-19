@@ -1,0 +1,101 @@
+#!/bin/bash
+# Makes a small made-up library for the README screenshots: twelve albums by
+# invented artists, each track a second of a quiet tone, with covers drawn
+# by ffmpeg in plain colours (some as cover.jpg beside the tracks, some
+# embedded in the files, one album with none). Tracks carry genres, ratings,
+# play counts, ReplayGain and, on one album, lyrics.
+#
+#   tests/make-demo-library <folder>
+#
+# Nothing here is anyone's real music. CPU only.
+set -euo pipefail
+
+out="${1:?usage: make-demo-library <folder>}"
+mkdir -p "$out"
+cd "$out"
+
+# cover <file> <background> <band> <square>: a 600x600 picture in three colours.
+cover() {
+    ffmpeg -nostdin -hide_banner -loglevel error -y \
+        -f lavfi -i "color=c=$2:s=600x600:d=1" \
+        -vf "drawbox=x=0:y=390:w=600:h=210:color=$3:t=fill,drawbox=x=70:y=80:w=220:h=220:color=$4:t=fill" \
+        -frames:v 1 -q:v 3 "$1"
+}
+
+# tone <file> <frequency> <ffmpeg args...>
+tone() {
+    local file="$1" freq="$2"
+    shift 2
+    mkdir -p "$(dirname "$file")"
+    ffmpeg -nostdin -hide_banner -loglevel error -y \
+        -f lavfi -i "sine=frequency=$freq:sample_rate=44100:duration=1" \
+        -af volume=0.05 -map_metadata -1 "$@" "$file"
+}
+
+# album <artist> <album> <year> <genre> <art: folder|embedded|none> <bg> <band> <square> <titles...>
+# Each title is "Title|rating 0-1|plays".
+album() {
+    local artist="$1" album="$2" year="$3" genre="$4" art="$5" bg="$6" band="$7" square="$8"
+    shift 8
+    local dir="$artist/$album"
+    mkdir -p "$dir"
+    local pic="$dir/.cover-src.jpg"
+    if [ "$art" != none ]; then
+        cover "$pic" "$bg" "$band" "$square"
+    fi
+    local n=0
+    for entry in "$@"; do
+        n=$((n + 1))
+        IFS='|' read -r title rating plays <<<"$entry"
+        local common=(-metadata title="$title" -metadata artist="$artist" -metadata album_artist="$artist"
+            -metadata album="$album" -metadata date="$year" -metadata genre="$genre" -metadata track="$n")
+        local gain
+        gain=$(printf -- "-%d.%02d dB" $((4 + n % 5)) $((n * 17 % 100)))
+        if [ "$art" = embedded ]; then
+            # MP3 with the cover as an ID3 picture.
+            local tmp="$dir/.tmp.mp3"
+            tone "$tmp" $((220 + n * 40)) -c:a libmp3lame -b:a 192k "${common[@]}"
+            ffmpeg -nostdin -hide_banner -loglevel error -y -i "$tmp" -i "$pic" -map 0 -map 1 -c copy \
+                -id3v2_version 3 -metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" \
+                -disposition:v attached_pic "$dir/$(printf %02d $n) $title.mp3"
+            rm -f "$tmp"
+        else
+            tone "$dir/$(printf %02d $n) $title.flac" $((220 + n * 40)) "${common[@]}" \
+                -metadata FMPS_RATING="$rating" -metadata FMPS_PLAYCOUNT="$plays" \
+                -metadata REPLAYGAIN_TRACK_GAIN="$gain" -metadata REPLAYGAIN_TRACK_PEAK=0.912345 \
+                -metadata REPLAYGAIN_ALBUM_GAIN="-5.80 dB" -metadata REPLAYGAIN_ALBUM_PEAK=0.988000 \
+                ${LYRICS:+-metadata LYRICS="$LYRICS"}
+        fi
+    done
+    if [ "$art" = folder ]; then
+        mv "$pic" "$dir/cover.jpg"
+    else
+        rm -f "$pic"
+    fi
+}
+
+LYRICS="Headlights on the wet road, nothing else around" \
+album "Neon Coast" "Night Drive" 1997 Synthwave folder "#2b1055" "#ff2fa0" "#20d0ff" \
+    "Midnight Highway|0.8|31" "Coastline|1.0|44" "Afterglow|0.6|12" "Tail Lights|0.9|20"
+album "Neon Coast" "Afterglow City" 2001 Synthwave embedded "#ff7a18" "#3a0ca3" "#ffd166" \
+    "City Pulse|0.8|9" "Glass Towers|0.6|4" "Last Train Home|0.8|7"
+album "Paper Lanterns" "Quiet Harbour" 2014 Folk folder "#0f4c5c" "#e9c46a" "#f4f1de" \
+    "Low Tide|0.8|15" "Rope and Sail|0.6|8" "Lantern Song|1.0|22"
+album "The Slow Rivers" "Delta Hours" 1968 Blues folder "#5a3e2b" "#d9a066" "#1d1d1d" \
+    "Muddy Morning|0.6|5" "Long Way Down|0.8|11" "Porch Light|0.4|2"
+album "Kite Season" "Open Fields" 2019 "Indie Pop" embedded "#7bd389" "#1b4332" "#fefae0" \
+    "Paper Wings|0.8|18" "Sunday Bikes|0.6|6" "Grass Stains|0.8|9"
+album "Marlowe Quartet" "Blue Hour Sessions" 1959 Jazz folder "#14213d" "#4ea8de" "#fca311" \
+    "Smoke Rings|1.0|27" "Brushes|0.8|13" "Last Call|0.8|10"
+album "Iron Orchard" "Rust Belt Hymns" 2009 Rock folder "#9d0208" "#1a1a1a" "#ffba08" \
+    "Steel Town|0.8|14" "Factory Bells|0.6|3" "Engine Heart|0.8|8"
+album "Static Bloom" "Glass Weather" 2022 Electronic folder "#5a189a" "#e0aaff" "#10002b" \
+    "Prism|0.8|6" "Cloud Static|0.6|2" "Bloom|1.0|11"
+album "Harbour Lights" "Northern Line" 1985 Rock folder "#023e8a" "#caf0f8" "#e63946" \
+    "Platform Nine|0.6|4" "Tunnel Vision|0.8|7" "Last Stop|0.6|3"
+album "Kite Season" "Paper Planes" 2016 "Indie Pop" folder "#ffafcc" "#3d405b" "#bde0fe" \
+    "Fold Here|0.8|5" "Tailwind|0.6|3"
+album "Marlowe Quartet" "Late Set" 1962 Jazz none "" "" "" \
+    "After Hours|0.6|4" "Night Owl|0.8|6"
+album "Copper Fox" "Embers" 2011 Folk folder "#bc6c25" "#283618" "#fefae0" \
+    "Kindling|0.8|9" "Hearthside|0.6|5" "Ash and Oak|0.8|7"

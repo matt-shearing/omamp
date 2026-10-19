@@ -101,6 +101,29 @@ void DevHooks::runDemo() {
             tracks->setSort(arg.toInt(), false);
         else if (verb == "help")
             m_window->setProperty("helpVisible", true);
+        else if (verb == "browse" || verb == "browse+") {
+            // browse:<pane>:<label> chooses a value; browse+ adds it (Ctrl).
+            const int pane = arg.section(':', 0, 0).toInt();
+            const QString label = arg.section(':', 1);
+            FacetModel *facet = m_library->browser()->pane(pane);
+            int row = -1;
+            for (int i = 1; facet && i < facet->count(); ++i)
+                if (facet->label(i) == label)
+                    row = i;
+            if (row < 0)
+                say("no browser value " + arg);
+            else
+                m_library->browser()->select(pane, row, verb == "browse+" ? Qt::ControlModifier : 0);
+        } else if (verb == "grid" || verb == "info" || verb == "browser") {
+            const char *method = verb == "grid" ? "toggleGrid" : verb == "info" ? "toggleInfo" : "toggleBrowser";
+            QMetaObject::invokeMethod(m_window, method);
+        } else if (verb == "album")
+            m_library->albumGrid()->setCurrentRow(arg.toInt());
+        else if (verb == "palette") {
+            if (QObject *palette = m_window->findChild<QObject *>("commandPalette"))
+                QMetaObject::invokeMethod(palette, "openWith", Q_ARG(QVariant, arg));
+        } else if (verb == "current")
+            tracks->setCurrentRow(arg.toInt());
         else
             say("unknown demo step " + step);
     }

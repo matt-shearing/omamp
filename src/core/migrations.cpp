@@ -306,12 +306,30 @@ static const QStringList version4 = {
     "CREATE INDEX tracks_play_count ON tracks(play_count)",
 };
 
+// Phase 1D: sorting the track list by a text column. Each index holds the
+// column's sort key followed by the library order (the tie-break the track
+// list always adds), so SQLite reads the whole ORDER BY off the index rather
+// than sorting 200,000 rows (about 200 ms before, 10 ms after). Title sorts
+// by the file name when a track has no title, so its key is that expression,
+// written exactly as TrackListModel::orderBy() writes it. Album's tie-break
+// leaves album out, since it is already the key.
+static const QStringList version5 = {
+    "CREATE INDEX tracks_sort_title ON tracks(coalesce(nullif(title, ''), file_name) COLLATE NOCASE, "
+    "sort_artist COLLATE NOCASE, album COLLATE NOCASE, disc_no, track_no)",
+    "CREATE INDEX tracks_sort_artist ON tracks(artist COLLATE NOCASE, sort_artist COLLATE NOCASE, "
+    "album COLLATE NOCASE, disc_no, track_no)",
+    "CREATE INDEX tracks_sort_album ON tracks(album COLLATE NOCASE, sort_artist COLLATE NOCASE, disc_no, track_no)",
+    "CREATE INDEX tracks_sort_genre ON tracks(genre COLLATE NOCASE, sort_artist COLLATE NOCASE, "
+    "album COLLATE NOCASE, disc_no, track_no)",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
         {2, "trigram search index", version2},
         {3, "tag extras, moved files, artwork cache", version3},
         {4, "play statistics indexes", version4},
+        {5, "text sort indexes", version5},
     };
     return all;
 }

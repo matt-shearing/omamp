@@ -27,6 +27,20 @@ FocusScope {
         }
     }
 
+    // The tree reloads after the library changes (a scan or the folder
+    // watcher); it keeps its scroll position through that.
+    property real keepY: 0
+    Connections {
+        target: library.tree
+        function onModelAboutToBeReset() { pane.keepY = list.contentY }
+        function onModelReset() {
+            list.currentIndex = library.currentNode
+            const y = pane.keepY
+            list.contentY = y
+            Qt.callLater(() => { list.contentY = Math.max(0, Math.min(y, list.contentHeight - list.height)) })
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         color: theme.c.dark_background

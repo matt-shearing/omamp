@@ -62,10 +62,32 @@ FocusScope {
     // A new list (another node, a search, a sort) starts from the top, or
     // from the track the cursor was on. TableView left far down a list it
     // no longer has rebuilds row by row, which takes seconds at 200,000.
+    //
+    // A refresh (the library changed underneath, for example the folder
+    // watcher added files) keeps the place instead: the track at the top
+    // stays at the top, at the same offset.
+    property var keepTop: null
     Connections {
         target: pane.tracks
+        function onAboutToRefresh() {
+            const top = Math.max(0, table.topRow)
+            pane.keepTop = pane.tracks.count > 0
+                ? { id: pane.tracks.trackId(top), row: top, offset: table.contentY - top * 24 } : null
+        }
         function onModelAboutToBeReset() { table.contentY = 0 }
-        function onReloaded() { if (pane.tracks.currentRow >= 0) pane.showRow(pane.tracks.currentRow) }
+        function onReloaded() {
+            const keep = pane.keepTop
+            pane.keepTop = null
+            if (keep) {
+                const row = pane.tracks.rowOfTrack(keep.id)
+                if (row >= 0) {
+                    table.positionViewAtRow(row, TableView.AlignTop)
+                    if (keep.offset > 0) table.contentY += keep.offset
+                    return
+                }
+            }
+            if (pane.tracks.currentRow >= 0) pane.showRow(pane.tracks.currentRow)
+        }
     }
 
     HorizontalHeaderView {

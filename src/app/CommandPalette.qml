@@ -22,6 +22,11 @@ Popup {
     signal chosen(var item)
 
     function toggle() { opened ? close() : open() }
+    // Opens with text already typed (for screenshots and tests).
+    function openWith(text) {
+        if (!opened) open()
+        input.text = text
+    }
 
     function move(by) {
         if (list.count === 0) return

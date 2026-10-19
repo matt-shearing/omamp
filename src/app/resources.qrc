@@ -6,6 +6,9 @@
         <file alias="ToggleLamp.qml">ToggleLamp.qml</file>
         <file alias="Bar.qml">Bar.qml</file>
         <file alias="AdvancedView.qml">AdvancedView.qml</file>
+        <file alias="AlbumGrid.qml">AlbumGrid.qml</file>
+        <file alias="BrowserPanes.qml">BrowserPanes.qml</file>
+        <file alias="InfoPanel.qml">InfoPanel.qml</file>
         <file alias="Analyser.qml">Analyser.qml</file>
         <file alias="CommandPalette.qml">CommandPalette.qml</file>
         <file alias="DeckStrip.qml">DeckStrip.qml</file>

@@ -38,6 +38,9 @@ class OrganiseModel : public QAbstractListModel {
     Q_PROPERTY(bool applying READ applying NOTIFY appliedChanged)
     Q_PROPERTY(QString resultText READ resultText NOTIFY appliedChanged)
     Q_PROPERTY(QString lastBatch READ lastBatch NOTIFY appliedChanged)
+    // The folder every old and new path lies in, so the table can show the
+    // part that changes.
+    Q_PROPERTY(QString commonRoot READ commonRoot NOTIFY planned)
     Q_PROPERTY(QVariantList presets READ presets CONSTANT)
 
 public:
@@ -49,6 +52,8 @@ public:
         NoteRole,
         EditedRole,      // the new path was typed by hand
         TrackIdRole,
+        OldShownRole,    // the paths below commonRoot, as the table shows them
+        NewShownRole,
     };
 
     explicit OrganiseModel(LibraryController *controller, QObject *parent = nullptr);
@@ -77,6 +82,7 @@ public:
     bool applying() const { return m_applying; }
     QString resultText() const { return m_resultText; }
     QString lastBatch() const { return m_lastBatch; }
+    QString commonRoot() const { return m_root; }
     QVariantList presets() const;
     const OrganisePlan &plan() const { return m_plan; }
 
@@ -106,6 +112,7 @@ signals:
 
 private:
     void markConflicts();
+    QString computeRoot() const;
     static QString statusText(const OrganiseItem &item);
 
     QPointer<LibraryController> m_controller;
@@ -116,5 +123,5 @@ private:
     QSet<int> m_editedRows;
     QTimer m_debounce;
     bool m_applied = false, m_applying = false;
-    QString m_resultText, m_lastBatch;
+    QString m_resultText, m_lastBatch, m_root;
 };

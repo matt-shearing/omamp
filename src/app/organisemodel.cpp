@@ -11,7 +11,9 @@
 
 namespace {
 
-const char *const defaultMask = "<Album Artist>/<Album> (<Year>)/<Disc#>-<Track#:2> <Title>";
+// MediaMonkey's example, with the year's brackets and the disc number left
+// out when a track has none ("Embers/01 Kindling", not "Embers ()/-01 ...").
+const char *const defaultMask = "<Album Artist>/<Album>$If(<Year>, (<Year>))/$If(<Disc#>,<Disc#>-)<Track#:2> <Title>";
 
 bool existsOnDisk(const QString &path) {
     return QFileInfo::exists(path) || QFileInfo(path).isSymLink();
@@ -56,7 +58,33 @@ int OrganiseModel::rowCount(const QModelIndex &parent) const { return parent.isV
 
 QHash<int, QByteArray> OrganiseModel::roleNames() const {
     return {{OldPathRole, "oldPath"}, {NewPathRole, "newPath"}, {StatusRole, "status"},  {StatusTextRole, "statusText"},
-            {NoteRole, "note"},       {EditedRole, "edited"},   {TrackIdRole, "trackId"}};
+            {NoteRole, "note"},       {EditedRole, "edited"},   {TrackIdRole, "trackId"},
+            {OldShownRole, "oldShown"}, {NewShownRole, "newShown"}};
+}
+
+QString OrganiseModel::computeRoot() const {
+    QStringList root;
+    bool first = true;
+    auto take = [&](const QString &path) {
+        if (path.isEmpty())
+            return;
+        QStringList parts = QFileInfo(path).absolutePath().split('/');
+        if (first) {
+            root = parts;
+            first = false;
+            return;
+        }
+        int k = 0;
+        while (k < root.size() && k < parts.size() && root[k] == parts[k])
+            ++k;
+        root = root.mid(0, k);
+    };
+    for (const OrganiseItem &i : m_plan.items) {
+        take(i.oldPath);
+        take(i.newPath);
+    }
+    const QString out = root.join('/');
+    return out.isEmpty() || out == QLatin1String("") ? QString() : out;
 }
 
 QString OrganiseModel::statusText(const OrganiseItem &item) {
@@ -95,6 +123,12 @@ QVariant OrganiseModel::data(const QModelIndex &index, int role) const {
     case NoteRole: return item.note;
     case EditedRole: return m_editedRows.contains(index.row());
     case TrackIdRole: return item.trackId;
+    case OldShownRole:
+    case NewShownRole: {
+        const QString path = role == OldShownRole ? item.oldPath : item.newPath;
+        const QString &root = m_root;
+        return !root.isEmpty() && path.startsWith(root + '/') ? path.mid(root.size() + 1) : path;
+    }
     }
     return {};
 }
@@ -204,6 +238,7 @@ void OrganiseModel::replan() {
     beginResetModel();
     m_editedRows.clear();
     m_plan = m_ids.isEmpty() ? OrganisePlan() : organiser.plan(m_ids, m_options);
+    m_root = computeRoot();
     if (m_applied) {
         m_applied = false;
         m_resultText.clear();
@@ -238,6 +273,7 @@ void OrganiseModel::setNewPath(int row, const QString &path) {
         c.skip = existsOnDisk(c.to);
     }
     markConflicts();
+    m_root = computeRoot();
     emit dataChanged(index(0), index(m_plan.items.size() - 1));
     emit planned();
 }
@@ -358,6 +394,7 @@ void OrganiseModel::close() {
     beginResetModel();
     m_ids.clear();
     m_plan = OrganisePlan();
+    m_root.clear();
     m_editedRows.clear();
     endResetModel();
     m_applied = false;

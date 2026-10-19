@@ -130,6 +130,18 @@ void DevHooks::runDemo() {
                 QMetaObject::invokeMethod(palette, "openWith", Q_ARG(QVariant, arg));
         } else if (verb == "current")
             tracks->setCurrentRow(arg.toInt());
+        else if (verb == "action")
+            // Any palette action: edit-tags, organise, undo-history, audit:<id>...
+            QMetaObject::invokeMethod(m_window, "runAction", Q_ARG(QVariant, arg));
+        else if (verb == "mask")
+            m_library->organiser()->setMask(arg), m_library->organiser()->replan();
+        else if (verb == "tagset")
+            // tagset:<field>=<value> types into the open tag editor.
+            m_library->tagEditor()->waitForLoad(), m_library->tagEditor()->setValue(arg.section('=', 0, 0), arg.section('=', 1));
+        else if (verb == "selectall")
+            tracks->selectAll();
+        else if (verb == "audits")
+            m_library->countAudits();
         else
             say("unknown demo step " + step);
     }

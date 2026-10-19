@@ -183,6 +183,10 @@ public:
     // The selected tracks' ids in list order (the cursor's when none are
     // selected), for the tag editor, organise and tag from file names.
     Q_INVOKABLE QVariantList selectedTrackIds() const;
+    // An album's tracks in disc and track order (the grid's chosen album).
+    Q_INVOKABLE QVariantList albumTrackIds(qint64 albumId) const;
+    // The Files to Edit checks, for the palette: [{id, title, description}].
+    Q_INVOKABLE QVariantList auditList() const;
 
     // Undo (Ctrl+Z) the newest change still in effect: a tag edit, tags
     // from file names, an organise, or a redo. Redo (Ctrl+Shift+Z) undoes

@@ -30,7 +30,10 @@ Rectangle {
     }
     function day(seconds) {
         if (!(seconds > 0)) return ""
-        return new Date(seconds * 1000).toLocaleDateString(Qt.locale(), Locale.ShortFormat)
+        // "12 Jul 2026" in English, so the day and month can't be mistaken.
+        // Reading the language makes bindings format again when it changes.
+        const language = translator.language
+        return library.formatDate(seconds)
     }
     function gain(db, peak) {
         if (db === undefined || db === null) return ""

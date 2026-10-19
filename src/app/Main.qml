@@ -25,6 +25,10 @@ ApplicationWindow {
     property int selected: backend.currentIndex
     // Tab switches between the deck and advanced mode (the library).
     readonly property bool advanced: prefs.advanced
+    // A sheet (tag editor, organise...) is open: the window's own keys are
+    // off, so letters typed or pressed there never play, skip or quit.
+    readonly property bool sheetOpen: tagSheet.opened || organiseSheet.opened || tagFromNameSheet.opened
+                                      || historySheet.opened || confirmSheet.opened
 
     // The mode, each mode's window size, and the library's layout, kept
     // between runs in ~/.config/omamp/window.conf.
@@ -143,8 +147,39 @@ ApplicationWindow {
         p.addAction("show-folder", qsTr("Show the track in its folder"), ["file manager", "reveal"], "")
         p.addAction("clear-browser", qsTr("Clear the column browser"), ["reset", "all"], "")
         p.addAction("prefetch-art", qsTr("Find covers for every album"), ["artwork", "pictures"], "")
+        p.addAction("edit-tags", qsTr("Edit tags of the selected tracks…"), ["properties", "tag editor", "metadata", "artwork", "lyrics"], "Ctrl+E")
+        p.addAction("edit-title", qsTr("Rename the track (edit its title)"), ["title", "rename"], "F2")
+        p.addAction("organise", qsTr("Organise files: rename and move by a mask…"), ["organize", "rename", "move", "auto-organize", "mask"], "Ctrl+Shift+O")
+        p.addAction("tag-from-filename", qsTr("Tag from file names…"), ["filename", "pattern", "auto-tag"], "")
+        p.addAction("undo", qsTr("Undo the last tag edit or organise"), ["revert", "back"], "Ctrl+Z")
+        p.addAction("redo", qsTr("Redo what was undone"), ["again"], "Ctrl+Shift+Z")
+        p.addAction("undo-history", qsTr("Undo history"), ["journal", "changes", "log"], "")
+        p.addAction("find-duplicates", qsTr("Find duplicates"), ["duplicate", "same", "copies", "dupes", "files to edit"], "")
+        for (const a of library.auditList())
+            p.addAction("audit:" + a.id, qsTr("Files to Edit: %1").arg(a.title), ["files to edit", "audit", "fix", "check"], "")
         p.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help", "keys"], "?")
         p.addAction("quit", qsTr("Quit"), ["exit", "close"], "Q")
+    }
+
+    // The tracks a command works on: the selection in the list, or the
+    // chosen album's tracks in the grid.
+    function chosenTrackIds() {
+        if (!advanced || !library.ready) return []
+        const view = advancedLoader.item
+        if (view && view.special) return []
+        if (prefs.gridVisible && library.albumGrid.currentAlbum > 0) return library.albumTrackIds(library.albumGrid.currentAlbum)
+        return library.selectedTrackIds()
+    }
+    function withTracks(run) {
+        const ids = chosenTrackIds()
+        if (ids.length === 0) { toast.show(qsTr("Choose some tracks in the list first")); return }
+        run(ids)
+    }
+    function goToNode(keys) {
+        setAdvanced(true)
+        const row = library.tree.reveal(keys)
+        if (row >= 0) library.selectNode(row)
+        if (advancedLoader.item) advancedLoader.item.focusList()
     }
 
     function updateActions() {
@@ -155,6 +190,13 @@ ApplicationWindow {
         for (const id of ["play-selection", "queue-selection", "append-selection", "select-all", "show-folder"])
             p.setActionEnabled(id, listed && !prefs.gridVisible && library.tracks.count > 0)
         p.setActionEnabled("clear-browser", prefs.browserVisible && library.browser.filtering)
+        const chosen = advanced && library.ready && !(advancedLoader.item && advancedLoader.item.special)
+                       && (prefs.gridVisible ? library.albumGrid.currentAlbum > 0 : library.tracks.count > 0)
+        for (const id of ["edit-tags", "organise", "tag-from-filename"])
+            p.setActionEnabled(id, chosen && !library.busy)
+        p.setActionEnabled("edit-title", chosen && !prefs.gridVisible && library.tracks.currentRow >= 0 && !library.busy)
+        p.setActionEnabled("undo", library.undoText !== "" && !library.busy)
+        p.setActionEnabled("redo", library.redoText !== "" && !library.busy)
     }
 
     function runAction(id) {
@@ -192,8 +234,25 @@ ApplicationWindow {
         case "show-folder": library.showInFolder(library.tracks.currentRow); break
         case "clear-browser": library.browser.clear(); break
         case "prefetch-art": setAdvanced(true); library.prefetchArtwork(); break
+        case "edit-tags": withTracks((ids) => tagSheet.openFor(ids)); break
+        case "edit-title":
+            if (view && view.listShowing && library.tracks.currentRow >= 0) view.editTitle()
+            else toast.show(qsTr("Put the cursor on a track in the list first"))
+            break
+        case "organise": withTracks((ids) => organiseSheet.openFor(ids)); break
+        case "tag-from-filename": withTracks((ids) => tagFromNameSheet.openFor(ids)); break
+        case "undo": library.undo(); break
+        case "redo": library.redo(); break
+        case "undo-history": setAdvanced(true); library.activate(); historySheet.open(); break
+        case "find-duplicates":
+            goToNode(["filestoedit", "duplicates"])
+            // By artist and title is quick; the other ways wait for Find.
+            if (!library.duplicates.searched && library.duplicates.by === "tags") library.duplicates.find()
+            break
         case "shortcuts": helpVisible = true; break
         case "quit": Qt.quit(); break
+        default:
+            if (id.startsWith("audit:")) goToNode(["filestoedit", id])
         }
     }
 
@@ -233,38 +292,44 @@ ApplicationWindow {
     }
 
     // Winamp's own keys (Z X C V B) alongside the Omarchy ones.
-    Shortcut { sequences: ["?", "Shift+/"]; context: Qt.ApplicationShortcut; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { sequence: "Escape"; context: Qt.ApplicationShortcut; enabled: win.helpVisible; onActivated: win.helpVisible = false }
-    Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
-    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; onActivated: backend.toggle() }
-    Shortcut { sequence: "Z"; context: Qt.ApplicationShortcut; onActivated: backend.previous() }
-    Shortcut { sequence: "X"; context: Qt.ApplicationShortcut; onActivated: backend.play() }
-    Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; onActivated: backend.pause() }
-    Shortcut { sequence: "V"; context: Qt.ApplicationShortcut; onActivated: backend.stop() }
-    Shortcut { sequence: "B"; context: Qt.ApplicationShortcut; onActivated: backend.next() }
-    Shortcut { sequence: "Left"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: backend.seekBy(-5000) }
-    Shortcut { sequence: "Right"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: backend.seekBy(5000) }
-    Shortcut { sequence: "Up"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: win.select(win.selected - 1) }
-    Shortcut { sequence: "Down"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: win.select(win.selected + 1) }
-    Shortcut { sequence: "Return"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: backend.playIndex(win.selected) }
-    Shortcut { sequence: "Delete"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: { backend.remove(win.selected); win.select(win.selected) } }
-    Shortcut { sequences: ["-", "Ctrl+Down"]; context: Qt.ApplicationShortcut; onActivated: backend.volume -= 5 }
-    Shortcut { sequences: ["=", "+", "Ctrl+Up"]; context: Qt.ApplicationShortcut; onActivated: backend.volume += 5 }
-    Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; onActivated: backend.shuffle = !backend.shuffle }
-    Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; onActivated: backend.repeat = !backend.repeat }
-    Shortcut { sequences: ["O", "L"]; context: Qt.ApplicationShortcut
+    Shortcut { sequences: ["?", "Shift+/"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.helpVisible = !win.helpVisible }
+    Shortcut { sequence: "Escape"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.helpVisible); onActivated: win.helpVisible = false }
+    Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: Qt.quit() }
+    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.toggle() }
+    Shortcut { sequence: "Z"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.previous() }
+    Shortcut { sequence: "X"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.play() }
+    Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.pause() }
+    Shortcut { sequence: "V"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.stop() }
+    Shortcut { sequence: "B"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.next() }
+    Shortcut { sequence: "Left"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: backend.seekBy(-5000) }
+    Shortcut { sequence: "Right"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: backend.seekBy(5000) }
+    Shortcut { sequence: "Up"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: win.select(win.selected - 1) }
+    Shortcut { sequence: "Down"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: win.select(win.selected + 1) }
+    Shortcut { sequence: "Return"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: backend.playIndex(win.selected) }
+    Shortcut { sequence: "Delete"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: { backend.remove(win.selected); win.select(win.selected) } }
+    Shortcut { sequences: ["-", "Ctrl+Down"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.volume -= 5 }
+    Shortcut { sequences: ["=", "+", "Ctrl+Up"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.volume += 5 }
+    Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.shuffle = !backend.shuffle }
+    Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.repeat = !backend.repeat }
+    Shortcut { sequences: ["O", "L"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen
                onActivated: win.advanced ? library.addFolder() : backend.openFolder() }
-    Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; onActivated: win.showRemaining = !win.showRemaining }
+    Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.showRemaining = !win.showRemaining }
     // Advanced mode.
-    Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; onActivated: win.setAdvanced(!win.advanced) }
-    Shortcut { sequences: ["/", "Ctrl+F"]; context: Qt.ApplicationShortcut; enabled: win.advanced
+    Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.setAdvanced(!win.advanced) }
+    Shortcut { sequences: ["/", "Ctrl+F"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced)
                onActivated: advancedLoader.item.focusSearch() }
-    Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: library.rescan() }
+    Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: library.rescan() }
     // B stays Winamp's "next", so the column browser takes Ctrl+B.
-    Shortcut { sequence: "Ctrl+B"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: win.toggleBrowser() }
-    Shortcut { sequence: "I"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: win.toggleInfo() }
-    Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: win.toggleGrid() }
-    Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; onActivated: palette.toggle() }
+    Shortcut { sequence: "Ctrl+B"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleBrowser() }
+    Shortcut { sequence: "I"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleInfo() }
+    Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleGrid() }
+    Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: palette.toggle() }
+    // Phase 2: tags, organise, undo.
+    Shortcut { sequence: "Ctrl+E"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.advanced; onActivated: win.runAction("edit-tags") }
+    Shortcut { sequence: "F2"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.advanced; onActivated: win.runAction("edit-title") }
+    Shortcut { sequence: "Ctrl+Shift+O"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.advanced; onActivated: win.runAction("organise") }
+    Shortcut { sequences: [StandardKey.Undo]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("undo") }
+    Shortcut { sequences: ["Ctrl+Shift+Z", "Ctrl+Y"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("redo") }
 
     Item {
         anchors.fill: parent
@@ -672,7 +737,39 @@ ApplicationWindow {
                 onToggleBrowser: win.toggleBrowser()
                 onToggleInfo: win.toggleInfo()
                 onToggleGrid: win.toggleGrid()
+                onAction: (id) => win.runAction(id)
+                onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
             }
+        }
+
+        // Phase 2's sheets, over the library.
+        TagEditorSheet { id: tagSheet }
+        OrganiseSheet { id: organiseSheet }
+        TagFromNameSheet { id: tagFromNameSheet }
+        UndoHistorySheet { id: historySheet }
+        ConfirmSheet { id: confirmSheet }
+
+        Toast {
+            id: toast
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 48
+        }
+        Connections {
+            target: library
+            function onToast(text) { toast.show(text) }
+        }
+        Connections {
+            target: library.tagEditor
+            function onMessage(text) { toast.show(text) }
+        }
+        Connections {
+            target: library.organiser
+            function onMessage(text) { toast.show(text) }
+        }
+        Connections {
+            target: library.duplicates
+            function onMessage(text) { toast.show(text) }
         }
 
         // Ctrl+K: actions, artists, albums and tracks in one list.
@@ -737,6 +834,17 @@ ApplicationWindow {
                             ["Ctrl+B", qsTr("Show or hide the column browser")],
                             ["G", qsTr("Album covers or the track list")],
                             ["I", qsTr("Show or hide the info panel")]
+                        ]],
+                        [qsTr("Tags and files"), [
+                            ["Ctrl+E", qsTr("Edit tags of the selected tracks")],
+                            ["F2", qsTr("Edit the title in place")],
+                            ["Ctrl+Shift+O", qsTr("Organise files: rename and move")],
+                            ["Menu", qsTr("Tag from file names")],
+                            ["Ctrl+Z", qsTr("Undo the last edit or organise")],
+                            ["Ctrl+Shift+Z", qsTr("Redo")],
+                            ["Ctrl+Enter", qsTr("Save, in an editor")],
+                            ["Esc", qsTr("Close an editor")],
+                            ["Ctrl+K", qsTr("Undo history, duplicates, Files to Edit")]
                         ]]
                     ] : [
                         [qsTr("Keys"), [

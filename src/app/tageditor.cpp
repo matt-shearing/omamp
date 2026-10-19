@@ -277,8 +277,13 @@ void TagEditor::setValue(const QString &field, const QString &text) {
             bump();
         return;
     }
-    if (original.size() > 1 && text.isEmpty() && !m_edits.contains(field))
-        return; // an untouched mixed field stays kept
+    if (original.size() > 1 && text.isEmpty()) {
+        // Emptying a mixed field by typing goes back to keeping each
+        // track's value; the field's ✕ (clearField) empties it for real.
+        if (m_edits.remove(field))
+            bump();
+        return;
+    }
     if (m_edits.contains(field) && m_edits.value(field) == text)
         return;
     m_edits.insert(field, text);

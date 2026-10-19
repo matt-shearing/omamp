@@ -16,6 +16,16 @@
         <file alias="LibraryTreePane.qml">LibraryTreePane.qml</file>
         <file alias="NowPlayingList.qml">NowPlayingList.qml</file>
         <file alias="TrackTable.qml">TrackTable.qml</file>
+        <file alias="ToolSheet.qml">ToolSheet.qml</file>
+        <file alias="FormField.qml">FormField.qml</file>
+        <file alias="Toast.qml">Toast.qml</file>
+        <file alias="TagEditorSheet.qml">TagEditorSheet.qml</file>
+        <file alias="OrganiseSheet.qml">OrganiseSheet.qml</file>
+        <file alias="TagFromNameSheet.qml">TagFromNameSheet.qml</file>
+        <file alias="UndoHistorySheet.qml">UndoHistorySheet.qml</file>
+        <file alias="ConfirmSheet.qml">ConfirmSheet.qml</file>
+        <file alias="DuplicatesView.qml">DuplicatesView.qml</file>
+        <file alias="PrimaryButton.qml">PrimaryButton.qml</file>
         <file alias="i18n/en.json">i18n/en.json</file>
     </qresource>
 </RCC>

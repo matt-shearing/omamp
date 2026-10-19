@@ -98,6 +98,7 @@ FocusScope {
             required property bool expanded
             required property var trackCount
             required property bool dim
+            required property string description
             readonly property bool chosen: index === library.currentNode
             readonly property bool cursor: index === list.currentIndex
 
@@ -111,6 +112,9 @@ FocusScope {
             border.color: theme.accent
 
             HoverHandler { id: hover }
+            ToolTip.visible: hover.hovered && node.description !== ""
+            ToolTip.delay: 700
+            ToolTip.text: node.description
 
             Text {
                 id: arrow

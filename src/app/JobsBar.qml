@@ -25,6 +25,8 @@ Rectangle {
         Text {
             text: library.currentKind === "nowplaying"
                   ? qsTr("%Ln tracks in Now Playing", "", backend.playlist.count)
+                  : library.currentKind === "duplicates"
+                  ? (library.duplicates.searched ? library.duplicates.summary : qsTr("Duplicates"))
                   : qsTr("%Ln tracks", "", bar.tracks.count)
                     + (bar.tracks.selectedCount > 1 ? "  ·  " + qsTr("%Ln selected", "", bar.tracks.selectedCount) : "")
             font.pixelSize: 12

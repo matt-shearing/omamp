@@ -478,7 +478,8 @@ void LibraryTree::expand(int row) {
         m_nodes.insert(row + 1 + i, kids[i]);
     endInsertRows();
     emit countChanged();
-    if (n.key == QLatin1String("filestoedit"))
+    // (n is gone: the inserts may have moved the vector.)
+    if (m_nodes[row].key == QLatin1String("filestoedit"))
         emit auditCountsWanted();
 }
 

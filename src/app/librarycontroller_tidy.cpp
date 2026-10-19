@@ -4,6 +4,7 @@
 #include "librarycontroller.h"
 
 #include "audit.h"
+#include "dates.h"
 #include "job.h"
 #include "library.h"
 #include "organise.h"
@@ -18,19 +19,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 
-QString LibraryController::dateText(const QDate &date) {
-    if (!date.isValid())
-        return {};
-    const QLocale locale;
-    // English month names make the order plain whichever country reads it;
-    // Qt's English short date is the American 7/12/26.
-    if (locale.language() == QLocale::English || locale.language() == QLocale::C)
-        return locale.toString(date, QStringLiteral("d MMM yyyy"));
-    QString format = locale.dateFormat(QLocale::ShortFormat);
-    if (!format.contains(QLatin1String("yyyy")))
-        format.replace(QLatin1String("yy"), QLatin1String("yyyy"));
-    return locale.toString(date, format);
-}
+QString LibraryController::dateText(const QDate &date) { return Dates::text(date); }
 
 QString LibraryController::formatDate(qint64 secondsSinceEpoch) const {
     if (secondsSinceEpoch <= 0)
@@ -53,6 +42,27 @@ QVariantList LibraryController::selectedTrackIds() const {
         if (id > 0)
             out << id;
     }
+    return out;
+}
+
+QVariantList LibraryController::albumTrackIds(qint64 albumId) const {
+    QVariantList out;
+    if (!m_library || albumId <= 0)
+        return out;
+    QSqlQuery q(m_library->db());
+    q.setForwardOnly(true);
+    q.prepare("SELECT id FROM tracks WHERE album_id = ? ORDER BY disc_no, track_no, rel_path");
+    q.addBindValue(albumId);
+    if (q.exec())
+        while (q.next())
+            out << q.value(0).toLongLong();
+    return out;
+}
+
+QVariantList LibraryController::auditList() const {
+    QVariantList out;
+    for (const Audits::Audit &a : Audits::audits())
+        out << QVariantMap{{"id", a.id}, {"title", a.title}, {"description", a.description}};
     return out;
 }
 

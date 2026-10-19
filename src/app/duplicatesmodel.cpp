@@ -42,7 +42,7 @@ QVariant DuplicatesModel::data(const QModelIndex &index, int role) const {
     case LabelRole: return r.label;
     case DetailRole: return r.detail;
     case ReasonRole: return r.reason;
-    case PathRole: return r.path;
+    case PathRole: return !m_root.isEmpty() && r.path.startsWith(m_root + QLatin1Char('/')) ? r.path.mid(m_root.size() + 1) : r.path;
     case FormatRole: return r.format;
     case LengthRole: return r.durationMs > 0 ? TrackListModel::clock(r.durationMs) : QString();
     case PlaysRole: return r.plays;
@@ -137,6 +137,24 @@ bool DuplicatesModel::find() {
                 }
             }
             m_groups = groups.size();
+            // The folder every path shares, shown once above the list.
+            QStringList root;
+            bool first = true;
+            for (const Row &row : std::as_const(m_rows)) {
+                if (row.group || row.path.isEmpty())
+                    continue;
+                const QStringList parts = row.path.section('/', 0, -2).split('/');
+                if (first) {
+                    root = parts;
+                    first = false;
+                    continue;
+                }
+                int k = 0;
+                while (k < root.size() && k < parts.size() && root[k] == parts[k])
+                    ++k;
+                root = root.mid(0, k);
+            }
+            m_root = root.join('/');
             m_searched = true;
             endResetModel();
             if (!r.value("ok").toBool(true))

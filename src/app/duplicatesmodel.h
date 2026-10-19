@@ -25,6 +25,8 @@ class DuplicatesModel : public QAbstractListModel {
     Q_PROPERTY(int trackCount READ trackCount NOTIFY found)
     Q_PROPERTY(int selectedCount READ selectedCount NOTIFY selectionChanged)
     Q_PROPERTY(QString summary READ summary NOTIFY found)
+    // The folder all the paths share; the list shows the rest of each path.
+    Q_PROPERTY(QString commonRoot READ commonRoot NOTIFY found)
     Q_PROPERTY(bool fingerprintAvailable READ fingerprintAvailable CONSTANT)
 
 public:
@@ -59,6 +61,7 @@ public:
     int trackCount() const;
     int selectedCount() const { return m_selected.size(); }
     QString summary() const { return m_summary; }
+    QString commonRoot() const { return m_root; }
     bool fingerprintAvailable() const;
 
     // Looks for duplicates as a job (fingerprints the library first, by sound).
@@ -96,5 +99,5 @@ private:
     QSet<qint64> m_selected;
     int m_groups = 0;
     bool m_searched = false, m_busy = false;
-    QString m_summary;
+    QString m_summary, m_root;
 };

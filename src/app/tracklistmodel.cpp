@@ -1,5 +1,6 @@
 #include "tracklistmodel.h"
 
+#include "dates.h"
 #include "query.h"
 
 #include <QDateTime>
@@ -88,8 +89,7 @@ QVariant TrackListModel::display(const Row &r, int column) const {
     case Rating: return QString();
     case Plays: return r.plays > 0 ? QLocale().toString(r.plays) : QString();
     case Added:
-        return r.added > 0 ? QLocale().toString(QDateTime::fromSecsSinceEpoch(r.added).date(), QLocale::ShortFormat)
-                           : QString();
+        return r.added > 0 ? Dates::text(QDateTime::fromSecsSinceEpoch(r.added).date()) : QString();
     case Format: {
         const QString format = r.format.toUpper();
         return r.bitrate > 0 ? QString("%1 %2 kbps").arg(format).arg(r.bitrate) : format;

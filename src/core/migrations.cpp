@@ -306,12 +306,33 @@ static const QStringList version4 = {
     "CREATE INDEX tracks_play_count ON tracks(play_count)",
 };
 
+// Phase 2: Chromaprint fingerprints for the duplicate finder. One row per
+// fingerprinted track; size and mtime_ns say which file it was made from,
+// so a changed file is fingerprinted again. An empty fingerprint records a
+// file fpcalc could not read, so it isn't retried until it changes.
+//
+// Numbered 6 because Phase 1D's sort indexes take 5; the two steps don't
+// depend on each other.
+static const QStringList version6 = {
+    R"(CREATE TABLE fingerprints (
+        track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+        size INTEGER NOT NULL,
+        mtime_ns INTEGER NOT NULL,
+        duration REAL,
+        fingerprint BLOB NOT NULL,
+        computed INTEGER NOT NULL
+    ))",
+    "CREATE INDEX fingerprints_duration ON fingerprints(duration)",
+    "CREATE INDEX tag_journal_time ON tag_journal(changed_at)",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
         {2, "trigram search index", version2},
         {3, "tag extras, moved files, artwork cache", version3},
         {4, "play statistics indexes", version4},
+        {6, "fingerprints for the duplicate finder", version6},
     };
     return all;
 }

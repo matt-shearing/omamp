@@ -4,6 +4,7 @@
 #include <QDBusObjectPath>
 #include <QVariantMap>
 
+class NowPlaying;
 class Player;
 
 // MPRIS lets the media keys, playerctl and the Omarchy bar see and drive the
@@ -56,7 +57,11 @@ class MprisPlayer : public QDBusAbstractAdaptor {
     Q_PROPERTY(bool CanControl READ yes)
 
 public:
-    MprisPlayer(QObject *parent, Player *player);
+    // art, when given, puts the cover in the metadata (mpris:artUrl).
+    MprisPlayer(QObject *parent, Player *player, NowPlaying *art = nullptr);
+    // PropertiesChanged goes out only once the object is on the bus, so a
+    // test can read the metadata without touching the session bus.
+    void setAnnouncing(bool on) { m_announcing = on; }
 
     QString playbackStatus() const;
     QString loopStatus() const;
@@ -91,8 +96,10 @@ private:
     QDBusObjectPath trackId() const;
 
     Player *m_player;
+    NowPlaying *m_art = nullptr;
+    bool m_announcing = false;
 };
 
 // Registers both interfaces on the session bus. Returns false when another
 // copy already owns the name, which is reported but not fatal.
-bool registerMpris(QObject *host, Player *player);
+bool registerMpris(QObject *host, Player *player, NowPlaying *art = nullptr);

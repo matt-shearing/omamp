@@ -32,6 +32,7 @@
 #include "fixture_library.h"
 #include "library.h"
 #include "librarycontroller.h"
+#include "nowplaying_context.h"
 #include "ownwrites.h"
 #include "player.h"
 #include "scanner.h"
@@ -577,6 +578,7 @@ class TidyWindowKeysTests : public QObject {
             engine.rootContext()->setContextProperty("library", &library);
             engine.rootContext()->setContextProperty("commandPalette", library.palette());
             engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(d.filePath("window.conf")));
+            installNowPlaying(engine, &theme, &player, d.filePath("library.db"), d.filePath("art"));
             engine.addImageProvider(ArtImageProvider::name,
                                     new ArtImageProvider(d.filePath("library.db"), d.filePath("art")));
         }

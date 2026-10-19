@@ -39,6 +39,9 @@ public:
     // The standard size to use for a request: the smallest that is at least
     // as big, or the largest; 0 or less means 256.
     static int snapSize(int requested);
+    // The best cover, folder or front picture in a folder (or, for a disc
+    // folder such as "CD1", in the folder above it), or empty.
+    static QString pictureBeside(const QString &folder);
 
     // A local JPEG of the picture at a standard size, made now if needed, or
     // empty when there is no picture (or its volume is offline). A track

@@ -81,6 +81,16 @@ int ArtworkCache::snapSize(int requested) {
     return sizes().last();
 }
 
+QString ArtworkCache::pictureBeside(const QString &folder) {
+    const QString here = pictureIn(folder);
+    if (!here.isEmpty())
+        return here;
+    static const QRegularExpression discFolder("^(cd|disc|disk)\\s*\\d+$", QRegularExpression::CaseInsensitiveOption);
+    if (discFolder.match(QFileInfo(folder).fileName()).hasMatch())
+        return pictureIn(QFileInfo(folder).path());
+    return {};
+}
+
 QString ArtworkCache::thumbnailPath(const QString &hash, int size) const {
     return QString("%1/%2-%3.jpg").arg(m_dir, hash).arg(size);
 }

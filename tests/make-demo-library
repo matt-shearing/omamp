@@ -23,13 +23,22 @@ cover() {
 }
 
 # tone <file> <frequency> <ffmpeg args...>
+# DEMO_SECONDS=<n> makes longer tracks with harmonics, a slow swell and a
+# tick of noise every half second, so the analyser and the oscilloscope
+# have something to draw in screenshots. Without it, a second of sine.
 tone() {
     local file="$1" freq="$2"
     shift 2
     mkdir -p "$(dirname "$file")"
+    local source="sine=frequency=$freq:sample_rate=44100:duration=1" volume=0.05
+    if [ -n "${DEMO_SECONDS:-}" ]; then
+        volume=0.8
+        local f=$freq
+        source="aevalsrc=exprs='0.32*sin(2*PI*$f*t)*(0.65+0.35*sin(2*PI*0.5*t))+0.2*sin(2*PI*$((f * 2))*t)+0.12*sin(2*PI*$((f * 3))*t+1)+0.08*sin(2*PI*$((f * 5))*t)+0.18*sin(2*PI*55*t)*lt(mod(t,0.5),0.12)+0.12*(random(0)-0.5)*lt(mod(t+0.25,0.5),0.04)':s=44100:d=$DEMO_SECONDS"
+    fi
     ffmpeg -nostdin -hide_banner -loglevel error -y \
-        -f lavfi -i "sine=frequency=$freq:sample_rate=44100:duration=1" \
-        -af volume=0.05 -map_metadata -1 "$@" "$file"
+        -f lavfi -i "$source" \
+        -af volume=$volume -map_metadata -1 "$@" "$file"
 }
 
 # album <artist> <album> <year> <genre> <art: folder|embedded|none> <bg> <band> <square> <titles...>

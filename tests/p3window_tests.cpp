@@ -31,6 +31,7 @@
 #include "fixture_library.h"
 #include "library.h"
 #include "librarycontroller.h"
+#include "nowplaying_context.h"
 #include "m3u.h"
 #include "nativeengine.h"
 #include "pcmsink.h"
@@ -533,6 +534,7 @@ class P3WindowKeysTests : public QObject {
             engine.rootContext()->setContextProperty("library", library.get());
             engine.rootContext()->setContextProperty("commandPalette", library->palette());
             engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(dir.filePath("window.conf")));
+            installNowPlaying(engine, &theme, player.get(), dir.filePath("library.db"), dir.filePath("art"));
             engine.addImageProvider(ArtImageProvider::name,
                                     new ArtImageProvider(dir.filePath("library.db"), dir.filePath("art")));
             engine.load(QUrl("qrc:/Main.qml"));

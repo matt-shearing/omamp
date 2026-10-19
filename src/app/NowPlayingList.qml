@@ -7,6 +7,7 @@ import QtQuick.Controls
 FocusScope {
     id: pane
     signal leave()
+    signal openBigView()
 
     function clock(ms) {
         const total = Math.floor(ms / 1000)
@@ -16,9 +17,72 @@ FocusScope {
 
     Rectangle { anchors.fill: parent; color: theme.c.background }
 
+    // What is playing, with its cover; the button opens the big view.
+    Rectangle {
+        id: banner
+        objectName: "nowPlayingBanner"
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: 76
+        color: theme.c.dark_background
+        Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                    height: 1; color: theme.c.lighter_background }
+
+        CoverArt {
+            id: bannerCover
+            objectName: "nowPlayingCover"
+            anchors { left: parent.left; leftMargin: 10; verticalCenter: parent.verticalCenter }
+            width: 60
+            height: 60
+            source: nowPlayingArt.thumbUrl
+            onClicked: pane.openBigView()
+        }
+        Column {
+            anchors { left: bannerCover.right; leftMargin: 12; right: bigButton.left; rightMargin: 12
+                      verticalCenter: parent.verticalCenter }
+            spacing: 2
+            Text {
+                width: parent.width
+                elide: Text.ElideRight
+                text: backend.currentIndex < 0 ? qsTr("Nothing playing") : backend.title
+                font.pixelSize: 15
+                font.bold: true
+                color: theme.c.bright_foreground
+            }
+            Text {
+                width: parent.width
+                elide: Text.ElideRight
+                visible: text !== ""
+                text: backend.artist + (backend.album ? (backend.artist ? "  —  " : "") + backend.album : "")
+                font.pixelSize: 12
+                color: theme.c.light_foreground
+            }
+            Text {
+                width: parent.width
+                elide: Text.ElideRight
+                text: backend.playlist.count === 0 ? ""
+                      : qsTr("%n tracks", "", backend.playlist.count)
+                        + (backend.playlist.totalKnownMs > 0 ? "  ·  " + pane.clock(backend.playlist.totalKnownMs) : "")
+                font.pixelSize: 11
+                color: theme.c.muted
+            }
+        }
+        Button {
+            id: bigButton
+            objectName: "nowPlayingBigView"
+            anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+            text: qsTr("Big view")
+            font.pixelSize: 12
+            flat: true
+            onClicked: pane.openBigView()
+            ToolTip.visible: hovered
+            ToolTip.delay: 600
+            ToolTip.text: qsTr("Big Now Playing view (N)")
+        }
+    }
+
     Rectangle {
         id: header
-        anchors { left: parent.left; right: parent.right; top: parent.top }
+        anchors { left: parent.left; right: parent.right; top: banner.bottom }
         height: 28
         color: theme.c.dark_background
         Rectangle { anchors { left: parent.left; right: parent.right; bottom: parent.bottom }

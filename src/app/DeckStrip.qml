@@ -14,6 +14,8 @@ Rectangle {
     // the PIN to leave party mode.
     signal autoDjClicked()
     signal partyClicked()
+    // The cover: opens the big Now Playing view.
+    signal coverClicked()
 
     readonly property string mono: "JetBrainsMono Nerd Font"
 
@@ -35,6 +37,20 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: 8
         spacing: 10
+
+        // The cover of what is playing; a click opens the big view.
+        CoverArt {
+            objectName: "stripCover"
+            visible: appearance.coverInDeck
+            Layout.preferredWidth: 48
+            Layout.preferredHeight: 48
+            source: nowPlayingArt.thumbUrl
+            onClicked: strip.coverClicked()
+            ToolTip.visible: coverHover.hovered
+            ToolTip.delay: 600
+            ToolTip.text: qsTr("Big Now Playing view (N)")
+            HoverHandler { id: coverHover }
+        }
 
         // Clock and analyser share one LCD, as on the deck.
         Rectangle {

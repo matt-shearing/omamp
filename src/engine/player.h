@@ -32,6 +32,8 @@ class Player : public QObject {
     Q_PROPERTY(bool repeat READ repeat WRITE setRepeat NOTIFY modesChanged)
     Q_PROPERTY(QList<qreal> levels READ levels NOTIFY levelsChanged)
     Q_PROPERTY(QList<qreal> peaks READ peaks NOTIFY levelsChanged)
+    // The sound itself, for the oscilloscope: 128 points from -1 to 1.
+    Q_PROPERTY(QList<qreal> waveform READ waveform NOTIFY levelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     // Playing, but waiting for a stream to arrive; statusText says so in
     // words ("Buffering…"), empty otherwise.
@@ -91,6 +93,7 @@ public:
     bool repeat() const { return m_repeat; }
     QList<qreal> levels() const { return m_spectrum.levels(); }
     QList<qreal> peaks() const { return m_spectrum.peaks(); }
+    QList<qreal> waveform() const { return m_spectrum.waveform(); }
     QString error() const { return m_error; }
     bool buffering() const { return m_engine->buffering(); }
     QString statusText() const { return buffering() ? tr("Buffering…") : QString(); }

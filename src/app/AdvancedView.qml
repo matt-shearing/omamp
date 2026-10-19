@@ -120,6 +120,7 @@ FocusScope {
             onClockClicked: view.clockClicked()
             onAutoDjClicked: view.autoDjClicked()
             onPartyClicked: view.partyClicked()
+            onCoverClicked: view.action("big-view")
         }
 
         // Library actions, the search, and the view switches.
@@ -351,6 +352,7 @@ FocusScope {
                         anchors.fill: parent
                         visible: view.nowPlaying
                         onLeave: view.focusTree()
+                        onOpenBigView: view.action("big-view")
                     }
                     PlaylistView {
                         id: playlistView

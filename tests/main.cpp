@@ -2,9 +2,12 @@
 // Totals line; the exit code is non-zero if any of them failed.
 //
 // OMAMP_TESTS=query,palette runs only the named classes (player, library,
-// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, nas, subsonic, p3window, p45window, streaming), for a quick loop or a machine that must stay silent.
+// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, nas, subsonic, p3window, p45window, streaming, nowplaying), for a quick loop or a machine that must stay silent.
 #include <QGuiApplication>
+#include <QQmlEngine>
 #include <QtTest>
+
+#include "visualiser.h"
 
 int runPlayerTests(int argc, char **argv);
 int runLibraryTests(int argc, char **argv);
@@ -23,6 +26,7 @@ int runSubsonicTests(int argc, char **argv);
 int runP3WindowTests(int argc, char **argv);
 int runP45WindowTests(int argc, char **argv);
 int runStreamingTests(int argc, char **argv);
+int runNowPlayingTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
@@ -35,6 +39,8 @@ int main(int argc, char **argv) {
     // the temporary XDG_CONFIG_HOME the remote tests set.
     qputenv("OMAMP_SECRET_STORE", "file");
     QGuiApplication app(argc, argv);
+    // The visualiser, as main() registers it for the app.
+    qmlRegisterType<Visualiser>("Omamp", 1, 0, "Visualiser");
     const QStringList only = qEnvironmentVariable("OMAMP_TESTS").split(',', Qt::SkipEmptyParts);
     auto wanted = [&](const char *name) { return only.isEmpty() || only.contains(QLatin1String(name)); };
     int failures = 0;
@@ -72,5 +78,7 @@ int main(int argc, char **argv) {
         failures += runP45WindowTests(argc, argv);
     if (wanted("streaming"))
         failures += runStreamingTests(argc, argv);
+    if (wanted("nowplaying"))
+        failures += runNowPlayingTests(argc, argv);
     return failures ? 1 : 0;
 }

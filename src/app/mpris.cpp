@@ -1,5 +1,6 @@
 #include "mpris.h"
 
+#include "nowplaying.h"
 #include "player.h"
 
 #include <QDBusConnection>
@@ -16,17 +17,24 @@ QStringList MprisRoot::mimeTypes() const {
 void MprisRoot::Raise() { emit raiseRequested(); }
 void MprisRoot::Quit() { QGuiApplication::quit(); }
 
-MprisPlayer::MprisPlayer(QObject *parent, Player *player) : QDBusAbstractAdaptor(parent), m_player(player) {
+MprisPlayer::MprisPlayer(QObject *parent, Player *player, NowPlaying *art)
+    : QDBusAbstractAdaptor(parent), m_player(player), m_art(art) {
     connect(player, &Player::stateChanged, this, [this] { announce({"PlaybackStatus"}); });
     connect(player, &Player::trackChanged, this, [this] { announce({"Metadata", "CanPlay", "CanGoNext"}); });
     connect(player, &Player::volumeChanged, this, [this] { announce({"Volume"}); });
     connect(player, &Player::modesChanged, this, [this] { announce({"Shuffle", "LoopStatus"}); });
     connect(player, &Player::seeked, this, [this](qint64 ms) { emit Seeked(ms * 1000); });
+    if (m_art) {
+        connect(m_art, &NowPlaying::artChanged, this, [this] { announce({"Metadata"}); });
+        connect(m_art, &NowPlaying::loadingChanged, this, [this] { announce({"Metadata"}); });
+    }
 }
 
 // Clients only learn about changes from PropertiesChanged, which Qt's
 // adaptors don't send on their own.
 void MprisPlayer::announce(const QStringList &names) {
+    if (!m_announcing)
+        return;
     QVariantMap changed;
     for (const auto &name : names)
         changed.insert(name, property(name.toUtf8().constData()));
@@ -66,6 +74,11 @@ QVariantMap MprisPlayer::metadata() const {
         map.insert("xesam:artist", QStringList{m_player->artist()});
     if (!m_player->album().isEmpty())
         map.insert("xesam:album", m_player->album());
+    // The cover at 600 px, as a file:// URL, once it is known to be this
+    // track's (while the next one is looked for, the last one's would be
+    // wrong).
+    if (m_art && !m_art->loading() && m_art->hasArt())
+        map.insert("mpris:artUrl", m_art->artUrl());
     return map;
 }
 
@@ -88,12 +101,13 @@ void MprisPlayer::OpenUri(const QString &uri) {
         m_player->playIndex(before);
 }
 
-bool registerMpris(QObject *host, Player *player) {
+bool registerMpris(QObject *host, Player *player, NowPlaying *art) {
     new MprisRoot(host);
-    new MprisPlayer(host, player);
+    auto *adaptor = new MprisPlayer(host, player, art);
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.registerObject("/org/mpris/MediaPlayer2", host))
         return false;
+    adaptor->setAnnouncing(true);
     // A second copy gets its own name, as MPRIS allows, so both stay controllable.
     if (bus.registerService("org.mpris.MediaPlayer2.omamp"))
         return true;

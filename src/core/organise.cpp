@@ -258,6 +258,7 @@ OrganisePlan Organiser::plan(const QList<qint64> &trackIds, const OrganiseOption
         return plan;
     }
 
+    const QList<VolumeRow> volumes = onlineVolumes(m_library);
     QSqlQuery availability(m_library.db());
     availability.prepare("SELECT availability FROM tracks WHERE id = ?");
     Mask::Context context;
@@ -283,16 +284,24 @@ OrganisePlan Organiser::plan(const QList<qint64> &trackIds, const OrganiseOption
         } else {
             context.autoNumber = k + 1;
             const QString rel = Mask::evaluate(mask, values, context);
-            QString root = plan.destination;
-            if (root.isEmpty())
-                root = values.rootPath.isEmpty() ? folderOf(item.oldPath) : values.rootPath;
+            const QString root = plan.destination.isEmpty() ? values.rootPath : plan.destination;
             const QString suffix = QFileInfo(item.oldPath).suffix();
             QString name = rel.section('/', -1);
             const QString folders = rel.contains('/') ? rel.section('/', 0, -2) : QString();
             name = Mask::sanitiseComponent(suffix.isEmpty() ? name : name + '.' + suffix, options.sanitise, true);
             item.newPath = QDir::cleanPath(root + '/' + (folders.isEmpty() ? QString() : folders + '/') + name);
             item.status = item.newPath == item.oldPath ? "unchanged" : "move";
-            if (!Journal::insideSandbox(m_sandbox, item.newPath) || !Journal::insideSandbox(m_sandbox, item.oldPath)) {
+            qint64 volume = 0;
+            QString volumeRel;
+            if (plan.destination.isEmpty() && !values.inLibraryFolder) {
+                // Never file a track at the root of a whole disk.
+                item.status = "error";
+                item.note = "Not inside a library folder; give a destination";
+            } else if (!volumeFor(volumes, item.newPath, &volume, &volumeRel)) {
+                item.status = "error";
+                item.note = "The destination is not on a library volume; add it with omamp scan first";
+            } else if (!Journal::insideSandbox(m_sandbox, item.newPath) ||
+                       !Journal::insideSandbox(m_sandbox, item.oldPath)) {
                 item.status = "error";
                 item.note = "Outside the allowed folder";
             }

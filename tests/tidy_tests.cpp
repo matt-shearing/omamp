@@ -663,6 +663,14 @@ private slots:
         QCOMPARE(outside.items[0].status, QString("error"));
         QVERIFY(!organiser.apply(outside, options).items.isEmpty());
         QVERIFY(!QFileInfo::exists("/tmp/omamp-should-never-exist"));
+        // Without a library folder above it, a track has nowhere to go but
+        // the root of its disk, which is refused.
+        QSqlQuery q(s.library->db());
+        QVERIFY(q.exec("UPDATE folders SET is_root = 0"));
+        options.destination.clear();
+        const OrganisePlan rootless = organiser.plan({s.id("ALPHA.flac")}, options);
+        QCOMPARE(rootless.items[0].status, QString("error"));
+        QVERIFY(rootless.items[0].note.contains("library folder"));
     }
 
     void audits() {

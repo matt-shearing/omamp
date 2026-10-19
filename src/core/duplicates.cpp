@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QHash>
+#include <QSet>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
@@ -306,13 +307,44 @@ Report find(Library &library, const Options &options) {
                      "f.mtime_ns <> t.mtime_ns)");
         if (missing.next())
             report.withoutFingerprint = missing.value(0).toInt();
-        // Only tracks within a few seconds of each other can be the same
-        // recording, which keeps the comparisons near-linear.
+        // Two encodings of one recording share many exact fingerprint
+        // values, so only prints sharing a few values in their first two
+        // minutes, and within five seconds of each other in length, are
+        // compared bit by bit. Values shared by very many prints (silence,
+        // a common hum) say nothing and are skipped.
+        QHash<quint32, QList<int>> byValue;
+        for (int i = 0; i < prints.size(); ++i) {
+            QSet<quint32> seen;
+            for (int k = 0; k < prints[i].values.size() && k < 120 * 8; ++k)
+                if (!seen.contains(prints[i].values[k])) {
+                    seen.insert(prints[i].values[k]);
+                    byValue[prints[i].values[k]] << i;
+                }
+        }
         Groups groups;
-        for (int i = 0; i < prints.size(); ++i)
-            for (int j = i + 1; j < prints.size() && prints[j].duration - prints[i].duration <= 5.0; ++j)
+        for (int i = 0; i < prints.size(); ++i) {
+            QHash<int, int> shared;
+            QSet<quint32> seen;
+            for (int k = 0; k < prints[i].values.size() && k < 120 * 8; ++k) {
+                const quint32 v = prints[i].values[k];
+                if (seen.contains(v))
+                    continue;
+                seen.insert(v);
+                const QList<int> &bucket = byValue[v];
+                if (bucket.size() > 200)
+                    continue;
+                for (int j : bucket)
+                    if (j > i)
+                        ++shared[j];
+            }
+            for (auto it = shared.constBegin(); it != shared.constEnd(); ++it) {
+                const int j = it.key();
+                if (it.value() < 3 || qAbs(prints[j].duration - prints[i].duration) > 5.0)
+                    continue;
                 if (similarity(prints[i].values, prints[j].values) >= options.minSimilarity)
                     groups.join(prints[i].id, prints[j].id);
+            }
+        }
         QHash<qint64, QList<qint64>> members;
         for (const Print &p : std::as_const(prints))
             if (groups.parent.contains(p.id))

@@ -687,6 +687,7 @@ Values fromTrack(Library &library, qint64 trackId) {
         }
     }
     // Outside every library folder, the volume's root stands in.
+    v.inLibraryFolder = found;
     v.rootPath = !found || best.isEmpty() ? (root.isEmpty() ? QString("/") : root) : root + '/' + best;
     return v;
 }

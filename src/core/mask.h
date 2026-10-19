@@ -42,6 +42,7 @@ struct Values {
     QHash<QString, QString> fields;
     QString path;     // the file's absolute path (for <Folder:n>, <Filename>, <Extension>)
     QString rootPath; // the library folder holding it (for <Path:n>), or its volume's root
+    bool inLibraryFolder = false; // rootPath is a library folder, not just the volume
 
     QString value(const QString &field) const { return fields.value(field); }
 };

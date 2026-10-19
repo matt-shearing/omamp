@@ -26,7 +26,7 @@
 #include "theme.h"
 #include "translator.h"
 
-static const char *version = "0.1.0";
+static const char *version = "0.2.0";
 
 int main(int argc, char *argv[]) {
     DevHooks::markStart();

@@ -4,16 +4,17 @@
 
 Omamp has two sides. The player is a Winamp 2–style deck: a green clock, a
 bouncing analyser, a scrolling title and a playlist, all in your Omarchy
-theme. The library manager is coming next. It brings back the big local
-libraries of the 2000s, MediaMonkey-style, with modern tools on top: tagging
-from MusicBrainz, smart playlists, file organising with a preview, and
-libraries that live on a NAS.
+theme. Press `Tab` and it becomes a MediaMonkey-style library manager for big
+local libraries: a library tree, a column browser, fast search over 200,000
+tracks, a tag editor with undo, file organising with a preview, auto-playlists,
+Auto-DJ, MusicBrainz tagging, synced lyrics, and libraries that live on a NAS
+or a Navidrome server.
 
-> **Status:** early. The player works today. So does the library window
-> (advanced mode): the tree, the track list, search, the column browser, the
-> album grid, the info panel, the command palette, and folders that keep
-> themselves up to date. Tagging and the rest are planned in
-> [docs/plan/](docs/plan/). Expect breaking changes.
+> **Status:** early (0.2.0). Everything below is built and tested (328
+> automated tests), but only against made-up music, mock web services and
+> simulated network shares. It has not yet been tried on a real large library
+> or a real NAS. Expect rough edges and breaking changes. The plan and a
+> detailed progress log are in [docs/plan/](docs/plan/).
 
 ## Why Omarchy first
 
@@ -336,9 +337,14 @@ Omarchy's own apps are built.
 
 ## Coming next
 
-The full plan is in [docs/plan/](docs/plan/). In short:
+The full plan is in [docs/plan/](docs/plan/). Next up:
 
-- **Tried on a real NAS and a real library:** so far only mock servers and made-up music.
+- **Real-world testing:** a real large library, a real NAS share, a real
+  Navidrome server, and a day of listening on the native (gapless) engine
+  before it becomes the default.
+- **Device sync:** sync profiles to folders, USB drives and Syncthing, with
+  transcoding.
+- **Release:** an AUR package and a proposal to Omarchy's package list.
 
 ## The library from the command line
 

@@ -5,6 +5,13 @@
         <file alias="DeckButton.qml">DeckButton.qml</file>
         <file alias="ToggleLamp.qml">ToggleLamp.qml</file>
         <file alias="Bar.qml">Bar.qml</file>
+        <file alias="AdvancedView.qml">AdvancedView.qml</file>
+        <file alias="Analyser.qml">Analyser.qml</file>
+        <file alias="DeckStrip.qml">DeckStrip.qml</file>
+        <file alias="JobsBar.qml">JobsBar.qml</file>
+        <file alias="LibraryTreePane.qml">LibraryTreePane.qml</file>
+        <file alias="NowPlayingList.qml">NowPlayingList.qml</file>
+        <file alias="TrackTable.qml">TrackTable.qml</file>
         <file alias="i18n/en.json">i18n/en.json</file>
     </qresource>
 </RCC>

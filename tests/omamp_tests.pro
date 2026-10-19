@@ -11,6 +11,8 @@ INCLUDEPATH += ../src/app
 # Where make-fixtures lives, so the tests can build their audio files.
 DEFINES += OMAMP_TESTS_DIR=\\\"$$PWD\\\"
 
-HEADERS += ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h
-SOURCES += main.cpp omamp_tests.cpp library_tests.cpp \
-           ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp
+HEADERS += ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h \
+           ../src/app/librarycontroller.h ../src/app/librarytree.h ../src/app/tracklistmodel.h
+SOURCES += main.cpp omamp_tests.cpp library_tests.cpp librarywindow_tests.cpp \
+           ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp \
+           ../src/app/librarycontroller.cpp ../src/app/librarytree.cpp ../src/app/tracklistmodel.cpp

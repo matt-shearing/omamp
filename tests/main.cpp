@@ -5,6 +5,7 @@
 
 int runPlayerTests(int argc, char **argv);
 int runLibraryTests(int argc, char **argv);
+int runLibraryWindowTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
@@ -14,5 +15,6 @@ int main(int argc, char **argv) {
     int failures = 0;
     failures += runPlayerTests(argc, argv);
     failures += runLibraryTests(argc, argv);
+    failures += runLibraryWindowTests(argc, argv);
     return failures ? 1 : 0;
 }

@@ -34,6 +34,10 @@ public:
     // Files are added as they are; folders are searched for audio, sorted by
     // path so albums stay in track order. Returns how many tracks were added.
     int addPaths(const QStringList &paths);
+    // Tracks whose tags are already known (from the library), inserted at
+    // row without touching the disk. Returns how many were inserted.
+    int insertTracks(int row, const QList<Track> &tracks);
+    void replaceTracks(const QList<Track> &tracks);
     void remove(int row);
     void clear();
     void move(int from, int to);

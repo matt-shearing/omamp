@@ -11,16 +11,24 @@ include(src/cli/cli.pri)
 INCLUDEPATH += src/app
 
 HEADERS += \
+    src/app/devhooks.h \
+    src/app/librarycontroller.h \
+    src/app/librarytree.h \
     src/app/mpris.h \
     src/app/portal.h \
     src/app/theme.h \
+    src/app/tracklistmodel.h \
     src/app/translator.h
 
 SOURCES += \
+    src/app/devhooks.cpp \
+    src/app/librarycontroller.cpp \
+    src/app/librarytree.cpp \
     src/app/main.cpp \
     src/app/mpris.cpp \
     src/app/portal.cpp \
     src/app/theme.cpp \
+    src/app/tracklistmodel.cpp \
     src/app/translator.cpp
 
 RESOURCES += src/app/resources.qrc

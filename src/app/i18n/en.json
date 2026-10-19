@@ -1,3 +1,8 @@
 {
-  "%n tracks": { "one": "%n track", "other": "%n tracks" }
+  "%n tracks": { "one": "%n track", "other": "%n tracks" },
+  "%Ln tracks": { "one": "%Ln track", "other": "%Ln tracks" },
+  "%Ln tracks in Now Playing": { "one": "%Ln track in Now Playing", "other": "%Ln tracks in Now Playing" },
+  "%Ln selected": { "one": "%Ln selected", "other": "%Ln selected" },
+  "%n tracks will play next": { "one": "%n track will play next", "other": "%n tracks will play next" },
+  "%n tracks added to Now Playing": { "one": "%n track added to Now Playing", "other": "%n tracks added to Now Playing" }
 }

@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
@@ -5,10 +6,10 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
-    width: 500
-    height: 680
-    minimumWidth: 440
-    minimumHeight: 460
+    width: prefs.advanced ? prefs.advancedWidth : prefs.deckWidth
+    height: prefs.advanced ? prefs.advancedHeight : prefs.deckHeight
+    minimumWidth: advanced ? 820 : 440
+    minimumHeight: advanced ? 520 : 460
     visible: true
     title: backend.currentIndex >= 0 && backend.title
            ? (backend.artist ? backend.artist + " - " : "") + backend.title + " — Omamp" : "Omamp"
@@ -22,6 +23,50 @@ ApplicationWindow {
     property bool helpVisible: false
     property bool showRemaining: false
     property int selected: backend.currentIndex
+    // Tab switches between the deck and advanced mode (the library).
+    readonly property bool advanced: prefs.advanced
+
+    // The mode, each mode's window size, and the library's layout, kept
+    // between runs in ~/.config/omamp/window.conf.
+    Settings {
+        id: prefs
+        location: settingsUrl
+        category: "window"
+        property bool advanced: false
+        property int deckWidth: 500
+        property int deckHeight: 680
+        property int advancedWidth: 1360
+        property int advancedHeight: 820
+        property int treeWidth: 250
+        property string columns: ""
+    }
+
+    function rememberLayout() {
+        if (advanced) {
+            prefs.advancedWidth = width
+            prefs.advancedHeight = height
+            if (advancedLoader.item) {
+                prefs.columns = advancedLoader.item.columnState()
+                prefs.treeWidth = advancedLoader.item.currentTreeWidth()
+            }
+        } else {
+            prefs.deckWidth = width
+            prefs.deckHeight = height
+        }
+    }
+
+    function setAdvanced(on) {
+        if (on === advanced) return
+        rememberLayout()
+        prefs.advanced = on
+        width = on ? prefs.advancedWidth : prefs.deckWidth
+        height = on ? prefs.advancedHeight : prefs.deckHeight
+        if (on && advancedLoader.item) advancedLoader.item.focusList()
+    }
+
+    onClosing: rememberLayout()
+    Component.onCompleted: if (advanced) library.activate()
+    onAdvancedChanged: if (advanced) library.activate()
 
     function clock(ms) {
         if (ms === undefined || ms < 0 || isNaN(ms)) ms = 0
@@ -47,18 +92,24 @@ ApplicationWindow {
     Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; onActivated: backend.pause() }
     Shortcut { sequence: "V"; context: Qt.ApplicationShortcut; onActivated: backend.stop() }
     Shortcut { sequence: "B"; context: Qt.ApplicationShortcut; onActivated: backend.next() }
-    Shortcut { sequence: "Left"; context: Qt.ApplicationShortcut; onActivated: backend.seekBy(-5000) }
-    Shortcut { sequence: "Right"; context: Qt.ApplicationShortcut; onActivated: backend.seekBy(5000) }
-    Shortcut { sequence: "Up"; context: Qt.ApplicationShortcut; onActivated: win.select(win.selected - 1) }
-    Shortcut { sequence: "Down"; context: Qt.ApplicationShortcut; onActivated: win.select(win.selected + 1) }
-    Shortcut { sequence: "Return"; context: Qt.ApplicationShortcut; onActivated: backend.playIndex(win.selected) }
-    Shortcut { sequence: "Delete"; context: Qt.ApplicationShortcut; onActivated: { backend.remove(win.selected); win.select(win.selected) } }
+    Shortcut { sequence: "Left"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: backend.seekBy(-5000) }
+    Shortcut { sequence: "Right"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: backend.seekBy(5000) }
+    Shortcut { sequence: "Up"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: win.select(win.selected - 1) }
+    Shortcut { sequence: "Down"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: win.select(win.selected + 1) }
+    Shortcut { sequence: "Return"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: backend.playIndex(win.selected) }
+    Shortcut { sequence: "Delete"; context: Qt.ApplicationShortcut; enabled: !win.advanced; onActivated: { backend.remove(win.selected); win.select(win.selected) } }
     Shortcut { sequences: ["-", "Ctrl+Down"]; context: Qt.ApplicationShortcut; onActivated: backend.volume -= 5 }
     Shortcut { sequences: ["=", "+", "Ctrl+Up"]; context: Qt.ApplicationShortcut; onActivated: backend.volume += 5 }
     Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; onActivated: backend.shuffle = !backend.shuffle }
     Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; onActivated: backend.repeat = !backend.repeat }
-    Shortcut { sequences: ["O", "L"]; context: Qt.ApplicationShortcut; onActivated: backend.openFolder() }
+    Shortcut { sequences: ["O", "L"]; context: Qt.ApplicationShortcut
+               onActivated: win.advanced ? library.addFolder() : backend.openFolder() }
     Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; onActivated: win.showRemaining = !win.showRemaining }
+    // Advanced mode.
+    Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; onActivated: win.setAdvanced(!win.advanced) }
+    Shortcut { sequences: ["/", "Ctrl+F"]; context: Qt.ApplicationShortcut; enabled: win.advanced
+               onActivated: advancedLoader.item.focusSearch() }
+    Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: win.advanced; onActivated: library.rescan() }
 
     Item {
         anchors.fill: parent
@@ -69,6 +120,7 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 8
+            visible: !win.advanced
 
             // The deck: display, analyser, sliders and transport.
             Panel {
@@ -445,6 +497,21 @@ ApplicationWindow {
             }
         }
 
+        // Advanced mode, built the first time it is shown.
+        Loader {
+            id: advancedLoader
+            anchors.fill: parent
+            active: win.advanced || item !== null
+            visible: win.advanced
+            sourceComponent: AdvancedView {
+                objectName: "advancedView"
+                showRemaining: win.showRemaining
+                treeWidth: prefs.treeWidth
+                columns: prefs.columns
+                onClockClicked: win.showRemaining = !win.showRemaining
+            }
+        }
+
         DropArea {
             id: drop
             anchors.fill: parent
@@ -463,44 +530,82 @@ ApplicationWindow {
             color: Qt.alpha(theme.c.darker_background, 0.94)
             MouseArea { anchors.fill: parent; onClicked: win.helpVisible = false }
 
-            Column {
+            Row {
                 anchors.centerIn: parent
-                spacing: 6
-                Text {
-                    text: qsTr("Keys")
-                    font.family: win.mono; font.pixelSize: 16; font.bold: true
-                    color: theme.accent
-                    bottomPadding: 6
-                }
+                spacing: 48
+
                 Repeater {
-                    model: [
-                        ["Space", qsTr("Play or pause")],
-                        ["Z  X  C  V  B", qsTr("Previous, play, pause, stop, next")],
-                        ["← →", qsTr("Back or forward 5 seconds")],
-                        ["↑ ↓", qsTr("Move through the playlist")],
-                        ["Enter", qsTr("Play the selected track")],
-                        ["Delete", qsTr("Remove the selected track")],
-                        ["−  +", qsTr("Volume down or up")],
-                        ["S", qsTr("Shuffle on or off")],
-                        ["R", qsTr("Repeat on or off")],
-                        ["O", qsTr("Add a music folder")],
-                        ["T", qsTr("Show time left or time played")],
-                        ["?", qsTr("Show or hide these keys")],
-                        ["Q", qsTr("Quit")]
+                    // The player's keys, and in advanced mode the library's beside them.
+                    model: win.advanced ? [
+                        [qsTr("Player"), [
+                            ["Space", qsTr("Play or pause")],
+                            ["Z  X  C  V  B", qsTr("Previous, play, pause, stop, next")],
+                            ["−  +", qsTr("Volume down or up")],
+                            ["S", qsTr("Shuffle on or off")],
+                            ["R", qsTr("Repeat on or off")],
+                            ["T", qsTr("Show time left or time played")],
+                            ["Tab", qsTr("Back to the deck")],
+                            ["?", qsTr("Show or hide these keys")],
+                            ["Q", qsTr("Quit")]
+                        ]],
+                        [qsTr("Library"), [
+                            ["/", qsTr("Search (Esc clears, Enter goes to the list)")],
+                            ["↑ ↓", qsTr("Move through the tree or the list")],
+                            ["→ ←", qsTr("Open or close a tree node")],
+                            ["Enter  ←", qsTr("From the tree to the list, and back")],
+                            ["Shift+↑ ↓", qsTr("Select a range")],
+                            ["Ctrl+Space", qsTr("Select or unselect a track")],
+                            ["Ctrl+A", qsTr("Select every track in the list")],
+                            ["Enter", qsTr("Play the list from this track")],
+                            ["Menu", qsTr("Play next, add to Now Playing, show in folder")],
+                            ["O", qsTr("Add a folder to the library")],
+                            ["F5", qsTr("Rescan the library")]
+                        ]]
+                    ] : [
+                        [qsTr("Keys"), [
+                            ["Space", qsTr("Play or pause")],
+                            ["Z  X  C  V  B", qsTr("Previous, play, pause, stop, next")],
+                            ["← →", qsTr("Back or forward 5 seconds")],
+                            ["↑ ↓", qsTr("Move through the playlist")],
+                            ["Enter", qsTr("Play the selected track")],
+                            ["Delete", qsTr("Remove the selected track")],
+                            ["−  +", qsTr("Volume down or up")],
+                            ["S", qsTr("Shuffle on or off")],
+                            ["R", qsTr("Repeat on or off")],
+                            ["O", qsTr("Add a music folder")],
+                            ["T", qsTr("Show time left or time played")],
+                            ["Tab", qsTr("Open the library (advanced mode)")],
+                            ["?", qsTr("Show or hide these keys")],
+                            ["Q", qsTr("Quit")]
+                        ]]
                     ]
-                    Row {
+
+                    Column {
                         required property var modelData
-                        spacing: 16
+                        spacing: 6
                         Text {
-                            width: 110
                             text: modelData[0]
-                            font.family: win.mono; font.pixelSize: 12; font.bold: true
-                            color: theme.c.green
+                            font.family: win.mono; font.pixelSize: 16; font.bold: true
+                            color: theme.accent
+                            bottomPadding: 6
                         }
-                        Text {
-                            text: modelData[1]
-                            font.family: win.mono; font.pixelSize: 12
-                            color: theme.c.foreground
+                        Repeater {
+                            model: modelData[1]
+                            Row {
+                                required property var modelData
+                                spacing: 16
+                                Text {
+                                    width: 110
+                                    text: modelData[0]
+                                    font.family: win.mono; font.pixelSize: 12; font.bold: true
+                                    color: theme.c.green
+                                }
+                                Text {
+                                    text: modelData[1]
+                                    font.family: win.mono; font.pixelSize: 12
+                                    color: theme.c.foreground
+                                }
+                            }
                         }
                     }
                 }

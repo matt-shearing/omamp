@@ -1122,3 +1122,286 @@ palette in the window:
   the Title key in `TrackListModel::orderBy()` from
   `coalesce(nullif(t.title, ''), t.file_name) COLLATE NOCASE` to
   `t.title COLLATE NOCASE` so SQLite can use the index.
+
+## Phase 1D: the column browser, album grid, info panel, palette and watching (20 October 2026)
+
+Phase 1D puts the parts built in 1B and 1C into the advanced-mode window and
+adds the rest of Phase 1. The command palette (`Ctrl+K`) is wired to every
+main command and goes to artists, albums and tracks. A column browser
+(Genre | Album Artist | Album) sits above the track list; an album-art grid is
+a second view of the list; an info panel shows the chosen track. The folder
+watcher starts with the library and refreshes the window without losing the
+selection or the scroll position. Text sorts now read an index: sorting
+200,000 tracks by title reaches the screen in 40–45 ms (it was 196–261 ms).
+All tests pass. Nothing is pushed.
+
+![Advanced mode with the browser and the info panel](../advanced-mode.png)
+
+### What was built
+
+```text
+src/core/migrations.cpp           schema 5: text sort indexes
+src/app/tracklistmodel.{h,cpp}    a third condition (the browser's), baseChanged and
+                                  aboutToRefresh signals, orderBy() matched to the indexes
+src/app/columnbrowser.{h,cpp}     ColumnBrowser and its three FacetModel panes
+src/app/albumgridmodel.{h,cpp}    the albums of the current list
+src/app/librarycontroller.{h,cpp} owns the browser, the grid, the palette and the watcher;
+                                  trackInfo(), showArtist/Album/Track(), playAlbum(),
+                                  refreshAll(), prefetchArtwork()
+src/app/librarytree.{h,cpp}       reveal(keys), letterOf()
+src/app/BrowserPanes.qml          the three lists
+src/app/AlbumGrid.qml             the grid
+src/app/InfoPanel.qml             the info panel
+src/app/AdvancedView.qml          tree | (browser over list or grid) | info; the view switches
+src/app/Main.qml                  Ctrl+K, Ctrl+B, G, I; palette actions; remembered layout
+src/app/JobsBar.qml               watcher status and "Finding album covers…"
+src/app/theme.{h,cpp}             listSelection: chosen rows that read in every theme
+src/app/main.cpp                  registers the omamp-art image provider and the palette
+src/app/devhooks.cpp              new demo verbs and profile steps
+tests/make-demo-library           the made-up library behind the screenshots
+```
+
+**Schema 5.** Four indexes, `tracks_sort_title`, `tracks_sort_artist`,
+`tracks_sort_album` and `tracks_sort_genre`. Each holds the sort key and then
+the library order (`sort_artist`, `album`, `disc_no`, `track_no`, all
+`NOCASE` where text), the tie-break `orderBy()` always adds, so SQLite walks
+the index instead of sorting. The 1A notes asked for plain `title` indexes
+and a change of the Title key to `t.title`; that would have sorted untagged
+files (empty title) together at the top instead of by file name. The index
+is on the expression `coalesce(nullif(title, ''), file_name) COLLATE NOCASE`
+instead, exactly as `orderBy()` writes it, so behaviour is unchanged. Album's
+key leaves `album` out of its tie-break. The step adds about 40 MB to a
+200,000-track database (200 to 240 MB) and the upgrade, with its backup,
+took 1.3 s on that database.
+
+**Command palette.** `LibraryController` owns the `Palette` (it needs the
+controller's `Library` on the GUI thread) and hands it the library when it
+opens; `main.cpp` sets it as `commandPalette`. In deck mode before the
+library opens, the palette lists actions only. Main.qml registers 29
+actions: transport, shuffle, repeat, volume, time display, mode switch,
+search, the three view switches, add folder, rescan, cancel scan, Entire
+Library, Now Playing, play/queue/append the selection, select all, show in
+folder, clear the browser, find covers, shortcuts and quit. Each time the
+palette opens, actions that can't run now are greyed (Rescan during a scan,
+selection actions in the grid). Choosing an artist opens Artist in the tree
+and chooses that artist; an album opens Album, its letter and the album;
+both clear the search and the browser. A track is selected and scrolled to
+in the list, widening only as far as needed: the browser first, then the
+search, then Entire Library. "Search the library for …" puts the text in the
+search box. The palette's names reload after every scan and watcher rescan.
+
+**Column browser.** Three panes over the track list, foobar2000-style:
+Genre (the multi-value `track_genres`), Album Artist (`tracks.sort_artist`,
+one value per track; a link in the pane header switches to Artist, the
+multi-value `track_artists`), and Album. Each starts with "All (n)". Click
+chooses, `Ctrl`+click adds or removes, `Shift`+click picks a range. From the
+keyboard, `↑`/`↓` choose, `Shift` extends, `Ctrl` moves without choosing and
+`Ctrl+Space` toggles, `←`/`→` move between panes (and to the tree), `Enter`
+goes to the list. Each pane counts within the node, the search and the panes
+to its left. Choices that survive a new node or search stay chosen; ones
+that don't are dropped, so the list never goes empty for a value that isn't
+there. While hidden, the browser runs no queries and filters nothing.
+
+The panes count with `GROUP BY` queries. When the node and search select
+everything, genres and artists are counted from their link tables alone.
+Otherwise the node and search are run once into a temporary table
+(`temp.omamp_browse_base`, on the window's connection, never in the library
+file) and the panes and the track list read it by id. Without that, a
+two-letter search, which can't use the search index, scanned the library
+five times with the browser open; now it scans once and the browser adds
+nothing measurable (see below). `TrackListModel::baseChanged` fires before
+the list reloads, so the browser recounts and sets its condition first and
+the list reloads once per change.
+
+**Album grid.** `AlbumGridModel` reads the albums of the current list (node,
+search and browser) with one `GROUP BY`, ordered by album artist, title and
+year, and only while the grid shows. A sort doesn't re-read it. A refresh
+that keeps the same albums updates in place, so the grid keeps its scroll
+position. Tiles are 168 pixels; covers come through the image provider at
+256 pixels (96 when tiles are 130 pixels or smaller, a setting for later), on
+its two low-priority threads, as tiles come into view (`GridView` with
+`reuseItems`). The first time the grid shows, `ArtworkPrefetch` makes the
+rest on its lowest-priority thread; when it ends, the grid re-reads which
+albums have pictures. Albums known to have none show their first letter
+without asking the provider, which also keeps QML's "No picture" warnings
+out of the journal. Click chooses an album (the info panel follows),
+double-click or `Enter` plays it, `Ctrl+Enter` or the menu's Show tracks
+opens it in the tree and goes back to the list.
+
+**Info panel.** On the right, toggled with `I`. It shows the cover (the
+track's own picture, else its album's), title, artist, album and year, then
+album artist (when it differs), genre, composer, track and disc, length,
+format with sample rate, channels and bit rate, size, ReplayGain (track and
+album, with peaks, or "Not analysed"), rating as stars, plays, last played,
+added, lyrics ("Yes, in the file" or "None"; the lyrics view is Phase 4),
+BPM, and the path, which can be selected and copied. It shows the track
+under the cursor, the first track of the album chosen in the grid, or the
+track playing when nothing is chosen (`playingTrackId`, found from the
+player's path). `LibraryController::trackInfo(id)` is one query.
+
+**Watcher.** `LibraryController::activate()` starts a `Watcher` on the same
+database. `libraryChanged` (queued to the window's thread after the rescan
+commits) calls `refreshAll()`: the tree reloads and keeps what is open and
+chosen; the browser recounts and keeps its choices; the list refreshes and
+keeps the selection and the cursor; the grid and the palette re-read; a
+revision number goes up so the info panel and covers re-read. The list and
+the tree keep their scroll positions (`aboutToRefresh` lets the table note
+the top track and its offset). Scans started from the window now refresh
+the same way and reload the watcher for new roots. The status line shows
+"Watching N folders", "…; the rest are checked every 15 minutes" when the
+inotify limit ran out, "N shares checked every 15 minutes", "Updating changed
+folders…" during a rescan, and "Finding album covers…".
+
+**Theme.** Night Ride (Matt's current theme) sets `selection` equal to
+`lighter_background`, so chosen rows in the library looked like the striped
+rows around them. `theme.listSelection` is the theme's selection when it
+stands out from the backgrounds, and otherwise the accent mixed 30 % into the
+background. The library's lists, the browser, the grid and the palette use
+it; the deck is unchanged. Both themes were checked offscreen: the deck, the
+`?` overlay and advanced mode.
+
+### Test results
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 217ms    (player)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 504ms    (library)
+Totals: 24 passed, 0 failed, 0 skipped, 0 blacklisted, 22ms     (query)
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 87ms      (palette)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 2501ms   (Phase 1C)
+Totals: 17 passed, 0 failed, 0 skipped, 0 blacklisted, 887ms    (library window models)
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1401ms    (the window, offscreen)
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 2957ms    (Phase 1D window parts)
+```
+
+New model tests: the browser's counts and narrowing (one genre, a second with
+Ctrl, an album artist, an album, each checked against SQL; a search
+recounting and keeping choices; All and clear(); artist mode; turning it
+off), the browser following a tree node with one list reload and dropping a
+choice the node lacks, the grid's albums (count against SQL, no re-read on
+sort, the chosen album kept through a refresh), `trackInfo()` field by
+field, the playing track found by path, `showArtist`/`showAlbum`/`showTrack`
+(including widening to Entire Library), and `refreshAll()` keeping the node,
+selection and cursor while picking up a new track.
+
+New window tests drive the real `Main.qml` offscreen: `Ctrl+K`, typing an
+artist and `Enter` chooses that artist in the tree; `> column browser` runs
+the action; `↓` in the browser chooses a genre and the list narrows; `→` and
+`Enter` move to the list; `I` shows the info panel with the cursor track's
+title and path; `G` shows the grid, `→` chooses an album (the panel follows)
+and `Enter` plays the whole album; a refresh keeps the table's exact scroll
+position; the shown parts are saved. A second test scans real files, then
+copies a new file into a watched folder: the watcher rescans and the window
+shows one more track with the same selection and cursor.
+
+### Performance
+
+The 200,000-track library from the Phase 0 generator, upgraded to schema 5,
+in the window offscreen with the software renderer, throwaway XDG folders,
+no session bus and no audio, while other heavy jobs ran on tetelestai.
+`OMAMP_PROFILE=1`, three runs; times run from the change to the next frame
+on screen, and the query columns are the work alone.
+
+| What | ms to the screen | Query (ms) |
+|---|---:|---:|
+| Start straight into advanced mode, first frame | 331–385 | 15 (200,000 ids) |
+| Sort by Title | 41–45 (was 196–261) | 22 (was 180–210) |
+| Sort by Title, descending | 105–117 (was 223–298) | 63 |
+| Sort by Artist / Album / Genre | 51–73 | 16–17 |
+| Search `coast` | 63–77 | 17 |
+| Search `go` (two letters, no index) | 285–364 | 229 |
+| Clear the search (still sorted by Title, descending) | 103–112 | 63 |
+| Show the column browser (200,000 tracks) | 52–58 | browser 45–50 |
+| Browser: choose a genre | 39–53 | 4, browser 12–14 |
+| Browser: then an album artist | 14–25 | 1, browser 3 |
+| Browser: search `coast` | 60–85 | 2–5, browser 25–42 |
+| Browser: search `go` | 309 | 40, browser 235 |
+| Show the album grid (18,278 albums) | 61–70 | grid 58–65 |
+| Grid: search `coast` (1,830 albums) | 65–91 | grid 13–18 |
+| Grid: clear the search | 112–133 | 16–24, grid 57–61 |
+| Show the info panel | 12–16 | |
+| Refresh, as after a watcher rescan | 67–75 | 16 |
+
+Peak memory for the whole run: 248–257 MB (255 MB in 1A).
+
+Descending sorts keep the tie-break ascending (an album's tracks stay in
+order), so SQLite sorts each run of equal keys: 63 ms rather than 10 ms.
+Reversing the tie-break too would use the index both ways, but would list
+albums' tracks backwards under a descending Artist sort.
+
+**The worker-thread question.** Only the two-letter search (1B's `LIKE`
+fallback, 285–364 ms) crosses 150 ms. With the browser open the same search
+costs 309 ms, because of the temporary table. Moving the id query to a
+worker thread would keep the window answering during that search but not
+make the result arrive sooner, and it touches every caller that reads the
+list straight after changing it (the controller, the browser, the grid, the
+tests). It is left for when a slower query appears; the place is
+`TrackListModel::reload()`, with a second `Library` on the worker and a
+generation number so a late answer is dropped. Speeding up short words in
+the query language is the better fix.
+
+To rerun: make the database with `bin/bench`, copy it into a throwaway
+`XDG_DATA_HOME/omamp/`, write `[window]` `advanced=true` into
+`XDG_CONFIG_HOME/omamp/window.conf`, and run `build/omamp` with
+`QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software OMAMP_PROFILE=1`, with
+`QT_QPA_PLATFORMTHEME` unset (the GTK platform theme exits when it finds no
+display).
+
+### Screenshots
+
+`docs/advanced-mode.png` (browser on Synthwave, info panel), `docs/album-grid.png`
+and `docs/command-palette-live.png` come from `tests/make-demo-library`:
+twelve albums by invented artists, tones of one second, covers drawn by
+ffmpeg in plain colours (folder pictures, embedded ID3 pictures, and one
+album without), with made-up ratings, play counts, ReplayGain, lyrics and
+play dates. They were scanned into throwaway folders and captured with
+`OMAMP_DEMO` and `OMAMP_SCREENSHOT`, offscreen and in software, in the
+Night Ride theme (Matt's current Omarchy theme). The files sat in
+`/tmp/omamp-demo/Music` so the info panel shows a short path.
+
+### Decisions
+
+- **`Ctrl+B` toggles the browser, not `B`.** `B` is Winamp's "next track"
+  in both modes, and the README promises Winamp's keys. `G` (grid) and `I`
+  (info) were free.
+- **The browser's middle pane defaults to Album Artist**, as foobar2000's
+  facets do: one value per track, read off the library-order index, and it
+  keeps compilations under Various Artists. Artist (every performer) is one
+  click away and remembered.
+- **Choices survive a new node or search when they still apply**, rather
+  than MediaMonkey's reset to All, so narrowing the tree while a genre is
+  chosen keeps the genre.
+- **The grid's "open" is the tree's album node.** Selecting a tile only
+  chooses it (and the info panel follows); Show tracks chooses the album in
+  the tree and switches to the list, which reuses the node everyone already
+  knows rather than adding a hidden fourth filter.
+- **A track from the palette is shown, not played**, so choosing from the
+  palette never starts audio by surprise; `Enter` then plays it.
+- **The info panel shows the playing track when nothing is chosen**, and
+  says which it is ("Selected track", "Now playing", "Chosen album, first
+  track").
+- **One refresh path.** The watcher and the window's own scans both call
+  `refreshAll()`, which keeps the selection; before, a scan's end reset the
+  selection.
+- **The image provider is registered in `main.cpp`** (1C left it out).
+  Tests give it and `ArtworkPrefetch` temporary cache folders through
+  `LibraryController::setArtCacheDir()`.
+- **Night Ride's selection colour** is replaced in the library's lists only,
+  and only when it can't be told from the row backgrounds.
+- **The README screenshots use the current Omarchy theme** (Night Ride),
+  since with `listSelection` it reads well; 1A's 200,000-track picture stays
+  in the default theme.
+
+### Known gaps
+
+- **Two-letter searches take about 300 ms** at 200,000 tracks (above).
+- **Grid tile size is fixed** at 168 pixels; the 96-pixel covers are used
+  only by smaller tiles, which nothing sets yet. A zoom control is easy to
+  add.
+- **The browser has no "Unknown genre" value**: tracks without a genre show
+  under All only.
+- **Pictures that change on disk** (a new `cover.jpg`) still don't wake the
+  watcher, and an album already searched isn't searched again until its
+  tracks change (1C gaps).
+- **The palette doesn't highlight matched letters** (a 1B gap).
+- **Checked offscreen only**, in the default and Night Ride themes, never on
+  screen and never on Matt's library.

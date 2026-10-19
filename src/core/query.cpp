@@ -780,11 +780,14 @@ private:
             if (n.wordStart) {
                 // The index narrows the rows, then the pattern checks the word
                 // start. Parameters bind in the order they appear.
-                QString fts;
+                // Too short for the index, LIKE is a cheaper first sieve than the pattern.
+                QString first;
                 if (indexable(n.value))
-                    fts = "t.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH " + bind(ftsPhrase(n.value)) +
-                          ") AND ";
-                return "(" + fts + '(' + allColumns() + ") REGEXP " + bind(wordStartPattern(n.value)) + ')';
+                    first = "t.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH " + bind(ftsPhrase(n.value)) +
+                            ") AND ";
+                else
+                    first = '(' + allColumns() + ") LIKE " + bind(likePattern(n.value)) + " ESCAPE '\\' AND ";
+                return "(" + first + '(' + allColumns() + ") REGEXP " + bind(wordStartPattern(n.value)) + ')';
             }
             if (indexable(n.value))
                 return "t.id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH " + bind(ftsPhrase(n.value)) + ')';

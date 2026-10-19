@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "library.h"
+#include "palette.h"
 #include "query.h"
 #include "scanner.h"
 #include "volumes.h"
@@ -280,6 +281,33 @@ static int runBench(const QString &path, int runs) {
         {"genre:rock OR genre:metal", "genre:rock OR genre:metal"},
         {"artist:=\"Neon Coast\" (multi-value table)", "artist:=\"Neon Coast\""},
         {"title:/^love/ (regex)", "title:/^love/"},
+        // Phase 1B: the rest of the language.
+        {"\"midnight highway\" (phrase)", "\"midnight highway\""},
+        {"+love (word start, index + pattern)", "+love"},
+        {"+go (short word start, no index)", "+go"},
+        {"aa:\"neon coast\" (alias)", "aa:\"neon coast\""},
+        {"added:<30d", "added:<30d"},
+        {"added:2024", "added:2024"},
+        {"added:2024-01..2024-06", "added:2024-01..2024-06"},
+        {"played:>1y", "played:>1y"},
+        {"played:never", "played:never"},
+        {"lastplayed:<7d", "lastplayed:<7d"},
+        {"plays:0", "plays:0"},
+        {"plays:10..", "plays:10.."},
+        {"length:>6m", "length:>6m"},
+        {"length:3:00..5:00", "length:3:00..5:00"},
+        {"album:none", "album:none"},
+        {"genre:any", "genre:any"},
+        {"-genre:none", "-genre:none"},
+        {"sort:-rating,artist limit:50", "sort:-rating,artist limit:50"},
+        {"sort:random limit:50", "sort:random limit:50"},
+        {"sort:random (every row shuffled)", "sort:random"},
+        {"sort:randomalbum limit:100", "sort:randomalbum limit:100"},
+        {"limit:2h (library order)", "limit:2h"},
+        {"limit:700mb (library order)", "limit:700mb"},
+        {"rating:4.. sort:random limit:2h", "rating:4.. sort:random limit:2h"},
+        {"added:<1y plays:0 sort:-added limit:2h", "added:<1y plays:0 sort:-added limit:2h"},
+        {"genre:rock played:>1y sort:-plays limit:50", "genre:rock played:>1y sort:-plays limit:50"},
     };
     for (const auto &q : queries) {
         Query::Options o;
@@ -297,6 +325,27 @@ static int runBench(const QString &path, int runs) {
     ms = timeIt(std::min(runs, 3), [&] { rows = Query::run(library, "").tracks.size(); });
     row("query \"\" with no limit (all rows, sorted)", ms, rows);
     row("stats", timeIt(runs, [&] { library.stats(); }), 0);
+
+    // The command palette: one search per keystroke, on the window's thread.
+    {
+        Palette palette;
+        palette.addAction("rescan", "Rescan library", {"scan"});
+        palette.addAction("play-pause", "Play/Pause", {"pause"}, "Space");
+        QElapsedTimer first;
+        first.start();
+        palette.setLibrary(&library);
+        palette.setText("coast");
+        row("palette: first search, loading artist and album names", first.nsecsElapsed() / 1e6, palette.count());
+        for (const QString &text : {"coast", "neon night", "lov", "re", "midnight highway", "artist:neon sort:-plays"}) {
+            int count = 0;
+            const double ms = timeIt(runs, [&] {
+                palette.setText(QString());
+                palette.setText(text);
+                count = palette.count();
+            });
+            row("palette: " + text, ms, count);
+        }
+    }
     out << "\nPeak memory: " << peakRssMb() << " MB\n"
         << "Database size: " << QString::number(QFileInfo(path).size() / 1e6, 'f', 0) << " MB\n"
         << Qt::flush;

@@ -73,8 +73,29 @@ double fuzzy(const QString &q, const QString &c) {
     return 15 + 30 * points / (4.5 * needle.size());
 }
 
-// q and c are already folded.
-double scoreFolded(const QString &q, const QString &c, bool allowFuzzy) {
+// The search text, folded and split once per search rather than once per
+// candidate: a search compares it with tens of thousands of names.
+struct Needle {
+    QString text;
+    QStringList words;
+    explicit Needle(const QString &folded) : text(folded), words(wordsOf(folded)) {}
+};
+
+bool hasWordStartingWith(const QString &c, const QString &w) {
+    for (qsizetype at = c.indexOf(w); at >= 0; at = c.indexOf(w, at + 1))
+        if (wordStart(c, int(at)))
+            return true;
+    return false;
+}
+
+// Every word of the needle appears somewhere in one of the two.
+bool allWordsIn(const Needle &n, const QString &a, const QString &b) {
+    return std::all_of(n.words.begin(), n.words.end(), [&](const QString &w) { return a.contains(w) || b.contains(w); });
+}
+
+// c is already folded.
+double scoreFolded(const Needle &n, const QString &c, bool allowFuzzy) {
+    const QString &q = n.text;
     if (q.isEmpty() || c.isEmpty())
         return 0;
     const double extra = std::min(8.0, (c.size() - q.size()) / 6.0);
@@ -82,26 +103,20 @@ double scoreFolded(const QString &q, const QString &c, bool allowFuzzy) {
         return 100;
     if (c.startsWith(q))
         return 92 - extra;
-    const QStringList qw = wordsOf(q);
-    if (qw.isEmpty())
+    if (n.words.isEmpty())
         return c.contains(q) ? 60 : 0;
-    const QStringList cw = wordsOf(c);
-    bool allPrefix = true, allContained = true;
-    for (const QString &w : qw) {
-        if (allPrefix && !std::any_of(cw.begin(), cw.end(), [&](const QString &x) { return x.startsWith(w); }))
+    bool allPrefix = true;
+    for (const QString &w : n.words) {
+        if (!c.contains(w))
+            return allowFuzzy ? fuzzy(q, c) : 0;
+        if (allPrefix && !hasWordStartingWith(c, w))
             allPrefix = false;
-        if (!c.contains(w)) {
-            allContained = false;
-            break;
-        }
     }
-    if (allPrefix && allContained)
+    if (allPrefix)
         return 80 - extra;
     if (c.contains(q))
         return 68 - extra;
-    if (allContained)
-        return 55 - extra;
-    return allowFuzzy ? fuzzy(q, c) : 0;
+    return 55 - extra;
 }
 
 QString clock(qint64 ms) {
@@ -191,16 +206,16 @@ void Palette::setLimits(int actions, int artists, int albums, int tracks) {
 }
 
 double Palette::score(const QString &text, const QString &candidate, bool fuzzy) {
-    return scoreFolded(fold(text).simplified(), fold(candidate), fuzzy);
+    return scoreFolded(Needle(fold(text).simplified()), fold(candidate), fuzzy);
 }
 
 void Palette::searchActions(const QString &text, QList<Item> *out) const {
-    const QString q = fold(text).simplified();
+    const Needle needle(fold(text).simplified());
     QList<Item> found;
     for (const ActionEntry &a : m_actions) {
-        double s = q.isEmpty() ? 1 : scoreFolded(q, fold(a.title), true);
+        double s = needle.text.isEmpty() ? 1 : scoreFolded(needle, fold(a.title), true);
         for (const QString &k : a.keywords)
-            s = std::max(s, scoreFolded(q, fold(k), true) * 0.9);
+            s = std::max(s, scoreFolded(needle, fold(k), true) * 0.9);
         if (s <= 0)
             continue;
         Item item;
@@ -212,11 +227,11 @@ void Palette::searchActions(const QString &text, QList<Item> *out) const {
         item.enabled = a.enabled;
         // Recently used actions first when nothing is typed, and a little
         // ahead of their equals when something is.
-        item.score = q.isEmpty() ? double(a.lastUsed) : s + 3 + (a.lastUsed ? 2 : 0) - (a.enabled ? 0 : 5);
+        item.score = needle.text.isEmpty() ? double(a.lastUsed) : s + 3 + (a.lastUsed ? 2 : 0) - (a.enabled ? 0 : 5);
         found << item;
     }
     std::stable_sort(found.begin(), found.end(), [](const Item &a, const Item &b) { return a.score > b.score; });
-    const int max = q.isEmpty() || m_text.startsWith('>') ? 200 : m_maxActions;
+    const int max = needle.text.isEmpty() || m_text.startsWith('>') ? 200 : m_maxActions;
     *out += found.mid(0, max);
 }
 
@@ -254,8 +269,9 @@ void Palette::searchLibrary(const QString &text, QList<Item> *out) {
     const Query::Parsed parsed = Query::parse(text);
     const bool isQuery = parsed.ok() && (usesFields(parsed.root) || !parsed.sort.isEmpty() ||
                                          parsed.limit.kind != Query::Limit::None);
-    const QString q = fold(text).simplified();
-    const QStringList words = wordsOf(q);
+    const Needle needle(fold(text).simplified());
+    const QString &q = needle.text;
+    const QStringList &words = needle.words;
 
     if (!isQuery && !words.isEmpty()) {
         if (m_namesSignature.isEmpty() || !m_namesChecked.isValid() || m_namesChecked.elapsed() > 2000)
@@ -267,7 +283,7 @@ void Palette::searchLibrary(const QString &text, QList<Item> *out) {
         };
         QList<Item> artists;
         for (const Named &a : m_artists) {
-            const double s = scoreFolded(q, a.folded, false);
+            const double s = scoreFolded(needle, a.folded, false);
             if (s <= 0)
                 continue;
             Item item;
@@ -282,13 +298,13 @@ void Palette::searchLibrary(const QString &text, QList<Item> *out) {
 
         QList<Item> albums;
         for (const Named &a : m_albums) {
-            double s = scoreFolded(q, a.folded, false);
+            double s = scoreFolded(needle, a.folded, false);
             // "neon night drive": words across the album artist and title.
             // The artist alone ("neon") finds the album too, lower down.
-            if (s < 55 && !a.extraFolded.isEmpty()) {
+            if (s < 55 && !a.extraFolded.isEmpty() && allWordsIn(needle, a.folded, a.extraFolded)) {
                 const double weight = words.size() > 1 ? 0.95 : 0.75;
-                s = std::max({s, scoreFolded(q, a.extraFolded + ' ' + a.folded, false) * weight,
-                              scoreFolded(q, a.folded + ' ' + a.extraFolded, false) * weight});
+                s = std::max({s, scoreFolded(needle, a.extraFolded + ' ' + a.folded, false) * weight,
+                              scoreFolded(needle, a.folded + ' ' + a.extraFolded, false) * weight});
             }
             if (s <= 0)
                 continue;
@@ -342,11 +358,11 @@ void Palette::searchLibrary(const QString &text, QList<Item> *out) {
             item.score = 50 - tracks.size() * 0.01;
         } else {
             const QString title = fold(item.title), a = fold(artist);
-            double s = scoreFolded(q, title, false);
-            if (s < 80 && words.size() > 1)
-                s = std::max({s, scoreFolded(q, a + ' ' + title, false) * 0.95,
-                              scoreFolded(q, title + ' ' + a, false) * 0.95});
-            s = std::max(s, scoreFolded(q, fold(album), false) * 0.6);
+            double s = scoreFolded(needle, title, false);
+            if (s < 80 && words.size() > 1 && allWordsIn(needle, title, a))
+                s = std::max({s, scoreFolded(needle, a + ' ' + title, false) * 0.95,
+                              scoreFolded(needle, title + ' ' + a, false) * 0.95});
+            s = std::max(s, scoreFolded(needle, fold(album), false) * 0.6);
             // The index matched something (a composer, the file name).
             item.score = std::max(s, 30.0) + std::min(2.0, std::log10(plays + 1.0));
         }

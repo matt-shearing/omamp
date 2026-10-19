@@ -48,6 +48,8 @@ const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", 
 
 const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp open [files or folders...]  the same, for names that look like commands
+       omamp mini [files or folders...]  open as the mini player (a 420x64 strip)
+       omamp micro [files or folders...] open as the micro player (Winamp's windowshade)
        omamp scan [folder...]            add folders to the library and scan them;
                                          with no folder, rescan every library folder
        omamp query <text...>             search the library

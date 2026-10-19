@@ -63,6 +63,18 @@ check("tooltips", () => {
   assert.match(M.tooltip(true, "", "stopped"), /nothing in the playlist/);
 });
 
+check("covers: file, web and inline pictures pass", () => {
+  assert.equal(M.coverSource("file:///home/u/.cache/omamp/art/ab-600.jpg"), "file:///home/u/.cache/omamp/art/ab-600.jpg");
+  assert.equal(M.coverSource("https://example.org/c.jpg"), "https://example.org/c.jpg");
+  assert.equal(M.coverSource("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA");
+});
+check("covers: nothing else does", () => {
+  assert.equal(M.coverSource(""), "");
+  assert.equal(M.coverSource(undefined), "");
+  assert.equal(M.coverSource("/home/u/cover.jpg"), "");
+  assert.equal(M.coverSource("javascript:alert(1)"), "");
+});
+
 check("clamp01", () => { assert.equal(M.clamp01(1.4), 1); assert.equal(M.clamp01(-1), 0); assert.equal(M.clamp01("x"), 0); });
 
 if (failures) { console.log(`\n${failures} failed`); process.exit(1); }

@@ -351,43 +351,82 @@ Panel {
         }
       }
 
-      // Track details in the plain theme text.
-      Column {
+      // The cover Omamp sends over MPRIS (mpris:artUrl), and the track
+      // details in the plain theme text beside it.
+      Row {
         width: parent.width
-        spacing: Style.space(3)
+        spacing: Style.space(10)
         visible: root.service && root.service.hasTrack
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: root.service ? (root.service.title || "Unknown title") : ""
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.subtitle
-          font.bold: true
-          elide: Text.ElideRight
+        Rectangle {
+          id: coverBox
+          width: Style.space(56)
+          height: width
+          radius: Math.min(Style.space(4), Style.cornerRadius)
+          color: Qt.darker(Commons.Color.popups.background, 1.35)
+          border.width: 1
+          border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+          clip: true
+
+          Image {
+            id: coverImage
+            anchors.fill: parent
+            anchors.margins: 1
+            source: root.service ? Model.coverSource(root.service.artUrl) : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            smooth: true
+            sourceSize: Qt.size(coverBox.width * 2, coverBox.height * 2)
+          }
+
+          Text {
+            anchors.centerIn: parent
+            visible: coverImage.status !== Image.Ready
+            textFormat: Text.PlainText
+            text: Model.GLYPH_MUSIC
+            color: root.dimmer
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+          }
         }
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: root.service ? root.service.artist : ""
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          elide: Text.ElideRight
-          visible: text !== ""
-        }
+        Column {
+          width: parent.width - coverBox.width - parent.spacing
+          anchors.verticalCenter: coverBox.verticalCenter
+          spacing: Style.space(3)
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: root.service ? root.service.album : ""
-          color: root.dimmer
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          elide: Text.ElideRight
-          visible: text !== ""
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.service ? (root.service.title || "Unknown title") : ""
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.subtitle
+            font.bold: true
+            elide: Text.ElideRight
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.service ? root.service.artist : ""
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            elide: Text.ElideRight
+            visible: text !== ""
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.service ? root.service.album : ""
+            color: root.dimmer
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+            visible: text !== ""
+          }
         }
       }
 

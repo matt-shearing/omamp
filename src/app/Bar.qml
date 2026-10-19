@@ -6,7 +6,8 @@ Item {
     id: bar
     property real value: 0            // 0..1
     property bool active: true
-    property color fill: theme.accent
+    property var skin: appearance.plain
+    property color fill: skin.sliderFill
     property real dragValue: 0
     readonly property bool dragging: area.pressed
     readonly property real shown: dragging ? dragValue : value
@@ -20,10 +21,10 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         width: parent.width
         height: 6
-        radius: Math.min(3, theme.radius)
-        color: theme.c.darker_background
+        radius: Math.min(3, bar.skin.radius)
+        color: bar.skin.sliderTrack
         border.width: 1
-        border.color: theme.c.lighter_background
+        border.color: bar.skin.sliderBorder
 
         Rectangle {
             width: Math.max(0, Math.min(1, bar.shown)) * parent.width
@@ -38,12 +39,12 @@ Item {
         visible: bar.active
         width: 10
         height: 14
-        radius: Math.min(2, theme.radius)
+        radius: Math.min(2, bar.skin.radius)
         anchors.verticalCenter: parent.verticalCenter
         x: Math.max(0, Math.min(1, bar.shown)) * (bar.width - width)
-        color: area.pressed || area.containsMouse ? theme.c.bright_foreground : theme.c.light_foreground
+        color: area.pressed || area.containsMouse ? bar.skin.knobHover : bar.skin.knob
         border.width: 1
-        border.color: theme.c.darker_background
+        border.color: bar.skin.buttonBorder
     }
 
     MouseArea {

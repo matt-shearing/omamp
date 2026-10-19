@@ -505,7 +505,7 @@ bool TagEditor::quickSet(qint64 trackId, const QString &field, const QString &va
     const QList<TagEdit> edits{TagEdit{trackId, field, value, {}, {}}};
     const QString sandbox = m_controller->writeSandbox();
     return m_controller->runJob(
-        "tag", tr("Saving the title"),
+        "tag", field == "rating" ? tr("Saving the rating") : tr("Saving the title"),
         [edits, sandbox](Library &library, Job *job) { return runEdits(library, job, edits, sandbox, "edit"); },
         [this](const QJsonObject &r) {
             const QJsonArray files = r.value("files").toArray();

@@ -8,6 +8,24 @@ Spectrum::Spectrum(int bands) : m_bands(bands) { reset(); }
 void Spectrum::reset() {
     m_levels = QList<qreal>(m_bands, 0.0);
     m_peaks = QList<qreal>(m_bands, 0.0);
+    m_wave = QList<qreal>(wavePoints, 0.0);
+}
+
+void Spectrum::takeWave(const QList<float> &mono) {
+    const int n = mono.size();
+    if (n < wavePoints)
+        return;
+    // The newest 512 frames (about 11 ms at 44.1 kHz) fill the scope.
+    const int take = qMin(n, 512);
+    const int start = n - take;
+    for (int i = 0; i < wavePoints; ++i) {
+        const int from = start + i * take / wavePoints, to = start + (i + 1) * take / wavePoints;
+        float best = 0;
+        for (int k = from; k < to; ++k)
+            if (std::abs(mono[k]) > std::abs(best))
+                best = mono[k];
+        m_wave[i] = best;
+    }
 }
 
 void Spectrum::feed(const QAudioBuffer &buffer) {
@@ -36,6 +54,7 @@ void Spectrum::feed(const QAudioBuffer &buffer) {
         }
         mono[i] = sum / channels;
     }
+    takeWave(mono);
     analyse(mono, format.sampleRate());
 }
 
@@ -73,4 +92,7 @@ void Spectrum::decay() {
         m_levels[b] = qMax(0.0, m_levels[b] - 0.04);
         m_peaks[b] = qMax(m_levels[b], m_peaks[b] - 0.012);
     }
+    // Between buffers the line settles towards silence.
+    for (qreal &v : m_wave)
+        v *= 0.85;
 }

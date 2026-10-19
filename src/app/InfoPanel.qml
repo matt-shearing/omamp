@@ -16,8 +16,13 @@ Rectangle {
     property var chosenTrack: 0
     // What the chosen track stands for, when it isn't simply a track.
     property string chosenHeading: ""
-    readonly property var trackId: chosenTrack > 0 ? chosenTrack : library.playingTrackId
-    readonly property bool showingPlaying: !(chosenTrack > 0) && library.playingTrackId > 0
+    // The playing track: by its file, or (a Navidrome / Subsonic track) by
+    // the id Now Playing carries.
+    readonly property var playingId: library.playingTrackId > 0 ? library.playingTrackId : nowPlayingArt.trackId
+    readonly property var trackId: chosenTrack > 0 ? chosenTrack : playingId
+    readonly property bool showingPlaying: !(chosenTrack > 0) && playingId > 0
+    // Something plays that isn't in the library: its cover and tags still show.
+    readonly property bool playingOutside: !(chosenTrack > 0) && !(playingId > 0) && backend.currentIndex >= 0
     // Reads again whenever the library changes (library.revision).
     readonly property var info: trackId > 0 && library.revision >= 0 ? library.trackInfo(trackId) : ({})
     readonly property bool hasTrack: info.id !== undefined
@@ -263,10 +268,54 @@ Rectangle {
                 selectionColor: theme.c.selection
             }
 
+            // A file playing from outside the library: what the player knows.
+            Text {
+                Layout.fillWidth: true
+                visible: panel.playingOutside
+                text: qsTr("Now playing")
+                font.pixelSize: 11
+                font.bold: true
+                font.capitalization: Font.AllUppercase
+                color: theme.c.muted
+            }
+            CoverArt {
+                objectName: "infoOutsideCover"
+                Layout.fillWidth: true
+                Layout.preferredHeight: width
+                visible: panel.playingOutside
+                source: nowPlayingArt.coverUrl
+                clickable: false
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: panel.playingOutside
+                text: backend.title
+                wrapMode: Text.Wrap
+                font.pixelSize: 16
+                font.bold: true
+                color: theme.c.bright_foreground
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: panel.playingOutside && text !== ""
+                text: backend.artist + (backend.album ? (backend.artist ? "  —  " : "") + backend.album : "")
+                wrapMode: Text.Wrap
+                font.pixelSize: 13
+                color: theme.c.foreground
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: panel.playingOutside
+                text: qsTr("This file isn't in the library.")
+                wrapMode: Text.Wrap
+                font.pixelSize: 12
+                color: theme.c.muted
+            }
+
             Text {
                 Layout.fillWidth: true
                 Layout.topMargin: 40
-                visible: !panel.hasTrack
+                visible: !panel.hasTrack && !panel.playingOutside
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 text: qsTr("Choose a track to see its details here.")

@@ -4021,3 +4021,159 @@ page.
 - **The AUR package is not published,** and the `v0.2.0` tag is not on
   GitHub yet, so its source URL returns 404 until it is pushed. See
   `aur/README.md`.
+
+## Now playing: covers, the big view, mini players, visualisers and deck styles (20 October 2026)
+
+Matt asked for album art in now playing, a big dedicated now-playing screen,
+mini players, and different views and themes, as MediaMonkey had. User
+documentation is [docs/now-playing.md](../now-playing.md).
+
+### What was built
+
+```
+src/app/nowplaying.{h,cpp}     the playing track's cover (QML: nowPlayingArt), off the window's thread
+src/app/appearance.{h,cpp}     deck style, visualiser, big-view settings and palettes (QML: appearance)
+src/app/visualiser.{h,cpp}     QQuickPaintedItem: bars, peaks, mirror, scope, fire (QML: Omamp 1.0)
+src/app/DeckView.qml           the deck, moved out of Main.qml, in the deck style, with the cover
+src/app/BigView.qml            the big Now Playing view; PartyDisplay.qml is now this view
+src/app/BigLyrics.qml          timed lyrics for the big view
+src/app/MiniPlayer.qml         the mini (420x64) and micro (275x28) players
+src/app/NowPlayingModes.qml    mode logic, sizes, keys and palette actions, kept out of Main.qml
+src/app/AppearancePage.qml     Settings > Appearance (page 4)
+src/app/CoverArt.qml, Bevel.qml, TitleButton.qml   small parts
+src/engine/spectrum.*          a time-domain tap: waveform(), 128 points, for the oscilloscope
+src/app/mpris.*                mpris:artUrl
+tests/nowplaying_tests.cpp     the tests below (OMAMP_TESTS=nowplaying)
+```
+
+- **Covers without the library window.** `NowPlaying` follows the player's
+  current entry and resolves its cover on one low-priority thread with its
+  own library connection, opened only when the library file exists (the
+  deck alone never creates one). Order: the library's picture for a library
+  track (`ArtworkCache::trackArtwork`, so a Cover Art Archive pick wins);
+  `RemoteSources::coverArt` for a Subsonic track; else, for a loose file,
+  its embedded picture, then `ArtworkCache::pictureBeside` (new: cover,
+  folder or front, one level up for `CD1`-style folders). Loose files'
+  covers go into the same cache with the same `<hash>-<size>.jpg` names, so
+  they share files with the library's. `<hash>-blur.jpg` is a 64 px
+  box-blurred copy (three passes, a little more saturation) for the big
+  view's background.
+- **MPRIS** sends `mpris:artUrl` (the 600 px file) once the cover for the
+  current entry is known, and announces Metadata again when it arrives.
+  `MprisPlayer::setAnnouncing` keeps an unregistered adaptor (tests) off the
+  session bus.
+- **The deck** gained a 100 px cover left of the LCD (narrowed to 144 px),
+  title-bar buttons for the big view and the mini player, and the
+  visualiser in place of the bar repeater. The strip and the Now Playing
+  list header show the 96 px cover; the info panel shows a playing file
+  that isn't in the library, and a Subsonic track by Now Playing's id.
+- **Deck styles** are palettes of named roles (`panelTop`, `lcdText`,
+  `buttonGlyph`…) that `Panel`, `DeckButton`, `ToggleLamp`, `Bar` and the
+  new parts read through a `skin` property. Its default is
+  `appearance.plain` (the Omarchy theme, the old look), so the advanced
+  window is unchanged; the deck, the mini players and the big view pass
+  `appearance.deck`.
+- **The big view** lays out wide (cover left, words right, lyrics in a
+  third column when the track has them and the window is wider than about
+  1000 px) or narrow (cover above). Rating stars write through
+  `TagEditor::quickSet(id, "rating", …)`, which now says "Saving the
+  rating". It opens the library only when the playing track is in it.
+- **`omamp mini` / `omamp micro`** start in a compact player.
+- **Plugin**: `Service.artUrl` from Quickshell's `trackArtUrl`; the panel
+  shows a 56 px cover beside the track details; `Model.coverSource()`
+  accepts file, http(s) and inline pictures only.
+
+### Test results
+
+`bin/test`: 336 passed, 0 failed, 5 skipped (the existing skips). The new
+class has 8, counting initTestCase and cleanupTestCase:
+
+- the three styles name every colour, bad values are refused, settings
+  persist in `[appearance]`;
+- covers for a library track (folder picture), an embedded MP3, a folder
+  PNG, a disc folder, a bare file (cleared), and no library file at all
+  (none is created); the sizes and the 64 px blur exist and carry the
+  cover's colour;
+- a Subsonic track's cover from MockSubsonic, fetched once;
+- `mpris:artUrl` appears once the cover is known and goes when the list is
+  cleared;
+- all five visualiser styles paint something in a software-rendered window;
+- in Main.qml: the strip's cover; `N` opens the big view with three tracks
+  up next and three timed lyric lines from a `.lrc`; `Shift+L`; `Shift+V`;
+  a click on the fourth star saves a rating of 80; `Esc` closes; `Ctrl+M`
+  gives 420x64 titled "Omamp mini"; a resized mini player comes back at its
+  size; `Ctrl+Shift+M` gives 275x28 "Omamp micro"; both go back to the full
+  size and the sizes reach `window.conf`; the Classic style from the
+  palette reaches the deck and the window colour and persists; each
+  visualiser draws on the deck; the Appearance page's Silver button works;
+  and no QML warning comes from Omamp's files throughout.
+
+Plugin: `node omarchy-plugin/tests/model.test.mjs` passes (two new cases);
+`qmllint` reports only the kinds of warning the files already had;
+`omarchy plugin validate` passes.
+
+### Screenshots
+
+`docs/deck-with-art.png`, `docs/now-playing-big.png`, `docs/mini-player.png`,
+`docs/micro-player.png`, `docs/deck-classic.png`, `docs/deck-2000s.png` and
+`docs/visualisers.png` (a contact sheet cut from five big-view captures) are
+in the Night Ride theme; `docs/now-playing-big-default.png` is in Omarchy's
+default theme. They come from `tests/make-demo-library` with the new
+`DEMO_SECONDS=60`, which makes minute-long tracks with harmonics, a swell
+and a tick, so the analyser and the oscilloscope have something to show.
+They were captured offscreen in software with `OMAMP_DEMO`
+(`action:big-view`, `action:mini-player`…) and `OMAMP_SCREENSHOT`, on the
+native engine (which plays in real time into a buffer under
+`OMAMP_NO_AUDIO_DEVICE`), with a throwaway HOME pointing at the Night Ride
+theme and the session bus out of reach. Looking at them led to a narrower
+LCD so the lamps fit beside the cover, the big-view and mini buttons moving
+to the deck's title bar, a rewritten fire (the first smeared sideways),
+gain for the oscilloscope, a framed clock in the mini player, and a lyrics
+column only when there are lyrics.
+
+### Decisions
+
+- **Keys.** `N` (free in both modes) opens the big view; `F11` is
+  fullscreen; `V` stays Winamp's stop, so the visualiser takes `Shift+V`
+  and the lyrics `Shift+L`; `Ctrl+M` is the mini player, `Ctrl+Shift+M`
+  the micro.
+- **`nowPlayingArt`, not `nowPlaying`.** AdvancedView has a `nowPlaying`
+  property, and QML looks names up through the creating component, so a
+  context property of that name was shadowed inside the strip.
+- **The blur is a file, not an effect.** MultiEffect needs the GPU scene
+  graph; a 64 px CPU blur stretched with smooth scaling looks the same in
+  every renderer and costs one small file per cover.
+- **The compact mode isn't remembered** between runs, only each player's
+  size: a mini player that Hyprland tiles is no use. `omamp mini` opens
+  one, which is also when a window rule applies.
+- **The advanced window stays plain.** The strip keeps the Omarchy look in
+  every style; only the deck, the mini players and the big view change.
+- **Up next is list order.** With shuffle on, the heading says so; the
+  shuffled order isn't decided until a track ends.
+- **Main.qml edits are grouped**: the size, title and colour bindings, a
+  `NowPlayingModes` object, one line each in `rememberLayout`,
+  `setAdvanced` and `runAction`, the new shortcuts, the deck block replaced
+  by `DeckView`, three Loaders, and four help lines.
+
+### Known gaps
+
+- **Not seen on screen or heard.** Everything ran offscreen. The Hyprland
+  rule in docs/now-playing.md follows Omarchy's own `pip.lua` and the
+  `oneqode-space.lua` rule but has not been loaded. Hyprland applies
+  `float`, `size` and `move` when a window opens, so switching an open,
+  tiled window to the mini player needs `Super+T` (documented).
+- **The plugin panel wasn't rendered**: there is no offscreen harness for
+  the shell's `qs.*` modules here. It needs a look after merging.
+- **The info panel's lyrics** still follow `library.playingTrackId`, which
+  is 0 for a Subsonic track; the big view uses Now Playing's id and is fine.
+- **Translations**: the new strings are English only.
+- **Fire and the oscilloscope** were tuned on the demo tones, not on music.
+
+### After merging
+
+- Rebuild and reinstall Omamp (`bin/install` or `bin/install-user`). The
+  running copy doesn't send `mpris:artUrl`, so the bar has no cover until
+  then.
+- The plugin changes only `Widget.qml`, `Service.qml` and `Model.js`, no new
+  files, which the shell hot-reloads. If the panel shows no cover, run
+  `omarchy restart shell` and check `journalctl --user --since '2 min ago'`.

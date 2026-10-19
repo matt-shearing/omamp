@@ -41,6 +41,15 @@
         <file alias="DevicesSheet.qml">DevicesSheet.qml</file>
         <file alias="NasGuideSheet.qml">NasGuideSheet.qml</file>
         <file alias="RemoteSourceSheet.qml">RemoteSourceSheet.qml</file>
+        <file alias="Bevel.qml">Bevel.qml</file>
+        <file alias="CoverArt.qml">CoverArt.qml</file>
+        <file alias="DeckView.qml">DeckView.qml</file>
+        <file alias="TitleButton.qml">TitleButton.qml</file>
+        <file alias="BigView.qml">BigView.qml</file>
+        <file alias="BigLyrics.qml">BigLyrics.qml</file>
+        <file alias="MiniPlayer.qml">MiniPlayer.qml</file>
+        <file alias="NowPlayingModes.qml">NowPlayingModes.qml</file>
+        <file alias="AppearancePage.qml">AppearancePage.qml</file>
         <file alias="docs/nas.md">../../docs/nas.md</file>
         <file alias="i18n/en.json">i18n/en.json</file>
     </qresource>

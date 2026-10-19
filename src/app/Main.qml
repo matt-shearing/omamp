@@ -6,14 +6,16 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
-    width: prefs.advanced ? prefs.advancedWidth : prefs.deckWidth
-    height: prefs.advanced ? prefs.advancedHeight : prefs.deckHeight
-    minimumWidth: advanced ? 820 : 440
-    minimumHeight: advanced ? 520 : 460
+    // Now playing: the mini and micro players and the big view (NowPlayingModes.qml).
+    width: modes.compact !== "" ? modes.compactWidth : prefs.advanced ? prefs.advancedWidth : prefs.deckWidth
+    height: modes.compact !== "" ? modes.compactHeight : prefs.advanced ? prefs.advancedHeight : prefs.deckHeight
+    minimumWidth: modes.compact !== "" ? modes.minimumWidth : advanced ? 820 : 440
+    minimumHeight: modes.compact !== "" ? modes.minimumHeight : advanced ? 520 : 460
     visible: true
-    title: backend.currentIndex >= 0 && backend.title
+    title: modes.compact !== "" ? modes.title
+           : backend.currentIndex >= 0 && backend.title
            ? (backend.artist ? backend.artist + " - " : "") + backend.title + " — Omamp" : "Omamp"
-    color: theme.c.background
+    color: advanced && modes.compact === "" ? theme.c.background : appearance.deck.window
 
     Material.theme: theme.light ? Material.Light : Material.Dark
     Material.accent: theme.accent
@@ -65,6 +67,7 @@ ApplicationWindow {
     }
 
     function rememberLayout() {
+        if (modes.compact !== "") { modes.rememberSize(); return }
         if (advanced) {
             prefs.advancedWidth = width
             prefs.advancedHeight = height
@@ -81,6 +84,7 @@ ApplicationWindow {
     }
 
     function setAdvanced(on) {
+        if (modes.compact !== "") modes.setCompact("")
         if (on === advanced) return
         rememberLayout()
         prefs.advanced = on
@@ -132,7 +136,12 @@ ApplicationWindow {
     Component.onCompleted: {
         if (advanced) library.activate()
         registerActions()
+        modes.registerActions(commandPalette)
+        modes.start(typeof startMode === "string" ? startMode : "")
     }
+
+    // Now playing: the big view, fullscreen, and the mini and micro players.
+    NowPlayingModes { id: modes; window: win; prefs: prefs }
     onAdvancedChanged: if (advanced) library.activate()
 
     // ---- The command palette (Ctrl+K) ------------------------------------
@@ -398,8 +407,9 @@ ApplicationWindow {
                         "play-pause": "play", "play": "play", "stop": "play", "next": "skip", "previous": "skip",
                         "volume-up": "volume", "volume-down": "volume", "shuffle": "reorder", "repeat": "reorder",
                         "queue-selection": "add", "append-selection": "add", "play-selection": "play",
-                        "advanced": "library", "search": "library" }
+                        "advanced": "library", "search": "library", "settings-appearance": "settings" }
         if (locks[id] !== undefined && !guard(locks[id])) return
+        if (modes.runAction(id)) return
         switch (id) {
         case "play-pause": backend.toggle(); break
         case "play": backend.play(); break
@@ -476,6 +486,7 @@ ApplicationWindow {
         case "settings": settingsSheet.openPage(0); break
         case "settings-playback": settingsSheet.openPage(0); break
         case "settings-scrobbling": settingsSheet.openPage(2); break
+        case "settings-appearance": settingsSheet.openPage(4); break
         case "identify": withTracks((ids) => identifySheet.openFor(ids)); break
         case "find-cover": {
             const album = chosenAlbum()
@@ -546,7 +557,7 @@ ApplicationWindow {
     function select(row) {
         if (backend.playlist.count === 0) return
         selected = Math.max(0, Math.min(backend.playlist.count - 1, row))
-        list.positionViewAtIndex(selected, ListView.Contain)
+        deckView.positionAt(selected)
     }
 
     // Winamp's own keys (Z X C V B) alongside the Omarchy ones.
@@ -593,391 +604,34 @@ ApplicationWindow {
     Shortcut { sequences: ["Ctrl+,", StandardKey.Preferences]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("settings") }
     // Phase 4: I is the info panel, so identifying takes Ctrl+I.
     Shortcut { sequence: "Ctrl+I"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.advanced; onActivated: win.runAction("identify") }
+    // Now playing: N is free in both modes and V stays Winamp's stop, so
+    // the visualiser takes Shift+V and the big view's lyrics Shift+L.
+    Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("big-view") }
+    Shortcut { sequence: "F11"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("fullscreen") }
+    Shortcut { sequence: "Escape"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && !win.helpVisible && (modes.bigView || modes.fullScreen); onActivated: modes.back() }
+    Shortcut { sequence: "Shift+V"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("next-visualiser") }
+    Shortcut { sequence: "Shift+L"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && modes.bigView; onActivated: win.runAction("big-lyrics") }
+    Shortcut { sequence: "Ctrl+M"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("mini-player") }
+    Shortcut { sequence: "Ctrl+Shift+M"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("micro-player") }
 
     Item {
         anchors.fill: parent
         LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
         LayoutMirroring.childrenInherit: true
 
-        ColumnLayout {
+        // The deck (DeckView.qml), in the deck style from Settings > Appearance.
+        DeckView {
+            id: deckView
             anchors.fill: parent
             anchors.margins: 10
-            spacing: 8
-            visible: !win.advanced
-
-            // The deck: display, analyser, sliders and transport.
-            Panel {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 206
-                label: "O M A M P"
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 8
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        // The LCD: state, clock and analyser.
-                        Rectangle {
-                            Layout.preferredWidth: 176
-                            Layout.preferredHeight: 100
-                            color: theme.c.darker_background
-                            border.width: 1
-                            border.color: theme.c.lighter_background
-                            radius: Math.min(4, theme.radius)
-
-                            Text {
-                                id: stateGlyph
-                                x: 8; y: 8
-                                text: String.fromCodePoint(backend.state === "playing" ? 0xF040A
-                                                          : backend.state === "paused" ? 0xF03E4 : 0xF04DB)
-                                font.family: win.mono
-                                font.pixelSize: 14
-                                color: backend.state === "playing" ? theme.c.green : theme.c.muted
-                            }
-
-                            Text {
-                                id: time
-                                anchors { right: parent.right; rightMargin: 10; top: parent.top; topMargin: 2 }
-                                text: (win.showRemaining ? "-" : "") + win.clock(win.showRemaining
-                                      ? backend.duration - backend.position : backend.position)
-                                font.family: win.mono
-                                font.pixelSize: 34
-                                font.bold: true
-                                color: theme.c.green
-                                // Blinks while paused, like the original.
-                                opacity: backend.state === "paused" ? (blink.on ? 1 : 0.15) : 1
-                                Timer { id: blink; property bool on: true; interval: 600; repeat: true
-                                        running: backend.state === "paused"; onTriggered: on = !on }
-                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                            onClicked: win.showRemaining = !win.showRemaining }
-                            }
-
-                            // The analyser: bars rise from the theme's green through
-                            // cyan to the accent, with a falling peak cap on each.
-                            Row {
-                                id: bars
-                                anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 8 }
-                                height: 46
-                                spacing: 2
-                                readonly property int count: backend.levels.length
-                                Repeater {
-                                    model: bars.count
-                                    Item {
-                                        required property int index
-                                        width: (bars.width - bars.spacing * (bars.count - 1)) / bars.count
-                                        height: bars.height
-                                        Item {
-                                            anchors.bottom: parent.bottom
-                                            width: parent.width
-                                            height: Math.max(1, backend.levels[index] * parent.height)
-                                            clip: true
-                                            Rectangle {
-                                                anchors.bottom: parent.bottom
-                                                width: parent.width
-                                                height: bars.height
-                                                // The gradient spans the full bar height, so a quiet bar
-                                                // stays green and only loud ones reach the accent.
-                                                gradient: Gradient {
-                                                    GradientStop { position: 0.0; color: theme.accent }
-                                                    GradientStop { position: 0.5; color: theme.c.cyan }
-                                                    GradientStop { position: 1.0; color: theme.c.green }
-                                                }
-                                            }
-                                        }
-                                        Rectangle {
-                                            width: parent.width
-                                            height: 2
-                                            y: parent.height - backend.peaks[index] * parent.height - 2
-                                            visible: backend.peaks[index] > 0.02
-                                            color: theme.c.bright_foreground
-                                            opacity: 0.8
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 100
-                            spacing: 6
-
-                            // The scrolling title, as Winamp shows it.
-                            Rectangle {
-                                id: marqueeBox
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                color: theme.c.darker_background
-                                border.width: 1
-                                border.color: theme.c.lighter_background
-                                radius: Math.min(4, theme.radius)
-                                clip: true
-
-                                readonly property string line: backend.currentIndex < 0
-                                    ? qsTr("Omamp — drop some music in")
-                                    : (backend.currentIndex + 1) + ". " + (backend.artist ? backend.artist + " - " : "")
-                                      + backend.title + (backend.duration > 0 ? " (" + win.clock(backend.duration) + ")" : "")
-                                readonly property bool scrolls: one.width > width - 16
-
-                                TextMetrics { id: one; font: marquee.font; text: marqueeBox.line }
-                                Text {
-                                    id: marquee
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    x: 8
-                                    text: marqueeBox.scrolls ? marqueeBox.line + "   ***   " + marqueeBox.line : marqueeBox.line
-                                    font.family: win.mono
-                                    font.pixelSize: 13
-                                    color: theme.c.green
-                                    NumberAnimation on x {
-                                        id: scroll
-                                        running: marqueeBox.scrolls
-                                        loops: Animation.Infinite
-                                        from: 8
-                                        to: 8 - marqueeGap.width - one.width
-                                        duration: Math.max(4000, (one.width + marqueeGap.width) * 35)
-                                    }
-                                    onTextChanged: { x = 8; if (scroll.running) scroll.restart() }
-                                }
-                                TextMetrics { id: marqueeGap; font: marquee.font; text: "   ***   " }
-                            }
-
-                            // Bit rate, sample rate and channel lamps.
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-                                Repeater {
-                                    model: [
-                                        { value: backend.bitrate > 0 ? backend.bitrate : "", unit: "kbps" },
-                                        { value: backend.sampleRate > 0 ? Math.round(backend.sampleRate / 1000) : "", unit: "kHz" }
-                                    ]
-                                    Row {
-                                        required property var modelData
-                                        spacing: 4
-                                        Rectangle {
-                                            width: 34; height: 18
-                                            color: theme.c.darker_background
-                                            border.width: 1; border.color: theme.c.lighter_background
-                                            radius: Math.min(3, theme.radius)
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: modelData.value
-                                                font.family: win.mono; font.pixelSize: 11
-                                                color: theme.c.green
-                                            }
-                                        }
-                                        Text {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: modelData.unit
-                                            font.family: win.mono; font.pixelSize: 9
-                                            color: theme.c.muted
-                                        }
-                                    }
-                                }
-                                Item { Layout.fillWidth: true }
-                                Repeater {
-                                    model: [ { word: qsTr("mono"), lit: backend.channels === 1 },
-                                             { word: qsTr("stereo"), lit: backend.channels >= 2 } ]
-                                    Text {
-                                        required property var modelData
-                                        text: modelData.word
-                                        font.family: win.mono; font.pixelSize: 10; font.bold: modelData.lit
-                                        color: modelData.lit ? theme.accent : theme.c.lighter_background
-                                    }
-                                }
-                            }
-
-                            // Volume.
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: String.fromCodePoint(backend.volume === 0 ? 0xF075F
-                                                               : backend.volume < 50 ? 0xF0580 : 0xF057E)
-                                    font.family: win.mono; font.pixelSize: 15
-                                    color: theme.c.light_foreground
-                                }
-                                Bar {
-                                    Layout.fillWidth: true
-                                    value: backend.volume / 100
-                                    fill: theme.c.cyan
-                                    onMoved: (v) => backend.volume = Math.round(v * 100)
-                                }
-                                Text {
-                                    Layout.preferredWidth: 30
-                                    horizontalAlignment: Text.AlignRight
-                                    text: backend.volume + "%"
-                                    font.family: win.mono; font.pixelSize: 10
-                                    color: theme.c.muted
-                                }
-                            }
-                            Item { Layout.fillHeight: true }
-                        }
-                    }
-
-                    // Position.
-                    Bar {
-                        id: seekBar
-                        Layout.fillWidth: true
-                        active: backend.duration > 0
-                        value: backend.duration > 0 ? backend.position / backend.duration : 0
-                        onReleased: (v) => backend.seek(v * backend.duration)
-                    }
-
-                    // Transport.
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-                        DeckButton { glyph: 0xF04AE; onClicked: backend.previous() }
-                        DeckButton { glyph: 0xF040A; lit: backend.state === "playing"; onClicked: backend.play() }
-                        DeckButton { glyph: 0xF03E4; lit: backend.state === "paused"; onClicked: backend.pause() }
-                        DeckButton { glyph: 0xF04DB; onClicked: backend.stop() }
-                        DeckButton { glyph: 0xF04AD; onClicked: backend.next() }
-                        Item { width: 4 }
-                        DeckButton { glyph: 0xF01EA; implicitWidth: 32; onClicked: backend.openFolder() }
-                        Item { Layout.fillWidth: true }
-                        ToggleLamp { label: qsTr("SHUFFLE"); on: backend.shuffle; onToggled: backend.shuffle = !backend.shuffle }
-                        ToggleLamp { label: qsTr("REPEAT"); on: backend.repeat; onToggled: backend.repeat = !backend.repeat }
-                    }
-                }
-            }
-
-            // The playlist.
-            Panel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                label: qsTr("P L A Y L I S T")
-
-                Rectangle {
-                    id: listBox
-                    anchors { left: parent.left; right: parent.right; top: parent.top; bottom: footer.top; bottomMargin: 6 }
-                    color: theme.c.darker_background
-                    border.width: 1
-                    border.color: drop.containsDrag ? theme.accent : theme.c.lighter_background
-                    radius: Math.min(4, theme.radius)
-
-                    ListView {
-                        id: list
-                        anchors.fill: parent
-                        anchors.margins: 4
-                        clip: true
-                        model: backend.playlist
-                        boundsBehavior: Flickable.StopAtBounds
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                        delegate: Rectangle {
-                            id: row
-                            required property int index
-                            required property int number
-                            required property string title
-                            required property string artist
-                            required property var duration
-                            readonly property bool current: index === backend.currentIndex
-                            width: ListView.view.width
-                            height: 22
-                            radius: Math.min(3, theme.radius)
-                            color: index === win.selected ? theme.c.selection
-                                 : hover.hovered ? Qt.alpha(theme.c.selection, 0.45) : "transparent"
-
-                            HoverHandler { id: hover }
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 6
-                                anchors.rightMargin: 10
-                                spacing: 6
-                                Text {
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideRight
-                                    text: row.number + ". " + (row.artist ? row.artist + " - " : "") + row.title
-                                    font.family: win.mono
-                                    font.pixelSize: 12
-                                    font.bold: row.current
-                                    color: row.current ? theme.accent : theme.c.foreground
-                                }
-                                Text {
-                                    text: row.duration > 0 ? win.clock(row.duration) : ""
-                                    font.family: win.mono
-                                    font.pixelSize: 12
-                                    color: row.current ? theme.accent : theme.c.muted
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: win.selected = row.index
-                                onDoubleClicked: backend.playIndex(row.index)
-                            }
-                        }
-                    }
-
-                    Column {
-                        anchors.centerIn: parent
-                        visible: backend.playlist.count === 0
-                        spacing: 10
-                        width: parent.width - 40
-                        Text {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: String.fromCodePoint(0xF0387)
-                            font.family: win.mono; font.pixelSize: 40
-                            color: theme.c.lighter_background
-                        }
-                        Text {
-                            width: parent.width
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.WordWrap
-                            text: qsTr("Drop music here, or press O to add a folder.")
-                            font.family: win.mono; font.pixelSize: 12
-                            color: theme.c.muted
-                        }
-                    }
-                }
-
-                RowLayout {
-                    id: footer
-                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                    height: 24
-                    spacing: 6
-
-                    Text {
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                        text: backend.playlist.count === 0 ? ""
-                              : qsTr("%n tracks", "", backend.playlist.count)
-                                + (backend.playlist.totalKnownMs > 0 ? "  ·  " + win.clock(backend.playlist.totalKnownMs) : "")
-                        font.family: win.mono; font.pixelSize: 10
-                        color: theme.c.muted
-                    }
-                    ToggleLamp { label: qsTr("+ ADD"); onToggled: backend.openFolder() }
-                    ToggleLamp { label: qsTr("− REM"); onToggled: { backend.remove(win.selected); win.select(win.selected) } }
-                    ToggleLamp { label: qsTr("CLEAR"); onToggled: backend.clear() }
-                }
-            }
-
-            // Something went wrong: said plainly, dismissed with a click.
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 28
-                visible: backend.error !== ""
-                color: Qt.alpha(theme.c.red, 0.15)
-                border.width: 1
-                border.color: theme.c.red
-                radius: Math.min(4, theme.radius)
-                Text {
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 10
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                    text: backend.error
-                    font.family: win.mono; font.pixelSize: 11
-                    color: theme.c.red
-                }
-                MouseArea { anchors.fill: parent; onClicked: backend.dismissError() }
-                Timer { running: backend.error !== ""; interval: 7000; onTriggered: backend.dismissError() }
-            }
+            visible: !win.advanced && modes.compact === ""
+            showRemaining: win.showRemaining
+            selected: win.selected
+            dropHover: drop.containsDrag
+            onToggleRemaining: win.showRemaining = !win.showRemaining
+            onSelectRow: (row) => win.select(row)
+            onOpenBigView: win.runAction("big-view")
+            onOpenMini: win.runAction("mini-player")
         }
 
         // Advanced mode, built the first time it is shown.
@@ -985,7 +639,7 @@ ApplicationWindow {
             id: advancedLoader
             anchors.fill: parent
             active: win.advanced || item !== null
-            visible: win.advanced
+            visible: win.advanced && modes.compact === ""
             sourceComponent: AdvancedView {
                 objectName: "advancedView"
                 showRemaining: win.showRemaining
@@ -1008,11 +662,37 @@ ApplicationWindow {
             }
         }
 
-        // Party mode's big now-playing display, over everything but the sheets.
-        PartyDisplay {
+        // The big Now Playing view (N), and the mini and micro players
+        // (Ctrl+M, Ctrl+Shift+M), each built when first shown.
+        Loader {
             anchors.fill: parent
-            visible: library.dj.partyDisplay
-            onUnlock: partySheet.openSheet("leave")
+            active: modes.bigView && !library.dj.partyDisplay
+            sourceComponent: BigView {
+                fullScreen: modes.fullScreen
+                onClose: modes.setBigView(false)
+                onToggleFullScreen: modes.toggleFullScreen()
+            }
+        }
+        Loader {
+            anchors.fill: parent
+            active: modes.compact !== ""
+            sourceComponent: MiniPlayer {
+                mode: modes.compact
+                showRemaining: win.showRemaining
+                onRestore: modes.setCompact("")
+                onToggleRemaining: win.showRemaining = !win.showRemaining
+                onOpenBigView: modes.setBigView(true)
+            }
+        }
+
+        // Party mode's big now-playing display, over everything but the sheets.
+        Loader {
+            anchors.fill: parent
+            active: library.dj.partyDisplay
+            sourceComponent: PartyDisplay {
+                fullScreen: modes.fullScreen
+                onUnlock: partySheet.openSheet("leave")
+            }
         }
 
         // Phase 2's sheets, over the library.
@@ -1133,6 +813,8 @@ ApplicationWindow {
                             ["S", qsTr("Shuffle on or off")],
                             ["R", qsTr("Repeat on or off")],
                             ["T", qsTr("Show time left or time played")],
+                            ["N  F11", qsTr("Big Now Playing view, fullscreen")],
+                            ["Ctrl+M", qsTr("Mini player (Ctrl+Shift+M: micro)")],
                             ["Tab", qsTr("Back to the deck")],
                             ["?", qsTr("Show or hide these keys")],
                             ["Q", qsTr("Quit")]
@@ -1188,6 +870,9 @@ ApplicationWindow {
                             ["R", qsTr("Repeat on or off")],
                             ["O", qsTr("Add a music folder")],
                             ["T", qsTr("Show time left or time played")],
+                            ["N  F11", qsTr("Big Now Playing view, fullscreen")],
+                            ["Shift+V", qsTr("Next visualiser style")],
+                            ["Ctrl+M", qsTr("Mini player (Ctrl+Shift+M: micro)")],
                             ["Tab", qsTr("Open the library (advanced mode)")],
                             ["Ctrl+K", qsTr("Command palette")],
                             ["Ctrl+J", qsTr("Auto-DJ on or off")],

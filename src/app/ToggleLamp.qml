@@ -5,17 +5,19 @@ Item {
     id: lamp
     property string label: ""
     property bool on: false
+    property var skin: appearance.plain
     signal toggled()
 
     implicitWidth: row.implicitWidth + 14
     implicitHeight: 22
+    opacity: enabled ? 1 : 0.4
 
     Rectangle {
         anchors.fill: parent
-        radius: Math.min(4, theme.radius)
-        color: area.containsMouse ? theme.c.selection : theme.c.darker_background
+        radius: lamp.skin.smallRadius
+        color: area.containsMouse ? lamp.skin.lampHover : lamp.skin.lamp
         border.width: 1
-        border.color: lamp.on ? theme.accent : theme.c.lighter_background
+        border.color: lamp.on ? lamp.skin.lampOn : lamp.skin.lampBorder
     }
 
     Row {
@@ -25,7 +27,7 @@ Item {
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 6; height: 6; radius: 3
-            color: lamp.on ? theme.accent : theme.c.lighter_background
+            color: lamp.on ? lamp.skin.lampOn : lamp.skin.lampBorder
         }
         Text {
             text: lamp.label
@@ -33,7 +35,7 @@ Item {
             font.pixelSize: 9
             font.bold: true
             font.letterSpacing: 1.5
-            color: lamp.on ? theme.c.bright_foreground : theme.c.muted
+            color: lamp.on ? lamp.skin.lampTextOn : lamp.skin.lampText
         }
     }
 

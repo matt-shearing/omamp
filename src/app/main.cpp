@@ -7,16 +7,19 @@
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlEngine>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QStandardPaths>
 #include <QUrl>
 
+#include "appearance.h"
 #include "artprovider.h"
 #include "cli.h"
 #include "devhooks.h"
 #include "librarycontroller.h"
 #include "mpris.h"
+#include "nowplaying.h"
 #include "organisemodel.h"
 #include "player.h"
 #include "playrecorder.h"
@@ -25,6 +28,7 @@
 #include "tageditor.h"
 #include "theme.h"
 #include "translator.h"
+#include "visualiser.h"
 
 static const char *version = "0.2.0";
 
@@ -71,6 +75,11 @@ int main(int argc, char *argv[]) {
     // and the first of them starts playing. A first run with nothing to play
     // offers the Music folder.
     QStringList arguments = app.arguments().mid(1);
+    // `omamp mini` and `omamp micro` open the compact players, so a
+    // Hyprland rule can float and pin them as they open (docs/now-playing.md).
+    QString startMode;
+    if (arguments.value(0) == "mini" || arguments.value(0) == "micro")
+        startMode = arguments.takeFirst();
     if (arguments.value(0) == "open")
         arguments.removeFirst();
     if (!arguments.isEmpty()) {
@@ -108,8 +117,16 @@ int main(int argc, char *argv[]) {
     // Quitting part-way through a track still counts what was heard.
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &player, [&player] { player.finishPlay(false); });
 
+    // The playing track's cover, for the window and for MPRIS.
+    NowPlaying nowPlaying(&player);
+    QObject::connect(&library, &LibraryController::revisionChanged, &nowPlaying, &NowPlaying::refreshSoon);
+    const QString windowConf =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/window.conf";
+    Appearance appearance(windowConf, &theme);
+    qmlRegisterType<Visualiser>("Omamp", 1, 0, "Visualiser");
+
     QObject mprisHost;
-    registerMpris(&mprisHost, &player);
+    registerMpris(&mprisHost, &player, &nowPlaying);
 
     QQmlApplicationEngine engine;
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
@@ -117,14 +134,15 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("theme", &theme);
     engine.rootContext()->setContextProperty("backend", &player);
     engine.rootContext()->setContextProperty("library", &library);
+    engine.rootContext()->setContextProperty("nowPlayingArt", &nowPlaying);
+    engine.rootContext()->setContextProperty("appearance", &appearance);
+    engine.rootContext()->setContextProperty("startMode", startMode);
     // The command palette (Ctrl+K) searches the library once it is open, and
     // lists the actions Main.qml registers before that.
     engine.rootContext()->setContextProperty("commandPalette", library.palette());
     // Album and track pictures: image://omamp-art/album/<id>/<size>.
     engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider);
-    engine.rootContext()->setContextProperty(
-        "settingsUrl", QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
-                                           "/omamp/window.conf"));
+    engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(windowConf));
     DevHooks hooks(&engine, &library);
     engine.load(QUrl("qrc:/Main.qml"));
     if (engine.rootObjects().isEmpty())

@@ -3,9 +3,9 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Settings, on four pages: Playback (engine, crossfade, ReplayGain, the
-// equaliser), Library (folders, watching, ratings in files), Scrobbling
-// and Web. Everything applies as it is changed; playback settings go to
+// Settings, on five pages: Playback (engine, crossfade, ReplayGain, the
+// equaliser), Library (folders, watching, ratings in files), Scrobbling,
+// Web, and Appearance (AppearancePage.qml: deck style, visualiser, big view). Everything applies as it is changed; playback settings go to
 // the player's omamp.conf, the rest to the library.
 ToolSheet {
     id: sheet
@@ -86,6 +86,7 @@ ToolSheet {
             TabButton { text: qsTr("Library"); font.pixelSize: 13 }
             TabButton { text: qsTr("Scrobbling"); font.pixelSize: 13 }
             TabButton { text: qsTr("Web"); font.pixelSize: 13 }
+            TabButton { objectName: "appearanceTab"; text: qsTr("Appearance"); font.pixelSize: 13 }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: theme.c.lighter_background }
 
@@ -602,6 +603,9 @@ ToolSheet {
                     Item { height: 12; width: 1 }
                 }
             }
+
+            // ---- Appearance (page 4) ---------------------------------------
+            AppearancePage {}
         }
     }
 

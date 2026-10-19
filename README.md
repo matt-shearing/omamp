@@ -11,7 +11,7 @@ Auto-DJ, MusicBrainz tagging, synced lyrics, libraries that live on a NAS
 or a Navidrome server, sync to a phone, USB drive or Syncthing folder, and
 reports as CSV or HTML.
 
-> **Status:** early (0.2.0). Everything below is built and tested (343
+> **Status:** early (0.2.0). Everything below is built and tested (351
 > automated tests), but only against made-up music, mock web services and
 > simulated network shares. It has not yet been tried on a real large library
 > or a real NAS. Expect rough edges and breaking changes. The plan and a
@@ -40,6 +40,51 @@ Omamp speaks MPRIS, so the media keys, `playerctl` and the Omarchy bar can
 see and control it.
 
 ![Omamp in Omarchy's default theme](docs/omamp-default.png)
+
+## Now playing: covers, the big view and the mini players
+
+The deck shows the playing track's cover beside the green clock. So do the
+strip in advanced mode, the top of Now Playing and the info panel. Covers
+come from the library, from a Navidrome server, or, for a file outside the
+library, from its tags or its folder, and work on the deck without opening
+the library. Omamp sends the cover over MPRIS too, so the Omarchy bar and
+`playerctl` show it.
+
+![The deck with the cover, in the Night Ride theme](docs/deck-with-art.png)
+
+- **The big Now Playing view** (`N`, or click the cover) fills the window
+  with the cover, the title, artist, album and year, the rating as stars you
+  can click, the position, the transport, the next five tracks, timed lyrics
+  scrolling with the song, and a visualiser. The background is the cover,
+  blurred. `F11` makes it fullscreen and `Esc` comes back. Party mode's
+  display is the same view.
+- **The mini player** (`Ctrl+M`) is a 420 by 64 strip: cover, scrolling
+  title, seek, transport and volume. **The micro player** (`Ctrl+Shift+M`)
+  is Winamp's windowshade, 275 by 28. Each remembers its size, and
+  `omamp mini` starts in one. A Hyprland rule floats and pins them; it is in
+  [docs/now-playing.md](docs/now-playing.md).
+- **Visualisers**: bars, bars with peaks, a mirrored spectrum, an
+  oscilloscope and fire. Click the visualiser or press `Shift+V` for the
+  next one.
+- **Deck styles** (Settings → Appearance): Omarchy follows the theme;
+  Classic is Winamp 2's grey bevels and green readout; Silver is the
+  brushed silver and blue of 2000s MediaMonkey. The library window keeps the
+  Omarchy theme whatever the deck wears.
+
+![The big Now Playing view](docs/now-playing-big.png)
+
+![The big Now Playing view in Omarchy's default theme](docs/now-playing-big-default.png)
+
+![The mini player](docs/mini-player.png)
+
+![The micro player](docs/micro-player.png)
+
+![The Classic deck style](docs/deck-classic.png) ![The Silver deck style](docs/deck-2000s.png)
+
+![The five visualisers](docs/visualisers.png)
+
+[docs/now-playing.md](docs/now-playing.md) has the details: where covers
+come from, every key, the Hyprland rule, and the styles.
 
 ## Advanced mode: the library
 
@@ -276,7 +321,7 @@ The guide is [docs/sync.md](docs/sync.md).
 
 ## Omarchy bar plugin
 
-`omarchy-plugin/` adds Omamp to the Omarchy bar: the track and play state in the bar, and a panel with seek, transport, shuffle, repeat and volume. Install it with `omarchy-plugin/install`. See [its README](omarchy-plugin/README.md).
+`omarchy-plugin/` adds Omamp to the Omarchy bar: the track and play state in the bar, and a panel with the cover, seek, transport, shuffle, repeat and volume. Install it with `omarchy-plugin/install`. See [its README](omarchy-plugin/README.md).
 
 ![The Omamp bar plugin](docs/omarchy-plugin.png)
 
@@ -295,6 +340,12 @@ The guide is [docs/sync.md](docs/sync.md).
 | `R` | Repeat on or off |
 | `O` | Add a music folder |
 | `T` | Show time left or time played (or click the clock) |
+| `N` | The big Now Playing view, and back |
+| `F11` | Fullscreen Now Playing; `Esc` leaves it, then the big view |
+| `Shift+V` | Next visualiser style (or click the visualiser) |
+| `Shift+L` | Lyrics in the big view on or off |
+| `Ctrl+M` | The mini player, and back |
+| `Ctrl+Shift+M` | The micro player, and back |
 | `Tab` | Switch between the deck and advanced mode |
 | `?` | Show every key |
 | `Q` | Quit |

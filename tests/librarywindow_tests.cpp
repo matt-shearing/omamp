@@ -22,6 +22,7 @@
 #include "columnbrowser.h"
 #include "library.h"
 #include "librarycontroller.h"
+#include "nowplaying_context.h"
 #include "librarytree.h"
 #include "player.h"
 #include "portal.h"
@@ -763,6 +764,7 @@ private slots:
         engine.rootContext()->setContextProperty("library", &library);
         engine.rootContext()->setContextProperty("commandPalette", library.palette());
         engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(dir.filePath("window.conf")));
+        installNowPlaying(engine, &theme, &player, dir.filePath("library.db"), dir.filePath("art"));
         engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider(dir.filePath("library.db"), dir.filePath("art")));
         engine.load(QUrl("qrc:/Main.qml"));
         QCOMPARE(engine.rootObjects().size(), 1);
@@ -881,6 +883,7 @@ class AdvancedPartsTests : public QObject {
             engine.rootContext()->setContextProperty("library", &library);
             engine.rootContext()->setContextProperty("commandPalette", library.palette());
             engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(d.filePath("window.conf")));
+            installNowPlaying(engine, &theme, &player, d.filePath("library.db"), d.filePath("art"));
             engine.addImageProvider(ArtImageProvider::name,
                                     new ArtImageProvider(d.filePath("library.db"), d.filePath("art")));
         }

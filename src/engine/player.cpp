@@ -5,26 +5,40 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QMediaMetaData>
 #include <QMetaMethod>
 #include <QRandomGenerator>
 #include <QSaveFile>
+#include <QSettings>
 #include <QUrl>
 #include <cmath>
 
-Player::Player(const QString &statePath, QObject *parent) : QObject(parent), m_statePath(statePath) {
-    m_player.setAudioOutput(&m_output);
-    m_player.setAudioBufferOutput(&m_bufferOutput);
+#include "equalizer.h"
+#include "nativeengine.h"
+#include "qtengine.h"
 
-    connect(&m_bufferOutput, &QAudioBufferOutput::audioBufferReceived, this, [this](const QAudioBuffer &buffer) {
-        m_spectrum.feed(buffer);
-        const auto format = buffer.format();
-        if (format.sampleRate() != m_sampleRate || format.channelCount() != m_channels) {
-            m_sampleRate = format.sampleRate();
-            m_channels = format.channelCount();
-            emit formatChanged();
-        }
-    });
+namespace {
+// The settings file beside the state file: ~/.config/omamp/omamp.conf.
+QString settingsPathFor(const QString &statePath) {
+    return statePath.isEmpty() ? QString() : QFileInfo(statePath).absolutePath() + "/omamp.conf";
+}
+
+AudioEngine *chooseEngine(const QString &settingsPath) {
+    QString choice = qEnvironmentVariable("OMAMP_ENGINE").trimmed().toLower();
+    if (choice.isEmpty() && !settingsPath.isEmpty())
+        choice = QSettings(settingsPath, QSettings::IniFormat).value("playback/engine").toString().trimmed().toLower();
+    if (choice == "native")
+        return new NativeEngine;
+    return new QtEngine;
+}
+} // namespace
+
+Player::Player(const QString &statePath, QObject *parent)
+    : Player(chooseEngine(settingsPathFor(statePath)), statePath, parent) {}
+
+Player::Player(AudioEngine *engine, const QString &statePath, QObject *parent)
+    : QObject(parent), m_engine(engine), m_statePath(statePath), m_settingsPath(settingsPathFor(statePath)) {
+    m_engine->setParent(this);
+    connectEngine();
 
     // The bars fall back between buffers and settle to zero when stopped.
     m_spectrumTimer.setInterval(33);
@@ -34,41 +48,75 @@ Player::Player(const QString &statePath, QObject *parent) : QObject(parent), m_s
     });
     m_spectrumTimer.start();
 
-    connect(&m_player, &QMediaPlayer::positionChanged, this, &Player::positionChanged);
-    connect(&m_player, &QMediaPlayer::durationChanged, this, [this] {
-        if (m_current >= 0)
-            m_playlist.updateTags(m_current, {}, {}, m_player.duration());
-        emit trackChanged();
-    });
-    connect(&m_player, &QMediaPlayer::metaDataChanged, this, &Player::readMetaData);
-    connect(&m_player, &QMediaPlayer::playbackStateChanged, this, &Player::stateChanged);
-    connect(&m_player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
-        if (status == QMediaPlayer::EndOfMedia) {
-            const int after = nextIndex();
-            if (after < 0) {
-                stop();
-                return;
-            }
-            m_history << m_current;
-            load(after);
-            m_player.play();
-        } else if (status == QMediaPlayer::InvalidMedia) {
-            setError(tr("Can't play %1").arg(QFileInfo(m_playlist.at(m_current).path).fileName()));
-        }
-    });
-    connect(&m_player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error error, const QString &text) {
-        if (error != QMediaPlayer::NoError)
-            setError(text);
-    });
-
     m_saveTimer.setSingleShot(true);
     m_saveTimer.setInterval(500);
     connect(&m_saveTimer, &QTimer::timeout, this, &Player::save);
     connect(&m_playlist, &Playlist::countChanged, this, &Player::saveSoon);
+    // Whatever changes the list may change what comes next.
+    connect(&m_playlist, &Playlist::countChanged, this, &Player::requeue);
 
-    m_output.setVolume(QAudio::convertVolume(m_volume / 100.0, QAudio::LogarithmicVolumeScale,
-                                             QAudio::LinearVolumeScale));
+    m_engine->setVolume(QAudio::convertVolume(m_volume / 100.0, QAudio::LogarithmicVolumeScale,
+                                              QAudio::LinearVolumeScale));
+    restoreSettings();
     restore();
+}
+
+void Player::connectEngine() {
+    connect(m_engine, &AudioEngine::pcmTapped, this, [this](const QAudioBuffer &buffer) { m_spectrum.feed(buffer); });
+    connect(m_engine, &AudioEngine::formatChanged, this, [this](int rate, int channels) {
+        if (rate != m_sampleRate || channels != m_channels) {
+            m_sampleRate = rate;
+            m_channels = channels;
+            emit formatChanged();
+        }
+    });
+    connect(m_engine, &AudioEngine::positionChanged, this, [this](qint64 ms) {
+        // Playing again means the run of broken files is over.
+        if (ms > 0)
+            m_badRun = 0;
+        emit positionChanged();
+    });
+    connect(m_engine, &AudioEngine::durationChanged, this, [this] {
+        if (m_current >= 0)
+            m_playlist.updateTags(m_current, {}, {}, m_engine->duration());
+        emit trackChanged();
+    });
+    connect(m_engine, &AudioEngine::metaDataChanged, this, &Player::readMetaData);
+    connect(m_engine, &AudioEngine::stateChanged, this, &Player::stateChanged);
+    connect(m_engine, &AudioEngine::advanced, this, [this] {
+        // The engine moved on to the queued row by itself.
+        if (m_queued < 0 || m_queued >= m_playlist.count())
+            return;
+        m_history << m_current;
+        m_current = m_queued;
+        m_title.clear();
+        m_artist.clear();
+        m_album.clear();
+        m_bitrate = 0;
+        m_spectrum.reset();
+        emit trackChanged();
+        saveSoon();
+        requeue();
+    });
+    connect(m_engine, &AudioEngine::endOfQueue, this, &Player::stop);
+    connect(m_engine, &AudioEngine::trackFailed, this, [this](const QString &path, const QString &) {
+        setError(tr("Can't play %1").arg(QFileInfo(path).fileName()));
+        if (!m_engine->skipsUnplayable() || !m_wantPlaying)
+            return;
+        // Skip to the next playable file, but give up after trying them all.
+        if (++m_badRun < m_playlist.count()) {
+            const int after = nextIndex();
+            if (after >= 0 && after != m_current) {
+                m_history << m_current;
+                load(after);
+                m_engine->play();
+                return;
+            }
+        }
+        m_badRun = 0;
+        m_wantPlaying = false;
+    });
+    connect(m_engine, &AudioEngine::errorOccurred, this, &Player::setError);
 }
 
 Player::~Player() {
@@ -85,16 +133,16 @@ void Player::addPicked(const QStringList &paths) {
 }
 
 QString Player::state() const {
-    switch (m_player.playbackState()) {
-    case QMediaPlayer::PlayingState: return "playing";
-    case QMediaPlayer::PausedState: return "paused";
+    switch (m_engine->state()) {
+    case AudioEngine::Playing: return "playing";
+    case AudioEngine::Paused: return "paused";
     default: return "stopped";
     }
 }
 
 qint64 Player::duration() const {
-    if (m_player.duration() > 0)
-        return m_player.duration();
+    if (m_engine->duration() > 0)
+        return m_engine->duration();
     return m_current >= 0 ? m_playlist.at(m_current).durationMs : 0;
 }
 
@@ -116,8 +164,8 @@ void Player::setVolume(int volume) {
         return;
     m_volume = volume;
     // The slider moves in steps that sound even, not in raw amplitude.
-    m_output.setVolume(QAudio::convertVolume(volume / 100.0, QAudio::LogarithmicVolumeScale,
-                                             QAudio::LinearVolumeScale));
+    m_engine->setVolume(QAudio::convertVolume(volume / 100.0, QAudio::LogarithmicVolumeScale,
+                                              QAudio::LinearVolumeScale));
     emit volumeChanged();
     saveSoon();
 }
@@ -126,6 +174,7 @@ void Player::setShuffle(bool on) {
     if (on == m_shuffle)
         return;
     m_shuffle = on;
+    requeue();
     emit modesChanged();
     saveSoon();
 }
@@ -134,6 +183,7 @@ void Player::setRepeat(bool on) {
     if (on == m_repeat)
         return;
     m_repeat = on;
+    requeue();
     emit modesChanged();
     saveSoon();
 }
@@ -147,43 +197,56 @@ void Player::load(int row) {
     m_album.clear();
     m_bitrate = 0;
     m_spectrum.reset();
-    m_player.setSource(QUrl::fromLocalFile(m_playlist.at(row).path));
+    m_engine->load(m_playlist.at(row).path);
+    requeue();
     emit trackChanged();
     saveSoon();
 }
 
+// Tells the engine which file follows the current one, so it can open it
+// early and join the two without a gap.
+void Player::requeue() {
+    m_queued = m_current >= 0 ? nextIndex() : -1;
+    m_engine->queueNext(m_queued >= 0 ? m_playlist.at(m_queued).path : QString());
+}
+
 void Player::readMetaData() {
-    const QMediaMetaData meta = m_player.metaData();
-    m_title = meta.stringValue(QMediaMetaData::Title);
-    m_artist = meta.stringValue(QMediaMetaData::ContributingArtist);
+    const QVariantMap meta = m_engine->metaData();
+    m_title = meta.value("title").toString();
+    m_artist = meta.value("artist").toString();
     if (m_artist.isEmpty())
-        m_artist = meta.stringValue(QMediaMetaData::AlbumArtist);
-    m_album = meta.stringValue(QMediaMetaData::AlbumTitle);
-    m_bitrate = qRound(meta.value(QMediaMetaData::AudioBitRate).toInt() / 1000.0);
+        m_artist = meta.value("albumArtist").toString();
+    m_album = meta.value("album").toString();
+    m_bitrate = meta.value("bitrate").toInt();
     if (m_current >= 0)
-        m_playlist.updateTags(m_current, m_title, m_artist, m_player.duration());
+        m_playlist.updateTags(m_current, m_title, m_artist, m_engine->duration());
     emit trackChanged();
 }
 
 void Player::play() {
     if (m_playlist.count() == 0)
         return;
-    if (m_current < 0 || m_player.source().isEmpty())
+    if (m_current < 0 || m_engine->source().isEmpty())
         load(qMax(0, m_current));
-    m_player.play();
+    m_wantPlaying = true;
+    m_engine->play();
 }
 
-void Player::pause() { m_player.pause(); }
+void Player::pause() {
+    m_wantPlaying = false;
+    m_engine->pause();
+}
 
 void Player::toggle() {
-    if (m_player.playbackState() == QMediaPlayer::PlayingState)
+    if (m_engine->state() == AudioEngine::Playing)
         pause();
     else
         play();
 }
 
 void Player::stop() {
-    m_player.stop();
+    m_wantPlaying = false;
+    m_engine->stop();
     m_spectrum.reset();
     emit levelsChanged();
 }
@@ -212,18 +275,18 @@ void Player::next() {
         after = m_playlist.count() > 0 ? 0 : -1;
     if (after < 0)
         return;
-    const bool playing = m_player.playbackState() == QMediaPlayer::PlayingState;
+    const bool playing = m_engine->state() == AudioEngine::Playing;
     m_history << m_current;
     load(after);
     if (playing)
-        m_player.play();
+        m_engine->play();
 }
 
 void Player::previous() {
     if (m_playlist.count() == 0)
         return;
     // Like most players: a few seconds in, previous restarts the track.
-    if (m_player.position() > 3000) {
+    if (m_engine->position() > 3000) {
         seek(0);
         return;
     }
@@ -234,10 +297,10 @@ void Player::previous() {
         before = m_current > 0 ? m_current - 1 : m_playlist.count() - 1;
     if (before < 0 || before >= m_playlist.count())
         before = 0;
-    const bool playing = m_player.playbackState() == QMediaPlayer::PlayingState;
+    const bool playing = m_engine->state() == AudioEngine::Playing;
     load(before);
     if (playing)
-        m_player.play();
+        m_engine->play();
 }
 
 void Player::playIndex(int row) {
@@ -246,15 +309,16 @@ void Player::playIndex(int row) {
     if (m_current >= 0)
         m_history << m_current;
     load(row);
-    m_player.play();
+    m_wantPlaying = true;
+    m_engine->play();
 }
 
 void Player::seek(qint64 ms) {
-    m_player.setPosition(qBound<qint64>(0, ms, qMax<qint64>(0, duration())));
-    emit seeked(m_player.position());
+    m_engine->seek(qBound<qint64>(0, ms, qMax<qint64>(0, duration())));
+    emit seeked(m_engine->position());
 }
 
-void Player::seekBy(qint64 ms) { seek(m_player.position() + ms); }
+void Player::seekBy(qint64 ms) { seek(m_engine->position() + ms); }
 
 int Player::addPaths(const QStringList &paths) {
     const int added = m_playlist.addPaths(paths);
@@ -267,7 +331,7 @@ int Player::playTracks(const QList<Playlist::Track> &tracks, int start) {
     if (tracks.isEmpty())
         return 0;
     stop();
-    m_player.setSource({});
+    m_engine->load({});
     m_history.clear();
     m_current = -1;
     m_playlist.replaceTracks(tracks);
@@ -318,7 +382,7 @@ void Player::remove(int row) {
     m_history.clear();
     if (wasCurrent) {
         stop();
-        m_player.setSource({});
+        m_engine->load({});
         m_current = -1;
         if (m_playlist.count() > 0)
             load(qMin(row, m_playlist.count() - 1));
@@ -328,6 +392,7 @@ void Player::remove(int row) {
         --m_current;
         emit trackChanged();
     }
+    requeue();
     saveSoon();
 }
 
@@ -342,13 +407,14 @@ void Player::move(int from, int to) {
     else if (from > m_current && to <= m_current)
         ++m_current;
     m_history.clear();
+    requeue();
     emit trackChanged();
     saveSoon();
 }
 
 void Player::clear() {
     stop();
-    m_player.setSource({});
+    m_engine->load({});
     m_playlist.clear();
     m_history.clear();
     m_current = -1;
@@ -417,4 +483,127 @@ void Player::restore() {
     else if (m_playlist.count() > 0)
         load(0);
     m_saveTimer.stop();
+}
+
+QString Player::replayGainMode() const {
+    switch (m_engine->settings().replayGain) {
+    case AudioEngine::ReplayGainMode::Track: return "track";
+    case AudioEngine::ReplayGainMode::Album: return "album";
+    default: return "off";
+    }
+}
+
+QList<qreal> Player::eqFrequencies() const {
+    const auto &f = Equalizer::frequencies();
+    return QList<qreal>(f.begin(), f.end());
+}
+
+QStringList Player::eqPresets() const { return Equalizer::presetNames(); }
+
+void Player::changeSettings(const std::function<void(AudioEngine::Settings &)> &change) {
+    AudioEngine::Settings settings = m_engine->settings();
+    change(settings);
+    settings.crossfadeMs = qBound(0, settings.crossfadeMs, 12000);
+    settings.replayGainPreampDb = qBound(-15.0, settings.replayGainPreampDb, 15.0);
+    settings.eqPreampDb = qBound(-12.0, settings.eqPreampDb, 12.0);
+    settings.eqBandsDb.resize(Equalizer::Bands);
+    for (double &band : settings.eqBandsDb)
+        band = qBound(-12.0, band, 12.0);
+    const AudioEngine::Settings before = m_engine->settings();
+    if (settings.crossfadeMs == before.crossfadeMs && settings.replayGain == before.replayGain &&
+        settings.replayGainPreampDb == before.replayGainPreampDb && settings.eqEnabled == before.eqEnabled &&
+        settings.eqPreampDb == before.eqPreampDb && settings.eqBandsDb == before.eqBandsDb &&
+        settings.clipPrevention == before.clipPrevention)
+        return;
+    m_engine->setSettings(settings);
+    saveSettings();
+    emit playbackSettingsChanged();
+}
+
+void Player::setCrossfadeSeconds(qreal seconds) {
+    changeSettings([&](AudioEngine::Settings &s) { s.crossfadeMs = int(qRound(seconds * 1000)); });
+}
+
+void Player::setReplayGainMode(const QString &mode) {
+    const QString m = mode.toLower();
+    changeSettings([&](AudioEngine::Settings &s) {
+        s.replayGain = m == "track"   ? AudioEngine::ReplayGainMode::Track
+                       : m == "album" ? AudioEngine::ReplayGainMode::Album
+                                      : AudioEngine::ReplayGainMode::Off;
+    });
+}
+
+void Player::setReplayGainPreamp(qreal db) {
+    changeSettings([&](AudioEngine::Settings &s) { s.replayGainPreampDb = db; });
+}
+
+void Player::setEqEnabled(bool on) {
+    changeSettings([&](AudioEngine::Settings &s) { s.eqEnabled = on; });
+}
+
+void Player::setEqPreamp(qreal db) {
+    changeSettings([&](AudioEngine::Settings &s) { s.eqPreampDb = db; });
+}
+
+void Player::setEqBands(const QList<qreal> &bands) {
+    changeSettings([&](AudioEngine::Settings &s) { s.eqBandsDb = bands; });
+}
+
+void Player::setEqBand(int band, qreal db) {
+    if (band < 0 || band >= Equalizer::Bands)
+        return;
+    changeSettings([&](AudioEngine::Settings &s) {
+        s.eqBandsDb.resize(Equalizer::Bands);
+        s.eqBandsDb[band] = db;
+    });
+}
+
+bool Player::applyEqPreset(const QString &name) {
+    const QList<double> gains = Equalizer::preset(name);
+    if (gains.isEmpty())
+        return false;
+    changeSettings([&](AudioEngine::Settings &s) { s.eqBandsDb = gains; });
+    return true;
+}
+
+// Playback settings live in omamp.conf, beside the state file, where the
+// window keeps its own; the engine choice is read from there at start.
+void Player::saveSettings() {
+    if (m_settingsPath.isEmpty())
+        return;
+    const AudioEngine::Settings s = m_engine->settings();
+    QSettings conf(m_settingsPath, QSettings::IniFormat);
+    conf.beginGroup("playback");
+    conf.setValue("crossfadeMs", s.crossfadeMs);
+    conf.setValue("replayGain", replayGainMode());
+    conf.setValue("replayGainPreampDb", s.replayGainPreampDb);
+    conf.setValue("eqEnabled", s.eqEnabled);
+    conf.setValue("eqPreampDb", s.eqPreampDb);
+    QStringList bands;
+    for (double band : s.eqBandsDb)
+        bands << QString::number(band);
+    conf.setValue("eqBandsDb", bands.join(','));
+    conf.endGroup();
+}
+
+void Player::restoreSettings() {
+    if (m_settingsPath.isEmpty() || !QFileInfo::exists(m_settingsPath))
+        return;
+    QSettings conf(m_settingsPath, QSettings::IniFormat);
+    conf.beginGroup("playback");
+    AudioEngine::Settings s = m_engine->settings();
+    s.crossfadeMs = qBound(0, conf.value("crossfadeMs", s.crossfadeMs).toInt(), 12000);
+    const QString mode = conf.value("replayGain", "off").toString();
+    s.replayGain = mode == "track"   ? AudioEngine::ReplayGainMode::Track
+                   : mode == "album" ? AudioEngine::ReplayGainMode::Album
+                                     : AudioEngine::ReplayGainMode::Off;
+    s.replayGainPreampDb = conf.value("replayGainPreampDb", s.replayGainPreampDb).toDouble();
+    s.eqEnabled = conf.value("eqEnabled", s.eqEnabled).toBool();
+    s.eqPreampDb = conf.value("eqPreampDb", s.eqPreampDb).toDouble();
+    const QStringList bands = conf.value("eqBandsDb").toString().split(',', Qt::SkipEmptyParts);
+    if (bands.size() == Equalizer::Bands)
+        for (int i = 0; i < Equalizer::Bands; ++i)
+            s.eqBandsDb[i] = bands[i].toDouble();
+    conf.endGroup();
+    m_engine->setSettings(s);
 }

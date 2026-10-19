@@ -2,6 +2,7 @@
 
 #include <QRegularExpression>
 #include <cmath>
+#include <mutex>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -13,13 +14,14 @@ extern "C" {
 
 namespace {
 // FFmpeg prints every damaged frame to stderr. Quiet unless asked.
+// Decoders are opened on more than one thread (the next track opens in the
+// background), so this runs exactly once.
 void quietFfmpegOnce() {
-    static bool done = false;
-    if (done)
-        return;
-    done = true;
-    if (!qEnvironmentVariableIsSet("OMAMP_FFMPEG_LOG"))
-        av_log_set_level(AV_LOG_FATAL);
+    static std::once_flag once;
+    std::call_once(once, [] {
+        if (!qEnvironmentVariableIsSet("OMAMP_FFMPEG_LOG"))
+            av_log_set_level(AV_LOG_FATAL);
+    });
 }
 
 QString averror(int code) {

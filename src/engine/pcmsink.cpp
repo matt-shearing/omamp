@@ -37,9 +37,9 @@ DeviceSink::DeviceSink() {
 
 DeviceSink::~DeviceSink() { stop(); }
 
-void DeviceSink::start(PcmReader *reader) {
+bool DeviceSink::start(PcmReader *reader) {
     if (m_sink)
-        return;
+        return true;
     if (qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"))
         qFatal("DeviceSink: refusing to open the sound card under OMAMP_NO_AUDIO_DEVICE");
     QAudioFormat format;
@@ -53,6 +53,11 @@ void DeviceSink::start(PcmReader *reader) {
     m_sink->setBufferSize(qsizetype(m_rate / 10) * 2 * qsizetype(sizeof(float)));
     m_sink->start(m_device.get());
     m_suspended = false;
+    if (m_sink->error() == QtAudio::OpenError) {
+        stop();
+        return false;
+    }
+    return true;
 }
 
 void DeviceSink::suspend() {

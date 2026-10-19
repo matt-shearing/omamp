@@ -819,8 +819,10 @@ void NativeEngine::queueNext(const QString &path) { post(Queue, path); }
 void NativeEngine::play() {
     if (m_source.isEmpty())
         return;
-    if (!m_sink->started())
-        m_sink->start(m_reader.get());
+    if (!m_sink->started() && !m_sink->start(m_reader.get())) {
+        emit errorOccurred(tr("Can't open the sound output"));
+        return;
+    }
     m_sink->resume();
     m_reader->target = 1;
     setState(Playing);

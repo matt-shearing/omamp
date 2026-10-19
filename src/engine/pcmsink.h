@@ -27,7 +27,8 @@ public:
     // "device" for the sound card, "buffer" for memory (tests, benchmarks).
     virtual QString kind() const = 0;
     virtual int sampleRate() const = 0;
-    virtual void start(PcmReader *reader) = 0;
+    // False if the output could not be opened.
+    virtual bool start(PcmReader *reader) = 0;
     virtual bool started() const = 0;
     // Stops pulling while paused, so an idle player lets the device sleep.
     virtual void suspend() = 0;
@@ -44,7 +45,7 @@ public:
     ~DeviceSink() override;
     QString kind() const override { return QStringLiteral("device"); }
     int sampleRate() const override { return m_rate; }
-    void start(PcmReader *reader) override;
+    bool start(PcmReader *reader) override;
     bool started() const override { return m_sink != nullptr; }
     void suspend() override;
     void resume() override;
@@ -67,7 +68,11 @@ public:
     explicit BufferSink(int sampleRate = 48000, bool capture = true, QObject *parent = nullptr);
     QString kind() const override { return QStringLiteral("buffer"); }
     int sampleRate() const override { return m_rate; }
-    void start(PcmReader *reader) override { m_reader = reader; updateTimer(); }
+    bool start(PcmReader *reader) override {
+        m_reader = reader;
+        updateTimer();
+        return true;
+    }
     bool started() const override { return m_reader != nullptr; }
     void suspend() override { m_suspended = true; updateTimer(); }
     void resume() override { m_suspended = false; updateTimer(); }

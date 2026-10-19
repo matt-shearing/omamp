@@ -1714,3 +1714,225 @@ omamp journal [batch] [--limit n] [--json]
 omamp audit [check] [--limit n] [--json]
 omamp duplicates [--by tags|content|fingerprint] [--any-length] [--json]
 ```
+
+## Phase 3 engine: gapless playback, crossfade, ReplayGain and the equaliser (20 October 2026)
+
+Playback now sits behind an interface with two engines. `QtEngine` is the
+old `QMediaPlayer` path, unchanged in behaviour, and stays the default.
+`NativeEngine` decodes with FFmpeg's libraries into one `QAudioSink` and
+joins tracks sample for sample. Every gapless test passes for FLAC, MP3,
+Opus and AAC. The native engine is ready to try, not yet the default.
+
+### Design
+
+```text
+Player ──(AudioEngine interface)──┬── QtEngine: QMediaPlayer + QAudioOutput + QAudioBufferOutput
+                                  └── NativeEngine
+   main thread:   commands, markers, position, analyser tap (poll every 20 ms)
+   worker thread: Source (Decoder → Resampler) for previous/current/next
+                  → join or crossfade → ReplayGain → fade-in after a jump → EQ
+                  → Ring (0.5 s of float stereo, with markers)
+   sink thread:   Reader (pause ramp, volume, decay after a jump) → PcmSink
+                  PcmSink = DeviceSink (QAudioSink, pull mode) | BufferSink (memory)
+```
+
+- **`src/engine/audioengine.h`**: `load`, `queueNext`, `play`, `pause`,
+  `stop`, `seek`, `position`, `duration`, `state`, `setVolume`, `setMuted`,
+  `metaData`, `setSettings`; signals `advanced` (the queued file took over),
+  `endOfQueue`, `trackFailed`, `formatChanged`, `pcmTapped` (decoded PCM for
+  the analyser) and the usual position, duration, state and metadata.
+- **The Player owns the play order.** It loads the current row and queues
+  the row after it (`requeue()` on every load, list change, move, and
+  shuffle or repeat change). The engine moves on by itself and emits
+  `advanced()`; the Player then makes the queued row current. `QtEngine`
+  does what the Player used to do at `EndOfMedia`: load the queued file and
+  play it.
+- **`Decoder`** (`decoder.{h,cpp}`): libavformat, libavcodec and
+  libswresample to interleaved float stereo at the file's own rate. Mono is
+  copied to both sides at full level (swresample's upmix would lower it by
+  3 dB); more than two channels are mixed down by swresample. Tags,
+  ReplayGain (`REPLAYGAIN_*`, or Opus `R128_*_GAIN` + 5 dB) and bitrate come
+  from the container or stream metadata. In lossy files a seek decodes from
+  150 ms (or the stream's `seek_preroll`) before the target and drops
+  samples up to the target by timestamp, so the first sample after a seek is
+  exact.
+- **Encoder delay and padding** are FFmpeg's job, and the tests prove it
+  does it: the LAME/Xing header in MP3, Opus pre-skip and end trimming from
+  the last Ogg granule, and the MP4 edit list (AAC priming) all come out
+  sample-exact.
+- **Joins**: when the current source runs out, the next one carries on in
+  the same chunk. When both files share a rate that needs resampling, the
+  current file's resampler passes to the next file instead of being flushed,
+  so the filter runs straight across the join (`Source::handoff`).
+- **Crossfade** (0–12 s, off by default): near the end the worker decodes
+  the rest of the current track, so the fade starts exactly crossfade-length
+  before its last sample, with equal-power (sine and cosine) curves. A fade
+  is at most half of either track. Consecutive tracks with the same album
+  and album artist join gaplessly instead (MediaMonkey's rule).
+- **ReplayGain**: off, track or album (album falls back to track gain), a
+  preamp for tagged files, and clip prevention from the tagged peak.
+  Untagged files play unchanged.
+- **Equaliser** (`equalizer.{h,cpp}`): ten RBJ peaking biquads from 31 Hz
+  to 16 kHz (Q 1.41, ±12 dB, transposed direct form II in double), a preamp
+  and ten presets. Switched off or flat, it is skipped and the signal is
+  bit-exact.
+- **Markers** travel in the ring with the audio. A track change, a failure
+  or the end of the queue reaches the window when the sink takes that frame,
+  not when it was decoded, so MPRIS and the window change track when the
+  listener does.
+- **No clicks**: pause and resume ramp over 10 ms in the reader, and the
+  ramp consumes only the frames it plays. A seek, skip or stop flushes the
+  ring; the reader lets the last sample decay to zero over about 1.5 ms
+  while the new audio fades in over 256 frames. After an underrun the audio
+  fades back in.
+- **The next file opens on its own thread** (`std::async`), so a slow NAS
+  can't stall the audio that is playing.
+- **The output** is float stereo at the default device's preferred rate
+  (48 kHz here); everything else is resampled to it.
+- **Errors**: a file that won't open or decode is reported with
+  `trackFailed`. The Player shows "Can't play <file>" and, on the native
+  engine only, skips to the next row, giving up after one pass over the
+  list. A sound output that won't open shows "Can't open the sound output".
+
+### Choosing the engine and the settings
+
+- `OMAMP_ENGINE=native|qt` wins; otherwise `playback/engine` in
+  `~/.config/omamp/omamp.conf` (beside `state.json`); otherwise `qt`.
+- New Player properties, saved in the `[playback]` group of the same file:
+  `engineName` and `gapless` (both constant), `crossfadeSeconds`,
+  `replayGainMode` (`off`, `track`, `album`), `replayGainPreamp`,
+  `eqEnabled`, `eqPreamp`, `eqBands` (ten dB values), `eqFrequencies`,
+  `eqPresets`; invokables `setEqBand(band, dB)` and `applyEqPreset(name)`;
+  signal `playbackSettingsChanged`. There is no UI yet. Every existing
+  property, invokable and signal is unchanged, so QML and MPRIS need
+  nothing.
+
+```qml
+player.crossfadeSeconds = 3
+player.replayGainMode = "album"
+player.eqEnabled = true
+player.applyEqPreset("Rock")        // player.eqPresets lists them
+player.setEqBand(5, 4.5)            // band 5 is player.eqFrequencies[5], 1 kHz
+```
+
+### Tests without sound
+
+`tests/engine_tests.cpp` (`OMAMP_TESTS=engine`) with
+`tests/make-engine-fixtures`. `main()` sets `OMAMP_NO_AUDIO_DEVICE=1`: the
+device sink then aborts instead of opening, the Qt engine leaves out its
+audio output, and every native test asserts that its sink is the in-memory
+`BufferSink`. That sink pulls only what is ready, as fast as the worker
+decodes.
+
+The gapless fixtures are one 6 s, 48 kHz signal (441 Hz left, 661.5 Hz
+right) cut at sample 144,123, which is mid-frame for every codec, with each
+half encoded separately. The output is compared with the uncut original.
+
+| Codec | Total frames (expected 288,000) | Shift after the join | Largest error after the join | Largest step at the join (the signal's own: 0.043) |
+|---|---|---|---|---|
+| FLAC | 288,000 | 0 | 0 | 0.043 |
+| MP3 (LAME, 192k) | 288,000 | 0 | 0.015 | 0.164 |
+| Opus (128k) | 288,000 | 0 | 0.008 | 0.093 |
+| AAC in M4A (FFmpeg's encoder, 192k) | 288,000 | 0 | 0.065 | 0.161 |
+| FLAC at 44.1 kHz into a 48 kHz sink | 288,000 | 0 | 0.000004 | 0.043 |
+
+Every codec is sample-exact in length and alignment, so there is no gap.
+The larger steps at lossy joins are each encoder's own edge where the
+signal was cut: `ffmpeg` decoding the second half alone shows the same
+error. FFmpeg's AAC encoder is the worst, with a 0.38 transient in the
+first 1024 samples of every file. Tolerances: length and shift exact for
+all codecs; error after the join below 1e-4 (FLAC), 0.05 (MP3, Opus) or
+0.1 (AAC); the step at the join is asserted only for FLAC.
+
+| What | Result |
+|---|---|
+| Crossfade 1 s between two 3 s tracks | 240,000 frames, exactly 3 + 3 − 1 s; mid-fade each tone at 0.353 (0.5 × cos 45°); after the fade, nothing of the first |
+| Crossfade between two tracks of one album | none: 288,000 frames, gapless |
+| ReplayGain track −6 dB, album −3 dB, track with +2 dB preamp | −6.000, −3.000, −4.000 dB |
+| Clip prevention: +12 dB with a 0.5 peak | +6.021 dB (1/0.5) |
+| Untagged file, +6 dB preamp | 0.000 dB |
+| EQ +6 dB at 1 kHz | 1 kHz +6.000 dB; 4 kHz +0.21 dB; 125 Hz +0.05 dB |
+| EQ, every preset at every band centre | within 0.1 dB of the computed response |
+| Seek in FLAC (a sawtooth that counts samples) | every sample exact after the 5 ms fade-in |
+| Seek to 1500 ms in MP3, Opus, AAC | 0 samples off; error after it 0.015, 0.007, 0.0004 |
+| Pause | 480-frame (10 ms) ramp to exactly 0; largest step 0.065, the 1 kHz tone's own |
+| Seek while playing | largest step 0.065, the tone's own |
+| Mono | both sides equal, at the file's level |
+
+The Qt engine runs through the same interface where that makes sense
+(load, queue, advance, end of queue, PCM tap, format, failure), in real
+time with no audio output. Player tests on the native engine cover gapless
+advance, skipping a broken file, and saving the playback settings.
+
+### CPU
+
+`OMAMP_ENGINE_BENCH=1 OMAMP_TESTS=engine build/tests/omamp_tests benchmarkCpu benchmarkRealtimeCpu`
+on the Ryzen 9 7950X3D: three minutes of 44.1 kHz stereo FLAC (pink noise
+under a chord), ReplayGain on.
+
+| Run | CPU | Share of one core over 180 s |
+|---|---|---|
+| Decode only (44.1 kHz sink) | 0.12 s | 0.07 % |
+| Decode and EQ "Rock" | 0.41 s | 0.23 % |
+| Decode, EQ and resampling to 48 kHz | 0.48 s | 0.27 % |
+| Real time for 10 s, pulled every 10 ms, everything above plus timers | 0.054 s | 0.54 % |
+
+That is well inside the budget of a few percent of one core.
+
+### Decisions
+
+- **Link FFmpeg's libraries.** This is the deliberate exception to
+  Omarchy's "call the `ffmpeg` command" rule that `advanced-mode.md`
+  already records. `ffmpeg` is now in the PKGBUILD's `depends`.
+- **The default stays `qt`** until the native engine has been lived with.
+- **The Player keeps the play order**; engines know only "current" and
+  "next". Shuffle picks the next row when a track starts, not when it ends.
+- **The native engine applies volume in software**; the Qt engine keeps
+  `QAudioOutput`'s stream volume.
+- **ReplayGain values come from the file** through FFmpeg, not from the
+  library database: the play queue's tracks don't carry them, and the file
+  is the truth.
+- **The preamp applies to tagged files only.**
+- **A crossfade is at most half of either track**, and "same album" means
+  the same album and album artist, ignoring case.
+- **One worker, one 0.5 s ring.** Equaliser and ReplayGain changes are
+  heard up to half a second late; pause, resume, volume and seeks act at
+  once because they work at the reader or flush the ring.
+- **Only the native engine skips unplayable files**, so the Qt path
+  behaves exactly as before.
+- **`BufferSink` never underruns**: it pulls only what is ready, like a
+  device that keeps up, so the tests compare real audio.
+
+### Known gaps
+
+- **Nobody has listened to it.** Every test runs without a device. The
+  `DeviceSink` path (QAudioSink pull mode on PipeWire) builds and is guarded
+  but has not played a note.
+- **Device latency is ignored**: position and track changes run about
+  100 ms (the QAudioSink buffer) ahead of what is heard.
+- **No device switching**: the rate is read once from the default device,
+  and a new or lost default device isn't followed.
+- **iTunes `iTunSMPB` isn't read.** FFmpeg trims AAC by the MP4 edit list,
+  which iTunes and FFmpeg both write; a file with only `iTunSMPB` keeps its
+  priming.
+- **Crossfade needs a duration estimate** to start decoding the tail
+  early; a file without one fades only if its tail arrives in time.
+- **No crossfade on manual skips**: next and previous cut over with the
+  5 ms fades.
+- **Equaliser moves aren't smoothed** beyond keeping the filter state, so
+  dragging a band fast may zipper slightly; a ReplayGain change mid-track
+  steps the level.
+- **Qt's FFmpeg plugin prints a VDPAU probe failure** when the Qt engine
+  starts in tests. It comes from Qt's hardware probe, not from Omamp.
+
+### What's needed to make native the default
+
+1. A day of real listening with `OMAMP_ENGINE=native`: gapless albums,
+   shuffle, the NAS, seeking, pause, Bluetooth and USB outputs.
+2. Subtract the sink's latency from the position.
+3. Follow the default device (`QMediaDevices::audioOutputsChanged`) and
+   reopen the sink at the new rate.
+4. A settings UI for crossfade, ReplayGain and the equaliser; the Player
+   properties are ready.
+5. Then change `playback/engine`'s default to `native`, keeping `qt` as the
+   fallback.

@@ -1373,7 +1373,10 @@ private slots:
         QVERIFY(e.found());
         qInfo().noquote() << "live LRCLIB: id" << e.lrclibId << "synced" << !e.synced.isEmpty() << "lines"
                           << e.parsed().lines.size();
-        QCOMPARE(http.requestsSent(), 3);
+        // Three requests, plus any retry after a 503 (MusicBrainz's answer to
+        // a busy moment).
+        qInfo().noquote() << "live requests sent:" << http.requestsSent();
+        QVERIFY(http.requestsSent() >= 3 && http.requestsSent() <= 3 + 2 * Net::Config::maxRetries());
     }
 };
 

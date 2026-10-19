@@ -2175,3 +2175,256 @@ That is well inside the budget of a few percent of one core.
    properties are ready.
 5. Then change `playback/engine`'s default to `native`, keeping `qt` as the
    fallback.
+
+## Phase 4 core: the web (20 October 2026)
+
+The library side of Phase 4, built overnight while another agent worked on
+the window. Omamp can now match tracks to MusicBrainz releases and write
+their tags and covers, fetch covers for albums without one, find and write
+lyrics, and queue and send scrobbles. Nothing here touches `src/app/` or
+`src/engine/`; the hooks the window and the player need are at the end.
+[web-metadata.md](../web-metadata.md) is the user's guide: services, keys,
+rate limits and what leaves the machine.
+
+### What was built
+
+```text
+src/core/net/http.{h,cpp}         blocking HTTP client: per-service pace, User-Agent, retries, file cache, offline
+src/core/net/textmatch.{h,cpp}    normalising and fuzzy comparison of titles, names and lengths
+src/core/net/musicbrainz.{h,cpp}  ws/2 JSON: release and recording look-ups and searches, parsed into structs
+src/core/net/acoustid.{h,cpp}     fpcalc fingerprints and AcoustID look-ups (key from setting or environment)
+src/core/net/coverart.{h,cpp}     Cover Art Archive front covers; fetch-art for one album
+src/core/net/identify.{h,cpp}     cluster, candidates, scoring, file-to-track mapping, edits, apply
+src/core/net/lyrics.{h,cpp}       LRC parser, lyrics on disk, LRCLIB, the lyrics cache, writing lyrics
+src/core/net/scrobble.{h,cpp}     the scrobble queue, ListenBrainz, Last.fm and its auth helpers
+src/core/tagwriter.cpp            + isrc, label, catalognumber, releasecountry, the MusicBrainz IDs, lrcfile
+src/core/artwork.{h,cpp}          + ArtworkCache::setAlbumPicture()
+src/core/migrations.cpp           + step 8: lyrics, scrobble_queue
+src/cli/webcli.{h,cpp}            identify, fetch-art, lyrics, scrobble, net
+tests/mockhttp.h                  a small HTTP server on 127.0.0.1 for the tests
+tests/web_tests.cpp               26 tests (one live, off by default)
+tests/fixtures/web/*.json         hand-written answers in each service's documented shape
+docs/web-metadata.md              the guide
+```
+
+**HTTP.** `Net::HttpClient::send()` runs a local event loop until the answer
+arrives, so it works on any thread with its own client. The pace per service
+lives in one process-wide limiter: MusicBrainz 1000 ms, AcoustID 334 ms,
+LRCLIB and the Cover Art Archive 500 ms, ListenBrainz 1000 ms (held back
+further when `X-RateLimit-Remaining` reaches 0), Last.fm 200 ms. 503, 429,
+502, 504 and time-outs are retried three times, waiting 1, 2 and 4 seconds
+or the `Retry-After` value. A refused or unresolvable host, or the system
+saying it has no network (`QNetworkInformation`), is reported as offline at
+once. Answers to requests that ask for it are cached in
+`~/.cache/omamp/http/<xx>/<sha1>.bin` (200 answers, and 404 answers for at
+most a day); an offline request falls back to an expired copy. Every base
+address can be moved by `OMAMP_<SERVICE>_URL` or the setting
+`net.url.<service>`, which is how the tests reach the mock server.
+
+**Schema 8** adds `lyrics (track_id, plain, synced, source, lrclib_id,
+instrumental, fetched)` and `scrobble_queue (id, service, track_id,
+listened_at, duration_ms, payload, state, attempts, last_error, created,
+sent)`. It is numbered 8 as agreed; another agent takes 9. If 9 is merged
+and run on a database before 8 exists, that database skips 8: merge 8 first.
+
+### Test results
+
+`bin/test` with `JOBS=4`, a throwaway `HOME` and XDG folders:
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 60ms      (player)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 487ms     (library)
+Totals: 24 passed, 0 failed, 0 skipped, 0 blacklisted, 24ms      (query)
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 77ms       (palette)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 2505ms    (watcher)
+Totals: 17 passed, 0 failed, 0 skipped, 0 blacklisted, 831ms     (window)
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1427ms     (window)
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 3123ms     (window)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 7ms       (masks)
+Totals: 21 passed, 0 failed, 0 skipped, 0 blacklisted, 1208ms    (Phase 2)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 10347ms   (Phase 3 core)
+Totals: 36 passed, 0 failed, 4 skipped, 0 blacklisted, 3855ms    (engine)
+Totals: 25 passed, 0 failed, 1 skipped, 0 blacklisted, 1265ms    (Phase 4 core: the web)
+```
+
+The new class (`OMAMP_TESTS=web`) never leaves 127.0.0.1. It covers the
+User-Agent and endpoint overrides; the shared pace across two worker
+threads; ListenBrainz's rate headers; retries on 503 and 429 and none on 400;
+the cache, refresh, forced offline with a stale answer, and a refused port
+reported as offline without retries; MusicBrainz release, search and
+recording parsing; text matching; AcoustID with no key (nothing sent), a bad
+key and a good one; clustering; identify by search (the right release beats
+the search's first choice), by the tags' MBIDs, by a chosen release, and by
+AcoustID through a stand-in `fpcalc`; a dry run that changes no byte; apply
+across FLAC, MP3 and M4A with every field read back, the library row, the
+album's picture, `cover.png`, a second apply changing nothing, and undo; the
+Cover Art Archive's sizes and release-group fallback; fetch-art for missing
+albums with embed and undo; the LRC parser; LRCLIB get, search, the cache and
+the 30-day "none"; `.lrc` and tag writing with undo, and reading SYLT; the
+scrobble rule, ListenBrainz batches, now playing, offline waits, a bad listen
+set aside, a refused token; Last.fm signatures, the auth steps, scrobbles and
+a dead session; the schema 7 to 8 upgrade; and every new command with
+`--json`.
+
+**Live smoke test.** `OMAMP_LIVE_TESTS=1 OMAMP_TESTS=web` runs `liveSmoke`:
+one MusicBrainz release search (Nirvana, Nevermind), one look-up of the top
+result, and one LRCLIB get (the example in LRCLIB's documentation), at the
+real pace with the real User-Agent. Run by hand on 20 October: all three
+answered and parsed as the fixtures expect (a 12-track release with
+recordings, lengths, two labels and a release group; LRCLIB id 3396226 with
+47 synced lines), three requests in all. It is skipped otherwise.
+
+### Decisions
+
+- **The response cache is files, not a table.** Answers are disposable and
+  can be large; the library database stays small and quick to back up.
+  Lyrics and the scrobble queue, which matter, are tables.
+- **A release ID in the tags counts only when at least half the files carry
+  it**, so one stray ID doesn't steer a whole album.
+- **Scores**: 45 % the file-to-track mapping (title 40, length 30, artist 10,
+  position 20 within each pair; a fingerprint or recording ID match lifts a
+  pair to at least 0.9), 12 % track count (a partial album pays the square of
+  the fraction), 17 % album title, 13 % artist, 5 % date, 3 % each for country
+  and format preference, 2 % status. High is 0.85 and up, medium 0.65.
+  `--apply` writes only from 0.80 unless a release is chosen.
+- **Several artists are written as Omamp's "A; B"** (the credited names), not
+  MusicBrainz's "A feat. B" credit text, so the multi-value artist tables
+  keep working. The scrobblers send "A, B".
+- **Years, not full dates.** The tag writer keeps `year` and `originalyear`
+  as numbers, so the release date's day and month are not written.
+- **New tag writer fields** (`isrc`, `label`, `catalognumber`,
+  `releasecountry`, `mbrecordingid`, `mbreleasetrackid`, `mbreleaseid`,
+  `mbartistid`, `mbalbumartistid`, `mbreleasegroupid`) use TagLib's property
+  names, which map to UFID and TXXX in ID3v2 and iTunes atoms in MP4, the
+  keys Picard writes. Each is read back in FLAC, MP3 and M4A by the tests.
+- **The `.lrc` sidecar is a tag writer field (`lrcfile`)**, written
+  atomically after the audio file and journalled, so undo removes or restores
+  it like any tag.
+- **`cover.jpg` is never journalled and never overwrites anything**: it is
+  written only when the folder has no picture file, and undo leaves it.
+- **The cover is fetched only on `--apply`**, so a dry run makes no requests
+  beyond the look-ups.
+- **Tokens and keys live in the `settings` table** in plain text, as other
+  settings do; the environment can supply them instead.
+- **Network work happens only in `flush()` and the log-in helpers.** The
+  player's hooks write to the database and return.
+- **`omamp net set` only touches web settings** (keys starting `acoustid.`,
+  `identify.`, `coverart.`, `lyrics.`, `scrobble.`, `listenbrainz.`,
+  `lastfm.`, `net.`) and never prints a secret back.
+- **The web commands parse their own options** (`src/cli/webcli.cpp`); one
+  line in `cli.cpp` hands them over, so their flags can't collide with other
+  commands'.
+
+### Known gaps
+
+- **No AcoustID key.** That path is tested against the mock only. Matt needs
+  to register an application (free, non-commercial) and set `acoustid.key`,
+  or Omamp should ship one.
+- **Not tried on a real library.** Identify, fetch-art and lyrics ran only
+  against fixtures, apart from the live smoke test.
+- **Network on the build machine.** The agent's sandbox has no internet, and
+  that night the machine's IPv6 route failed TLS (`curl -4` worked). The live
+  test passed when run outside the sandbox, but a broken IPv6 path could
+  stall a request until the 30-second time-out.
+- **No "other versions" browser** as Picard has: candidates are only what the
+  three sources found, at most five looked up per cluster.
+- **Files without an album** are grouped by folder and artist and matched
+  through a recording search on the first file; Picard's per-file look-up of
+  unclustered files is not built.
+- **Several discs**: a file pairs with whichever disc fits it best; a
+  disc-number mismatch costs only the position points.
+- **A cover fetched without `--save-cover` lives only in the artwork cache.**
+  If a later scan resets the album's `art_checked`, the cache searches the
+  files again and drops it; `omamp fetch-art` fetches it again.
+- **SYLT is read, not written.** Synced lyrics go to a `.lrc` file, or as LRC
+  text in the plain lyrics tag.
+- **Secrets in the database.** Move tokens to the Secret Service
+  (gnome-keyring) before release.
+- **Scrobbles are not deduplicated** if the player calls `trackFinished()`
+  twice for one play.
+
+### What the window and the player need
+
+All the web APIs block. Run them on a worker thread with its own `Library`
+and its own `Net::HttpClient` (as scans do), pass a `Job` for progress and
+Cancel, and reload the views when they finish. The pace is shared, so
+several workers can't flood a service.
+
+**Identify review dialog.**
+
+```cpp
+#include "identify.h"
+Net::HttpClient http(&library);
+Job job("identify");
+http.setJob(&job);                                  // Cancel stops waits and transfers
+Identify::Identifier identifier(library, http, &job);
+Identify::Result result = identifier.identify(selectedTrackIds, Identify::Options::load(library));
+// result.notes: once per run (no AcoustID key, offline). For each result.clusters[i]:
+//   cluster.files (trackId, path, title, artist, track, disc, durationMs): the left pane
+//   candidates, best first: release (title, credits, date, country, formats(), trackCount(),
+//     labels, media), score, confidence() "high", "medium" or "low", sources, parts (each part
+//     of the score), mapping[i] (trackId to track title, position, disc, lengthMs, score, via),
+//     unmatched
+//   notes, error
+// "Use another release": Identify::Options o; o.forceRelease = mbid; identifier.identifyCluster(cluster, o);
+Identify::ApplyOptions a = Identify::ApplyOptions::load(library);
+a.dryRun = true;                                    // the diff: r.tags.files[i].changes (field, old, new)
+Identify::ApplyResult r = Identify::apply(library, http, candidate, a, &job);
+a.dryRun = false;                                   // Save: r.tags.batch for Ctrl+Z, r.cover
+```
+
+Colour each file by its `TrackMatch::score` as Picard does, and each
+candidate by `confidence()`. `result.toJson()` is the same data as JSON.
+
+**Lyrics view.**
+
+```cpp
+#include "lyrics.h"
+Lyrics::Options o;
+o.fetch = allowWeb;                                 // the window's own setting
+Lyrics::Entry e = Lyrics::forTrack(library, &http, trackId, o);   // on a worker thread
+Lyrics::Parsed p = e.parsed();                      // p.synced, p.lines[i].timeMs and .text
+int current = p.lineAt(positionMs);                 // cheap: call on every position tick
+// Plain lyrics (p.synced false): show p.lines without a highlight.
+Lyrics::write(library, {e}, "lrc");                 // "Save lyrics": .lrc, or "tag"; undoable
+```
+
+**Scrobbling.** Keep one `Scrobble::Scrobbler` for the player's lifetime, on
+the thread that owns its `Library`, and call it beside `Stats::recordPlay()`
+with the same heard time (seeks not counted):
+
+```cpp
+#include "scrobble.h"
+Scrobble::Scrobbler scrobbler(library, &http);
+scrobbler.trackStarted(trackId);                    // when a track starts playing
+scrobbler.trackProgress(trackId, heardMs);          // optional, now and then
+scrobbler.trackFinished(trackId, heardMs);          // on end, skip or track change; queues if it counts
+// Then on a worker, scrobbler.flush() after each finished track, every few
+// minutes, and at start-up. Only the Scrobbler that saw trackStarted() sends
+// "now playing", so flush that one (it needs an HttpClient made on the
+// thread that calls flush()).
+```
+
+**Scrobble settings page.** `Scrobbler::status()` gives each service's
+`configured`, `enabled`, `user`, `pending`, `sent`, `failed` and
+`lastError`. To log in to ListenBrainz, call
+`Scrobble::ListenBrainz::validateToken()`, then save `listenbrainz.token`
+and `listenbrainz.user`. For Last.fm, call `getToken()`, open `authUrl()`
+through the portal's OpenURI, then call `getSession()` and save
+`lastfm.session_key` and `lastfm.user`. The switches are the settings
+`scrobble.enabled`, `scrobble.listenbrainz` and `scrobble.lastfm`.
+
+**Missing covers.** `CoverArt::albumsMissingArt(library)` lists the albums;
+`CoverArt::fetchForAlbum(library, http, albumId, options, &job)` fetches one
+and sets the album's picture, so the grid's `ArtProvider` shows it after a
+refresh.
+
+**Command line.**
+
+```text
+omamp identify <query> [--dry-run | --apply] [--release <mbid>] [--min-score 0.8] [--json]
+omamp fetch-art <query> | --missing [--embed] [--save-cover] [--dry-run] [--json]
+omamp lyrics <query> [--fetch] [--write lrc|tag] [--dry-run] [--json]
+omamp scrobble status | flush | login listenbrainz --token <t> | login lastfm [--complete] [--json]
+omamp net status | set <key> <value> | unset <key> | clear-cache [--json]
+```

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <QAudioBufferOutput>
-#include <QAudioOutput>
-#include <QMediaPlayer>
 #include <QObject>
+#include <QStringList>
 #include <QTimer>
 #include <QVariantList>
+#include <functional>
 
+#include "audioengine.h"
 #include "playlist.h"
 #include "spectrum.h"
 
@@ -31,16 +31,33 @@ class Player : public QObject {
     Q_PROPERTY(QList<qreal> levels READ levels NOTIFY levelsChanged)
     Q_PROPERTY(QList<qreal> peaks READ peaks NOTIFY levelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    // Which engine plays ("qt" or "native") and whether it joins tracks
+    // without a gap. Chosen at start: OMAMP_ENGINE, else playback/engine in
+    // omamp.conf beside the state file, else "qt".
+    Q_PROPERTY(QString engineName READ engineName CONSTANT)
+    Q_PROPERTY(bool gapless READ gapless CONSTANT)
+    // Playback settings. The native engine acts on them; the Qt engine
+    // keeps them for when the native one is switched on.
+    Q_PROPERTY(qreal crossfadeSeconds READ crossfadeSeconds WRITE setCrossfadeSeconds NOTIFY playbackSettingsChanged)
+    Q_PROPERTY(QString replayGainMode READ replayGainMode WRITE setReplayGainMode NOTIFY playbackSettingsChanged)
+    Q_PROPERTY(qreal replayGainPreamp READ replayGainPreamp WRITE setReplayGainPreamp NOTIFY playbackSettingsChanged)
+    Q_PROPERTY(bool eqEnabled READ eqEnabled WRITE setEqEnabled NOTIFY playbackSettingsChanged)
+    Q_PROPERTY(qreal eqPreamp READ eqPreamp WRITE setEqPreamp NOTIFY playbackSettingsChanged)
+    Q_PROPERTY(QList<qreal> eqBands READ eqBands WRITE setEqBands NOTIFY playbackSettingsChanged)
+    Q_PROPERTY(QList<qreal> eqFrequencies READ eqFrequencies CONSTANT)
+    Q_PROPERTY(QStringList eqPresets READ eqPresets CONSTANT)
 
 public:
     // An empty state path means nothing is remembered between runs (tests).
     explicit Player(const QString &statePath = {}, QObject *parent = nullptr);
+    // With a given engine, which the Player takes (tests).
+    Player(AudioEngine *engine, const QString &statePath, QObject *parent = nullptr);
     ~Player() override;
 
     Playlist *playlist() { return &m_playlist; }
     int currentIndex() const { return m_current; }
     QString state() const;
-    qint64 position() const { return m_player.position(); }
+    qint64 position() const { return m_engine->position(); }
     qint64 duration() const;
     QString title() const;
     QString artist() const;
@@ -58,7 +75,28 @@ public:
     void setVolume(int volume);
     void setShuffle(bool on);
     void setRepeat(bool on);
-    void setMuted(bool muted) { m_output.setMuted(muted); }
+    void setMuted(bool muted) { m_engine->setMuted(muted); }
+
+    AudioEngine *engine() const { return m_engine; }
+    QString engineName() const { return m_engine->name(); }
+    bool gapless() const { return m_engine->gapless(); }
+    qreal crossfadeSeconds() const { return m_engine->settings().crossfadeMs / 1000.0; }
+    QString replayGainMode() const;
+    qreal replayGainPreamp() const { return m_engine->settings().replayGainPreampDb; }
+    bool eqEnabled() const { return m_engine->settings().eqEnabled; }
+    qreal eqPreamp() const { return m_engine->settings().eqPreampDb; }
+    QList<qreal> eqBands() const { return m_engine->settings().eqBandsDb; }
+    QList<qreal> eqFrequencies() const;
+    QStringList eqPresets() const;
+    void setCrossfadeSeconds(qreal seconds);
+    void setReplayGainMode(const QString &mode);
+    void setReplayGainPreamp(qreal db);
+    void setEqEnabled(bool on);
+    void setEqPreamp(qreal db);
+    void setEqBands(const QList<qreal> &bands);
+    Q_INVOKABLE void setEqBand(int band, qreal db);
+    // Sets the bands to a named preset; false if there is no such preset.
+    Q_INVOKABLE bool applyEqPreset(const QString &name);
 
     Q_INVOKABLE void play();
     Q_INVOKABLE void pause();
@@ -101,28 +139,37 @@ signals:
     void modesChanged();
     void levelsChanged();
     void errorChanged();
+    void playbackSettingsChanged();
     void seeked(qint64 position);
     // The window asked for a folder. The app connects this to the desktop's
     // folder picker, so the engine needs no D-Bus or portal code.
     void folderRequested();
 
 private:
+    void connectEngine();
     void load(int row);
+    void requeue();
     void readMetaData();
+    void changeSettings(const std::function<void(AudioEngine::Settings &)> &change);
+    void saveSettings();
+    void restoreSettings();
     void setError(const QString &error);
     void saveSoon();
     void save();
     void restore();
 
-    QMediaPlayer m_player;
-    QAudioOutput m_output;
-    QAudioBufferOutput m_bufferOutput;
+    AudioEngine *m_engine;
     Playlist m_playlist;
     Spectrum m_spectrum;
     QTimer m_spectrumTimer, m_saveTimer;
-    QString m_statePath;
+    QString m_statePath, m_settingsPath;
     QList<int> m_history;
     int m_current = -1;
+    // The row queued in the engine to follow the current one.
+    int m_queued = -1;
+    // Files that failed in a row, so a list of broken files can't loop.
+    int m_badRun = 0;
+    bool m_wantPlaying = false;
     int m_volume = 70;
     bool m_shuffle = false, m_repeat = false;
     bool m_stopped = true;

@@ -338,7 +338,6 @@ Omarchy's own apps are built.
 
 The full plan is in [docs/plan/](docs/plan/). In short:
 
-- **Playing from a Navidrome server:** its tracks are in the library; streaming them is next.
 - **Tried on a real NAS and a real library:** so far only mock servers and made-up music.
 
 ## The library from the command line
@@ -376,8 +375,6 @@ removed.
   from the library) that haven't played yet. Until such a track plays, the
   playlist shows a tidied file name and no length.
 - Searching inside a playlist, and dragging tracks from the album grid.
-- Playing tracks from a Navidrome / Subsonic server (they list, search and
-  show covers, but the player can't stream them yet).
 - Last.fm needs your own API account: Omamp doesn't ship a key.
 - A change of playback engine takes effect at the next start.
 

@@ -3556,3 +3556,290 @@ gone through `DeviceSink` on real hardware.
   timeout), playing silence and showing "Buffering…".
 - **`StreamResolver`'s Subsonic path** is tested only through the core
   tests of `playableUrl`; the streaming tests use a resolver of their own.
+
+## Phase 4/5 window: identify, covers, lyrics, scrobbling, volumes and servers (20 October 2026)
+
+The Phase 4 (web) and Phase 5 (NAS) cores now have their window.
+`Ctrl+I` identifies the chosen tracks with MusicBrainz, Picard-style, and
+shows every tag change before anything is written; saving is one undoable
+change per album. Missing covers are fetched as a job, and one album's
+cover can be chosen from several. The info panel has a Lyrics tab whose
+timed lyrics follow the playing track. Settings → Scrobbling logs in to
+ListenBrainz and Last.fm and shows the queue. A Volumes page lists every
+disk, share and server, checked on a worker thread so a hung NAS never
+freezes the window; offline tracks are greyed with a tooltip naming their
+share. **Connect a NAS…** writes out the mount units and commands, and
+**Add Navidrome / Subsonic server…** tests, adds and syncs a server whose
+tracks carry a cloud mark and the server's covers. All tests pass. Nothing
+is pushed; no schema change.
+
+![Identify with MusicBrainz](../identify.png)
+
+### What was built
+
+```text
+src/app/webcontroller.{h,cpp}   library.web: identify (cluster, candidates, dry-run diff, use another
+                                release, apply), covers (missing, one album with a chooser), lyrics
+                                (load, fetch, lineAt, save)
+src/app/nascontroller.{h,cpp}   library.nas: the MountMonitor, volume rows and actions, the mount guide,
+                                Subsonic servers (test, add and sync, sync, remove, streaming quality)
+src/app/settingscontroller.*    + Send now (flush), Last.fm log-in (token, page, session), lastfm.api_key/secret
+src/app/librarycontroller.*     web(), nas(), artCacheDir(), setMountMonitoring(); volumes are checked on the
+                                monitor's thread at start; the watcher follows the monitor
+src/app/librarycontroller_tidy.cpp  undo labels for identify, lyrics and cover saves
+src/app/tracklistmodel.*        roles remote (cloud mark) and offlineNote ("On music on nas, which isn't connected")
+src/app/artprovider.cpp         Subsonic tracks and albums: the server's cover through RemoteSources::coverArt
+src/app/devhooks.*              demo verbs set:<objectName>.<property>=<value> and click:<objectName>
+src/app/IdentifySheet.qml, CoverChooserSheet.qml, LyricsView.qml, VolumesSheet.qml,
+src/app/NasGuideSheet.qml, RemoteSourceSheet.qml
+src/app/Main.qml, InfoPanel.qml, SettingsSheet.qml, TrackTable.qml, AlbumGrid.qml, LibraryTreePane.qml,
+src/app/AdvancedView.qml, JobsBar.qml, TagEditorSheet.qml, resources.qrc (+ docs/nas.md compiled in), i18n/en.json
+tests/p45window_tests.cpp       11 tests; tests/mocksubsonic.h (the mock Navidrome, moved out of subsonic_tests.cpp)
+```
+
+`src/app/main.cpp` is untouched: everything hangs off `library`, so the
+streaming merge (its `StreamResolver` lines) went in without a conflict.
+
+**Identify.** `Ctrl+I` (`I` is the info panel), the track and album-grid
+menus, or the palette. The work runs through `runJob` (the queued job
+slot), so it shows in the jobs bar, can be cancelled, and waits behind a
+running scan. One job clusters, looks up and then dry-runs the best release
+of every cluster, so the diff is there when the sheet fills. The sheet:
+
+- notes at the top, in the window's words: no AcoustID key (with a button
+  to Settings → Web, and that matching falls back to tags and MusicBrainz
+  IDs), offline, and any other note from the core;
+- albums on the left, each ticked when its best match is high or medium
+  confidence (low ones wait for the user), with its score;
+- releases best first: score, High/Medium/Low in green, yellow or red, date,
+  country, format, track count, label, the reasons in a sentence ("Tracks
+  match 99%, same number of tracks, album title matches, artist matches.
+  Found by a search by the tags.") and **Open on MusicBrainz**;
+- **Use another release**: a pasted MBID or musicbrainz.org link is looked
+  up as a forced release and put first (replacing its own entry);
+- **Files and tracks**: each file, the release track it was paired with,
+  both lengths and a per-file score coloured as Picard does; files no track
+  fits are said so and left alone;
+- **Tag changes**: per file, field, old → new, the readable fields first
+  (title, artist, album, track and disc numbers, years, genre, label…) and
+  the MusicBrainz IDs last; a note says the front cover is fetched too;
+- switches at the bottom (cover into the files, cover.jpg, genres, label),
+  saved to the settings when used;
+- **Save tags** / `Ctrl+Enter`: `Identify::apply` per ticked album, each a
+  journal batch with source `identify`, so `Ctrl+Z` undoes the newest album
+  and the undo history names it "MusicBrainz tags for 4 tracks".
+
+**Covers.** **Find missing covers** (palette, album grid menu, and the
+menu on Files to Edit → Missing artwork) runs `CoverArt::fetchForAlbum`
+for every album `albumsMissingArt` lists, as a job with progress, and stops
+at the first offline answer. **Find a cover…** (track and grid menus,
+palette) gathers candidates for one album: the release its tags agree on,
+then a MusicBrainz search, one per release group, at most six, each with a
+250-pixel preview saved under the art cache. One candidate is saved at
+once; several open a chooser of covers with their release's date, country
+and format. Saving sets the album's picture and, when Settings → Web says
+so, embeds it (journalled, source `fetch-art`) and writes cover.jpg.
+
+**Lyrics.** The info panel has Details and Lyrics tabs; **Show lyrics** in
+the palette opens it there. The tab shows the track's title and artist,
+where the words came from (the `.lrc` beside it, its tags, or LRCLIB, not
+saved yet) and the lines. Timed lyrics light the line `lineAt(position)`
+gives while that track plays, keep it centred, grey the lines sung, and
+seek on a click. Look-ups run on a lyrics thread of their own, never
+queued behind a scan, and never touch the network unless **Fetch from
+LRCLIB** (or **Search LRCLIB again**) is pressed. **Save as .lrc** and
+**Save into the file** go through `Lyrics::write` as a job (journalled);
+**Edit…** opens the tag editor on its Lyrics tab.
+
+**Scrobbling page.** ListenBrainz as before, plus Last.fm: the API key and
+shared secret (Last.fm wants each app to have its own account), **Log in to
+Last.fm** (getToken on a worker, then the permission page through
+`QDesktopServices::openUrl`, which on Omarchy is xdg-open), **Finish
+logging in** (getSession, which saves the session key and user), **Open the
+page again** and **Log out**. The queue: waiting, sent and refused per
+service, the last error, and **Send now** (a flush on a worker, with what it
+sent, refused and left). The Web page already had the AcoustID key,
+MusicBrainz preferences and cover size; its note now says what happens
+without a key.
+
+**Volumes.** One `MountMonitor` per library, made by `NasController` when
+the library opens (when watching is on; `setMountMonitoring` for tests).
+`activate()` no longer calls `refreshVolumes` on the window's thread; the
+monitor's first check does it on its own. `volumesWentOffline` and
+`volumesCameOnline` refresh the lists; the watcher follows the monitor, so a
+share that comes back gets its quick rescan, and the jobs bar says "music on
+nas is back; looking for changes on it…" until the rescan ends (without a
+watcher the controller runs the quick rescan as a job itself). The page
+(palette, Settings → Library, or Location's menu in the tree) has a row per
+disk or share: kind (local disk, SMB share, NFS share), where it is
+mounted, its library folders, connected or why not ("Not answering (gave up
+after 1.5 s)", "Stale: … remount it"…), tracks, offline and missing counts,
+last seen; **Quick rescan**, **Rescan**, **Moved…** (the portal's folder
+picker, then `Volumes::reassign`), **Forget…** (offline volumes only, with
+a confirmation naming the track count), and folders read at once. Servers
+have their own rows below. In the track list an offline track is greyed as
+before and now says why on hover.
+
+**Connect a NAS.** SMB or NFS, the share and the mount point; the steps fill
+in as you type, from `omamp nas mount-guide` run in-process (`Cli::runNas`
+with `--json`, never `--write-to`): the two unit files with their names, the
+commands in order (each with Copy, and **Copy every command**), the fstab
+line, and adding the folder. Its mistakes are reworded for a form. A second
+tab shows docs/nas.md, compiled into the binary. Nothing is run.
+
+**Servers.** Address (`nas:4533` becomes `http://nas:4533`), user and
+password or API key, **Test the connection** (a ping on a worker: "Connected
+to Navidrome 0.53.3 (API 1.16.1)" or the server's own error), an optional
+name and the streaming quality (original, Opus 192/128, MP3 320/192).
+**Add and sync** is one job: `RemoteSources::add` (the secret to the keyring,
+or the 0600 file), `setStreaming`, `sync`. Each server row has **Sync now**,
+**Full sync**, the quality and **Remove…**. **Sync Navidrome / Subsonic
+servers** in the palette syncs them all. Mirrored tracks show a cloud before
+the title, and the image provider fetches their covers from the server.
+With the streaming merge, playing them goes through the engine's resolver.
+
+**Keys and palette.** `Ctrl+I` identify. Palette: Identify with
+MusicBrainz…, Find a cover for the chosen album…, Find missing covers, Show
+lyrics, Volumes, NAS shares and servers…, Connect a NAS…, Add Navidrome /
+Subsonic server…, Sync Navidrome / Subsonic servers, Web services…. Party
+mode locks the tag-writing ones (`edit-tags`) and the NAS ones
+(`settings`). The `?` overlay lists `Ctrl+I`.
+
+### Test results
+
+`bin/test` with `JOBS=4`, a throwaway `HOME` and XDG folders, offscreen in
+software, `OMAMP_NO_AUDIO_DEVICE=1`, `OMAMP_SECRET_STORE=file`, after
+merging main (streaming):
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped    player
+Totals: 16 passed, 0 failed, 0 skipped    library
+Totals: 24 passed, 0 failed, 0 skipped    query
+Totals:  8 passed, 0 failed, 0 skipped    palette
+Totals: 16 passed, 0 failed, 0 skipped    watcher
+Totals: 17 passed, 0 failed, 0 skipped    library window models
+Totals:  3 passed, 0 failed, 0 skipped    advanced window
+Totals:  4 passed, 0 failed, 0 skipped    advanced parts
+Totals: 22 passed, 0 failed, 0 skipped    masks
+Totals: 21 passed, 0 failed, 0 skipped    tidy
+Totals: 22 passed, 0 failed, 0 skipped    playlists
+Totals: 36 passed, 0 failed, 4 skipped    engine (the opt-in CPU benchmarks)
+Totals: 25 passed, 0 failed, 1 skipped    web (the opt-in live smoke test)
+Totals:  9 passed, 0 failed, 0 skipped    tidy window
+Totals:  5 passed, 0 failed, 0 skipped    tidy window keys
+Totals:  6 passed, 0 failed, 0 skipped    own writes
+Totals: 19 passed, 0 failed, 0 skipped    nas
+Totals:  9 passed, 0 failed, 0 skipped    subsonic
+Totals: 10 passed, 0 failed, 0 skipped    Phase 3 window
+Totals:  7 passed, 0 failed, 0 skipped    Phase 3 window keys
+Totals: 11 passed, 0 failed, 0 skipped    Phase 4/5 window
+Totals: 27 passed, 0 failed, 0 skipped    streaming
+```
+
+`OMAMP_TESTS=p45window` (MockHttp and MockSubsonic on 127.0.0.1 only, three
+runs in a row, all passing) covers:
+
+- **Identify, in the window**: three files made by ffmpeg, `Ctrl+A`-style
+  selection, `Ctrl+I`; the AcoustID note shown; release A first with high
+  confidence and a reason naming the search; every file paired and scored;
+  the dry run's title and MBID changes while the file is unchanged; the
+  other candidate ("Remastered" titles); a bad paste refused; release A
+  pasted by link and put first; `Ctrl+Enter` saving three files with the
+  cover embedded and the sheet closing; the undo label; `Ctrl+Z` putting the
+  title and the MBID back in the file and the library.
+- **Identify offline**: a refused port reads as offline, the album says so,
+  and Save is refused.
+- **Lyrics**: a `.lrc` beside a file found from the palette's Show lyrics;
+  `lineAt` at 0.5, 1, 6 and 60 s; the view lighting nothing when not
+  playing and lines 1, 2 and none at 6, 9.6 and 0.2 s when following; no
+  request until **Fetch from LRCLIB**; the fetched lyrics saved as a `.lrc`
+  (journalled) and `Ctrl+Z` removing it.
+- **A hung share**: a fake cifs mount table and a `stat()` hook that hangs;
+  `activate()` returns in under 250 ms and a 10 ms timer never stalls more
+  than 200 ms while the probe waits; the volume reads as an SMB share, not
+  answering, 3 tracks offline and none missing; the list's tooltip; the
+  Volumes page from the palette showing it; a second check returning at
+  once as still hung; released, it comes back, is rescanned as a job and
+  the jobs-bar note clears.
+- **Mount guide**: SMB and NFS units, commands and fstab, the form's error
+  wording, the compiled-in guide.
+- **A Navidrome server**: the test button with a wrong and a right password;
+  the add sheet from the palette filled in and **Add and sync**; four
+  tracks with a cloud; the secret in the 0600 file under the temporary XDG
+  folder and nowhere in the settings; the server's cover through the image
+  provider; a second sync with no changes in two requests; a refused sync
+  shown as the server's last error; removal taking tracks and secret.
+- **Scrobbling settings**: a bad and a good ListenBrainz token; Last.fm
+  refusing without a key, `lastfm.session_key` refused as a setting, the
+  log-in page captured (never opened) with the token and key, the session
+  saved; Send now; both log-ins still there after reopening the library,
+  and gone after logging out.
+- **Find missing covers** as a job, finding one and then none.
+
+### Screenshots
+
+`docs/identify.png` (Night Drive against two made-up releases, the tag
+changes tab), `docs/lyrics.png` (made-up timed lyrics following a forced
+position), `docs/volumes.png` (the demo disk, an SMB share that isn't
+connected, a Navidrome server) and `docs/remote-source.png` (the add sheet
+after a successful test). They come from `tests/make-demo-library` in
+throwaway XDG folders in the scratchpad, with a few tags changed by `omamp
+tag`, one SMB volume written into the demo database, a server added with
+`omamp remote add`, and a small Python server on 127.0.0.1 standing in for
+MusicBrainz, the Cover Art Archive and Navidrome with made-up answers.
+Captured offscreen in software, Night Ride theme, with `OMAMP_DEMO` and
+`OMAMP_SCREENSHOT`. Looking at them led to a narrower album column, wider
+release tracks, the readable tag changes first, equal old and new columns,
+fixed-width icons, server volumes shown once, and a title line on the
+Lyrics tab.
+
+### Decisions
+
+- **One journal batch per album, not per run.** `Identify::apply` makes a
+  batch per release; merging them would mean reimplementing its cover work
+  outside the core. Identifying one album (the usual case) is one `Ctrl+Z`;
+  for several, each `Ctrl+Z` undoes one album and the undo history lists
+  them all.
+- **Low-confidence albums start unticked**; choosing one of their releases
+  ticks them.
+- **Identify and covers use the job slot; lyrics don't.** Writes and long
+  look-ups belong in the jobs bar with Cancel; reading lyrics for the panel
+  must not wait behind a scan.
+- **The dry run is the diff.** It reads the files, so what is shown is what
+  the tag writer would change, field by field; the cover is the only thing
+  it can't preview, so a note says it.
+- **`Ctrl+I`**: `I` toggles the info panel, `Ctrl+I` was free. Lyrics got a
+  tab and a palette action, not `L` (taken by Add folder).
+- **The mount guide runs the command-line code in-process** rather than
+  duplicating it, so the window and `omamp nas mount-guide` can't drift.
+- **Mount monitoring follows watching by default.** Tests that turn
+  watching off keep the old synchronous volume check, so their fixtures
+  (volumes forced online) aren't undone by a check arriving later.
+- **Forget only offline volumes** from the page, as the core prefers; a
+  connected one is rescanned instead.
+- **Removing a server takes its tracks** (the page offers no "keep tracks";
+  `omamp remote remove --keep-tracks` still does).
+- **The Last.fm API key and secret are settings** like the other keys
+  (Phase 4's decision); the page never shows the session key, and it can't
+  be set by hand.
+- **Lyrics fetched from LRCLIB aren't written until asked.** The panel says
+  "not saved in the file yet".
+- **Demo verbs `set:` and `click:`** let screenshots drive any named item,
+  sheets included, without new code for each picture.
+
+### Known gaps
+
+- **Not tried on screen, on a real NAS, a real Navidrome or the real
+  services.** Everything ran against mocks offscreen.
+- **No AcoustID key** is shipped; the sheet says matching falls back to tags.
+- **The lyrics screenshot** forces the following position: nothing can play
+  in the sandbox, so the highlight was never seen with real playback.
+- **"Moved…"** uses the portal's folder picker, which the tests can't
+  drive; `reassignTo` is what they could test, and they don't yet.
+- **Cover chooser** is tested only through the single-candidate path (the
+  mock's two releases share a release group); several candidates were
+  looked at in code, not on screen.
+- **Translations**: English only; the new counted strings have their English
+  plural forms in `src/app/i18n/en.json`.
+- **A volume's local disk is named by its mount point** (`/`, `/home`) when
+  it has no label.

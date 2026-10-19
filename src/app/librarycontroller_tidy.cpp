@@ -127,6 +127,12 @@ QString LibraryController::describeBatch(Library &library, const QString &batch)
         return tr("organise of %n files", "", n);
     if (source == QLatin1String("tag-from-filename"))
         return tr("tags from file names for %n tracks", "", n);
+    if (source == QLatin1String("identify"))
+        return tr("MusicBrainz tags for %n tracks", "", n);
+    if (source == QLatin1String("lyrics"))
+        return tr("lyrics for %n tracks", "", n);
+    if (source == QLatin1String("fetch-art"))
+        return tr("cover for %n tracks", "", n);
     QStringList words;
     for (const QString &f : std::as_const(fields))
         words << fieldWord(f);

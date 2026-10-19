@@ -75,6 +75,10 @@ LibraryController::LibraryController(const QString &databasePath, QObject *paren
     m_dj = new DjController(this);
     m_settings = new SettingsController(this);
     m_recorder = new PlayRecorder(m_path, this);
+    m_web = new WebController(this);
+    m_nas = new NasController(this);
+    connect(m_web, &WebController::message, this, &LibraryController::toast);
+    connect(m_nas, &NasController::message, this, &LibraryController::toast);
     // A counted play changes Plays and Last played on screen.
     connect(m_recorder, &PlayRecorder::recorded, this, [this](qint64, const QString &outcome) {
         if (!m_ready || outcome == QLatin1String("ignored"))
@@ -123,6 +127,9 @@ void LibraryController::applyWatchSettings() {
 LibraryController::~LibraryController() {
     m_queued.clear();
     m_watcher.reset();
+    // A check that finishes now would report to a half-destroyed controller.
+    if (m_nas)
+        m_nas->stopMonitor();
     if (m_prefetch) {
         m_prefetch->cancel();
         delete m_prefetch;
@@ -157,7 +164,11 @@ bool LibraryController::activate() {
         return false;
     }
     // Drives and shares that went away since the last run show as offline.
-    library->refreshVolumes(VolumeResolver());
+    // With the mount monitor that check runs on its thread (a hung share
+    // would otherwise hold the window for a probe's 1.5 s); without it
+    // (tests, benchmarks) it runs here, as before.
+    if (!mountMonitoring())
+        library->refreshVolumes(m_nas->resolver());
     m_library = std::move(library);
     m_tree.setDatabase(m_library->db());
     m_browser.setDatabase(m_library->db());
@@ -171,6 +182,9 @@ bool LibraryController::activate() {
     }
     m_playlists->attach();
     m_dj->attach();
+    m_nas->reload();
+    if (mountMonitoring())
+        m_nas->startMonitor();
     selectNode(0);
     updatePlayingTrack();
     if (m_library->setting("watch.enabled", "1").toString() != "0") {
@@ -193,6 +207,13 @@ void LibraryController::startWatcher() {
     connect(m_watcher.get(), &Watcher::watchLimitReached, this, [this](int watched, int limit) {
         setMessage(tr("Watching %1 folders, the most allowed (%2); the rest are checked every 15 minutes")
                        .arg(QLocale().toString(watched), QLocale().toString(limit)));
+    });
+    // A share that comes back gets a quick rescan of just its folders.
+    if (m_nas->monitor())
+        m_watcher->followMounts(m_nas->monitor());
+    connect(m_watcher.get(), &Watcher::rescanFinished, m_nas, [this](const QJsonObject &result) {
+        if (result.value("kind").toString() == QLatin1String("remount"))
+            m_nas->remountRescanned(result);
     });
     m_watcher->start();
     holdWatcher();

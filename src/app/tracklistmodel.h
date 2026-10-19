@@ -42,6 +42,8 @@ public:
         PlayingRole,
         TrackIdRole,
         NumericRole,                   // the column holds a number: right-aligned
+        RemoteRole,                    // mirrored from a Navidrome / Subsonic server
+        OfflineNoteRole,               // why the track can't play ("On nas, which isn't connected"), or ""
     };
 
     // One track as the list shows it.
@@ -49,6 +51,7 @@ public:
         qint64 id = 0;
         QString path; // absolute; empty when offline
         QString title, artist, album, genre, format, availability, fileName;
+        QString volumeKind, volumeName; // local, network or subsonic; the volume's label or root
         int year = 0, trackNo = 0, discNo = 0, bitrate = 0, plays = 0;
         int rating = -1;
         qint64 durationMs = 0, added = 0;

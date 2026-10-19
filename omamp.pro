@@ -31,7 +31,9 @@ HEADERS += \
     src/app/playlistscontroller.h \
     src/app/playrecorder.h \
     src/app/rulebuilder.h \
-    src/app/settingscontroller.h
+    src/app/settingscontroller.h \
+    src/app/webcontroller.h \
+    src/app/nascontroller.h
 
 SOURCES += \
     src/app/albumgridmodel.cpp \
@@ -56,6 +58,8 @@ SOURCES += \
     src/app/playlistscontroller.cpp \
     src/app/playrecorder.cpp \
     src/app/rulebuilder.cpp \
-    src/app/settingscontroller.cpp
+    src/app/settingscontroller.cpp \
+    src/app/webcontroller.cpp \
+    src/app/nascontroller.cpp
 
 RESOURCES += src/app/resources.qrc

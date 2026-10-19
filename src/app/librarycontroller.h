@@ -25,6 +25,8 @@ class ArtworkPrefetch;
 #include "playlistscontroller.h"
 class PlayRecorder;
 #include "settingscontroller.h"
+#include "nascontroller.h"
+#include "webcontroller.h"
 class Job;
 class Library;
 #include "watcher.h"
@@ -82,6 +84,9 @@ class LibraryController : public QObject {
     Q_PROPERTY(PlaylistsController *playlists READ playlists CONSTANT)
     Q_PROPERTY(DjController *dj READ dj CONSTANT)
     Q_PROPERTY(SettingsController *appSettings READ appSettings CONSTANT)
+    // Phases 4 and 5: identify, covers and lyrics; volumes, shares and servers.
+    Q_PROPERTY(WebController *web READ web CONSTANT)
+    Q_PROPERTY(NasController *nas READ nas CONSTANT)
 
 public:
     // An empty path means the default library (~/.local/share/omamp/library.db).
@@ -95,12 +100,20 @@ public:
     DjController *dj() const { return m_dj; }
     SettingsController *appSettings() const { return m_settings; }
     PlayRecorder *recorder() const { return m_recorder; }
+    WebController *web() const { return m_web; }
+    NasController *nas() const { return m_nas; }
+    // Watching mounts (MountMonitor) checks volumes on a worker thread
+    // instead of on the window's at start, and follows shares as they come
+    // and go. The default follows setWatching(); tests turn it on alone.
+    void setMountMonitoring(bool on) { m_monitoring = on ? 1 : 0; }
+    bool mountMonitoring() const { return m_monitoring < 0 ? m_watching : m_monitoring == 1; }
     // Reads the tree again (after a playlist change), keeping the chosen node.
     void reloadTree();
     // Starts, stops or re-times the folder watcher from the settings.
     void applyWatchSettings();
     // Where album pictures are cached; empty means ~/.cache/omamp/art.
     void setArtCacheDir(const QString &dir) { m_artCacheDir = dir; }
+    QString artCacheDir() const { return m_artCacheDir; }
     // false: don't start the folder watcher (benchmarks).
     void setWatching(bool on) { m_watching = on; }
     // The picker for "Add folder to library"; the deck has its own.
@@ -336,6 +349,9 @@ private:
     DjController *m_dj = nullptr;
     SettingsController *m_settings = nullptr;
     PlayRecorder *m_recorder = nullptr;
+    WebController *m_web = nullptr;
+    NasController *m_nas = nullptr;
+    int m_monitoring = -1; // -1: follow m_watching
     // The tree node a collection's columns belong to, while one is chosen.
     qint64 m_collection = 0;
 };

@@ -34,6 +34,13 @@
         <file alias="PartySheet.qml">PartySheet.qml</file>
         <file alias="SettingsSheet.qml">SettingsSheet.qml</file>
         <file alias="PartyDisplay.qml">PartyDisplay.qml</file>
+        <file alias="IdentifySheet.qml">IdentifySheet.qml</file>
+        <file alias="CoverChooserSheet.qml">CoverChooserSheet.qml</file>
+        <file alias="LyricsView.qml">LyricsView.qml</file>
+        <file alias="VolumesSheet.qml">VolumesSheet.qml</file>
+        <file alias="NasGuideSheet.qml">NasGuideSheet.qml</file>
+        <file alias="RemoteSourceSheet.qml">RemoteSourceSheet.qml</file>
+        <file alias="docs/nas.md">../../docs/nas.md</file>
         <file alias="i18n/en.json">i18n/en.json</file>
     </qresource>
 </RCC>

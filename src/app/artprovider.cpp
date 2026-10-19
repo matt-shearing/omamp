@@ -2,8 +2,10 @@
 
 #include "artwork.h"
 #include "library.h"
+#include "remote.h"
 
 #include <QImage>
+#include <QSqlQuery>
 #include <QThread>
 #include <map>
 #include <memory>
@@ -12,6 +14,20 @@ namespace {
 
 // One library connection per pool thread and database, opened on first use
 // and closed when the thread ends (a connection belongs to its thread).
+// A track mirrored from a Navidrome / Subsonic server (or an album of
+// them) has no file to read a picture from: the server's cover is fetched
+// once and cached. Returns 0 when the picture should come from the files.
+qint64 remoteTrackFor(Library &library, const QString &kind, qint64 number) {
+    QSqlQuery q(library.db());
+    if (kind == "album")
+        q.prepare("SELECT t.id FROM tracks t JOIN volumes v ON v.id = t.volume_id "
+                  "WHERE t.album_id = ? AND v.kind = 'subsonic' ORDER BY t.disc_no, t.track_no LIMIT 1");
+    else
+        q.prepare("SELECT t.id FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.id = ? AND v.kind = 'subsonic'");
+    q.addBindValue(number);
+    return q.exec() && q.next() ? q.value(0).toLongLong() : 0;
+}
+
 Library *threadLibrary(const QString &path) {
     thread_local std::map<QString, std::unique_ptr<Library>> libraries;
     auto &library = libraries[path];
@@ -41,7 +57,17 @@ public:
         } else {
             if (size <= 0 && m_requested.isValid())
                 size = qMax(m_requested.width(), m_requested.height());
-            if (Library *library = threadLibrary(m_db)) {
+            Library *library = threadLibrary(m_db);
+            const qint64 remote = library ? remoteTrackFor(*library, kind, number) : 0;
+            if (remote > 0) {
+                QString error;
+                const QString path = RemoteSources::coverArt(*library, remote, size > 0 ? size : 256, &error);
+                if (path.isEmpty() || !m_image.load(path))
+                    m_error = error.isEmpty() ? QString("No picture") : error;
+                else if (m_requested.isValid() && m_requested.width() > 0 && m_requested.height() > 0 &&
+                         (m_image.width() > m_requested.width() || m_image.height() > m_requested.height()))
+                    m_image = m_image.scaled(m_requested, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            } else if (library) {
                 ArtworkCache cache(*library, m_dir);
                 const QString path = cache.artworkFor(
                     kind == "album" ? ArtworkCache::Kind::Album : ArtworkCache::Kind::Track, number, size);

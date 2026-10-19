@@ -26,6 +26,8 @@ QHash<int, QByteArray> TrackListModel::roleNames() const {
     QHash<int, QByteArray> names = QAbstractTableModel::roleNames();
     names[RatingRole] = "rating";
     names[AvailableRole] = "available";
+    names[RemoteRole] = "remote";
+    names[OfflineNoteRole] = "offlineNote";
     names[SelectedRole] = "rowSelected";
     names[CurrentRole] = "rowCurrent";
     names[PlayingRole] = "playing";
@@ -121,6 +123,14 @@ QVariant TrackListModel::data(const QModelIndex &index, int role) const {
     case RatingRole: return r->rating;
     case AvailableRole: return r->availability == QLatin1String("online") && !r->path.isEmpty();
     case PlayingRole: return !m_playingPath.isEmpty() && r->path == m_playingPath;
+    case RemoteRole: return r->volumeKind == QLatin1String("subsonic");
+    case OfflineNoteRole:
+        if (r->availability == QLatin1String("missing"))
+            return tr("The file is missing; a rescan found it gone");
+        if (r->availability != QLatin1String("online") || r->path.isEmpty())
+            return r->volumeKind == QLatin1String("subsonic") ? tr("On %1, which isn't answering").arg(r->volumeName)
+                                                              : tr("On %1, which isn't connected").arg(r->volumeName);
+        return QString();
     }
     return {};
 }
@@ -169,7 +179,8 @@ QVector<TrackListModel::Row> TrackListModel::fetch(const QVector<qint64> &ids) c
     q.setForwardOnly(true);
     if (!q.exec("SELECT t.id, v.root_path, v.online, t.rel_path, t.title, t.artist, t.album, t.genre, t.format, "
                 "t.availability, t.file_name, t.year, t.track_no, t.disc_no, t.bitrate, t.play_count, t.rating, "
-                "t.duration_ms, t.added FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.id IN (" +
+                "t.duration_ms, t.added, v.kind, coalesce(nullif(v.label, ''), v.root_path) "
+                "FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.id IN (" +
                 list.join(',') + ')')) {
         qWarning("Track list: %s", qPrintable(q.lastError().text()));
         return out;
@@ -200,6 +211,8 @@ QVector<TrackListModel::Row> TrackListModel::fetch(const QVector<qint64> &ids) c
         r.rating = q.value(16).isNull() ? -1 : q.value(16).toInt();
         r.durationMs = q.value(17).toLongLong();
         r.added = q.value(18).toLongLong();
+        r.volumeKind = q.value(19).toString();
+        r.volumeName = q.value(20).toString();
     }
     return out;
 }

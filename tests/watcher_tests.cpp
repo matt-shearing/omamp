@@ -459,6 +459,9 @@ private slots:
         QCOMPARE(r.value("kind").toString(), QString("changes"));
         QCOMPARE(r.value("added").toInt(), 1);
         QVERIFY(changed.size() >= 1);
+        // Reading the new file must not look like a change to it: TagLib
+        // opens read-only, so no close-after-write wakes the watcher again.
+        QVERIFY(!finished.wait(800));
 
         // Modify: new contents, closed after writing.
         {

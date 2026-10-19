@@ -17,6 +17,7 @@
 #include <taglib/mpegfile.h>
 #include <taglib/popularimeterframe.h>
 #include <taglib/tdebuglistener.h>
+#include <taglib/tfilestream.h>
 #include <taglib/tpropertymap.h>
 #include <taglib/unknownframe.h>
 #include <taglib/wavfile.h>
@@ -217,7 +218,8 @@ static void readPopularity(TagLib::ID3v2::Tag *tag, TrackTags &t) {
 QByteArray embeddedPicture(const QString &path, QString *mimeType) {
     muteTagLib();
     const QByteArray encoded = QFile::encodeName(path);
-    TagLib::FileRef file(encoded.constData(), false);
+    TagLib::FileStream stream(encoded.constData(), true);
+    TagLib::FileRef file(&stream, false);
     if (file.isNull())
         return {};
     const TagLib::List<TagLib::VariantMap> pictures = file.complexProperties("PICTURE");
@@ -242,9 +244,16 @@ TrackTags read(const QString &path) {
     TrackTags t;
     muteTagLib();
     const QByteArray encoded = QFile::encodeName(path);
-    // Average style reads the header and, for VBR MP3s, the Xing frame,
-    // without scanning the whole file.
-    TagLib::FileRef file(encoded.constData(), true, TagLib::AudioProperties::Average);
+    // Read-only: TagLib otherwise opens files for writing when it can, which
+    // the folder watcher sees as a change (and a NAS as a write). Average
+    // style reads the header and, for VBR MP3s, the Xing frame, without
+    // scanning the whole file. The stream must outlive the FileRef.
+    TagLib::FileStream stream(encoded.constData(), true);
+    if (!stream.isOpen()) {
+        t.error = "Unreadable file";
+        return t;
+    }
+    TagLib::FileRef file(&stream, true, TagLib::AudioProperties::Average);
     if (file.isNull()) {
         t.error = "Unreadable or unsupported file";
         return t;

@@ -53,5 +53,21 @@
   "Imported %n playlists: %1 entries, %2 not in the library": { "one": "Imported %n playlist: %1 entries, %2 not in the library", "other": "Imported %n playlists: %1 entries, %2 not in the library" },
   "Imported %n playlists: %1 entries": { "one": "Imported %n playlist: %1 entries", "other": "Imported %n playlists: %1 entries" },
   "Exported %n entries to %1": { "one": "Exported %n entry to %1", "other": "Exported %n entries to %1" },
-  "Added %n tracks to %1": { "one": "Added %n track to %1", "other": "Added %n tracks to %1" }
+  "Added %n tracks to %1": { "one": "Added %n track to %1", "other": "Added %n tracks to %1" },
+  "Added %1: %n tracks": { "one": "Added %1: %n track", "other": "Added %1: %n tracks" },
+  "cover for %n tracks": { "one": "cover for %n track", "other": "cover for %n tracks" },
+  "Cover saved into %n files. Ctrl+Z undoes it.": { "one": "Cover saved into %n file. Ctrl+Z undoes it.", "other": "Cover saved into %n files. Ctrl+Z undoes it." },
+  "Forgot the volume and its %n tracks": { "one": "Forgot the volume and its %n track", "other": "Forgot the volume and its %n tracks" },
+  "Found covers for %n albums": { "one": "Found a cover for %n album", "other": "Found covers for %n albums" },
+  "Found covers for %n albums; %1 had none on the Cover Art Archive": { "one": "Found a cover for %n album; %1 had none on the Cover Art Archive", "other": "Found covers for %n albums; %1 had none on the Cover Art Archive" },
+  "Its %n tracks leave the library, and the saved password or key is deleted. The music on the server is not touched; adding the server again brings the tracks back.": { "one": "Its %n track leaves the library, and the saved password or key is deleted. The music on the server is not touched; adding the server again brings the track back.", "other": "Its %n tracks leave the library, and the saved password or key is deleted. The music on the server is not touched; adding the server again brings the tracks back." },
+  "Its %n tracks leave the library, with their ratings and play counts. Playlists keep their entries. Nothing on the disk or the NAS is touched.": { "one": "Its %n track leaves the library, with its rating and play count. Playlists keep their entries. Nothing on the disk or the NAS is touched.", "other": "Its %n tracks leave the library, with their ratings and play counts. Playlists keep their entries. Nothing on the disk or the NAS is touched." },
+  "Looking up %n files on MusicBrainz": { "one": "Looking up %n file on MusicBrainz", "other": "Looking up %n files on MusicBrainz" },
+  "lyrics for %n tracks": { "one": "lyrics for %n track", "other": "lyrics for %n tracks" },
+  "MusicBrainz tags for %n tracks": { "one": "MusicBrainz tags for %n track", "other": "MusicBrainz tags for %n tracks" },
+  "%n files": { "one": "%n file", "other": "%n files" },
+  "Offline: the Cover Art Archive couldn't be reached. Found %n covers before that.": { "one": "Offline: the Cover Art Archive couldn't be reached. Found %n cover before that.", "other": "Offline: the Cover Art Archive couldn't be reached. Found %n covers before that." },
+  "Saved MusicBrainz tags to %n files. Ctrl+Z undoes it.": { "one": "Saved MusicBrainz tags to %n file. Ctrl+Z undoes it.", "other": "Saved MusicBrainz tags to %n files. Ctrl+Z undoes it." },
+  "Saved %n files; %1 could not be written": { "one": "Saved %n file; %1 could not be written", "other": "Saved %n files; %1 could not be written" },
+  "Save %n albums": { "one": "Save %n album", "other": "Save %n albums" }
 }

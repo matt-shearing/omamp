@@ -9,8 +9,10 @@ libraries of the 2000s, MediaMonkey-style, with modern tools on top: tagging
 from MusicBrainz, smart playlists, file organising with a preview, and
 libraries that live on a NAS.
 
-> **Status:** early. The player works today. The library manager (advanced
-> mode) is being planned in [docs/plan/](docs/plan/). Expect breaking changes.
+> **Status:** early. The player works today. The first part of the library
+> manager (advanced mode: the tree, the track list, search and scanning)
+> works too; the rest is planned in [docs/plan/](docs/plan/). Expect breaking
+> changes.
 
 ## Why Omarchy first
 
@@ -36,6 +38,38 @@ see and control it.
 
 ![Omamp in Omarchy's default theme](docs/omamp-default.png)
 
+## Advanced mode: the library
+
+Press `Tab` to switch between the deck and advanced mode. In advanced mode the
+deck folds into a strip across the top, and the library fills the rest of the
+window: a tree on the left, the tracks on the right, a search box above them,
+and a status line below. Omamp remembers which mode you left it in and the
+window size for each.
+
+![Advanced mode with a small made-up library](docs/advanced-mode.png)
+
+- **Add folder…** adds a music folder to the library and scans it. **Rescan**
+  (or `F5`) checks every library folder again. Scans run in the background,
+  with their progress and a Cancel button in the status line.
+- **The tree** works like MediaMonkey's: Entire Library, Collections, Artist,
+  Album Artist, Album (by first letter), Genre, Year (by decade), Rating,
+  Composer, Location (disks and shares, then folders) and Playlists. Disks and
+  shares that aren't connected show dimmed; their tracks stay in the library.
+- **The track list** shows every track under the chosen node that matches the
+  search. Click a column header to sort, again to reverse, and a third time
+  for the library order. Drag a header's edge to resize a column. Right-click
+  a header, or press **Columns**, to choose the columns.
+- **Search** uses the same query language as `omamp query`: plain words,
+  `artist:"neon coast"`, `year:1990..1999`, `rating:4..`, `-genre:christmas`.
+  A query with a mistake in it says what is wrong and leaves the list as it was.
+- Double-click a track or press `Enter` to play the list from that track.
+  Right-click for Play next, Add to Now Playing and Show in folder.
+
+It stays quick with big libraries. With 200,000 tracks, advanced mode opens
+in about a third of a second and a search reaches the screen in under 100 ms.
+
+![Advanced mode with 200,000 synthetic tracks](docs/advanced-mode-200k.png)
+
 ## Omarchy bar plugin
 
 `omarchy-plugin/` adds Omamp to the Omarchy bar: the track and play state in the bar, and a panel with seek, transport, shuffle, repeat and volume. Install it with `omarchy-plugin/install`. See [its README](omarchy-plugin/README.md).
@@ -57,10 +91,28 @@ see and control it.
 | `R` | Repeat on or off |
 | `O` | Add a music folder |
 | `T` | Show time left or time played (or click the clock) |
+| `Tab` | Switch between the deck and advanced mode |
 | `?` | Show every key |
 | `Q` | Quit |
 
 Double-click a track to play it.
+
+In advanced mode, the arrow keys move through the tree and the track list
+instead of the playlist, and these keys work too:
+
+| Key | Does |
+| --- | --- |
+| `/` or `Ctrl+F` | Search. `Esc` clears the search; `Enter` or `↓` goes to the list |
+| `↑` `↓` `Page Up` `Page Down` `Home` `End` | Move through the tree or the list |
+| `→` `←` in the tree | Open or close a node, or step into it or out to its parent |
+| `Enter` in the tree, `←` in the list | Go from the tree to the list, and back |
+| `Shift+↑` `Shift+↓` | Select a range of tracks |
+| `Ctrl+Space` | Select or unselect the track under the cursor |
+| `Ctrl+A` | Select every track in the list |
+| `Enter` | Play the list from the selected track (or play the selected tracks) |
+| `Menu` | Play next, add to Now Playing or show in folder |
+| `O` | Add a folder to the library |
+| `F5` | Rescan the library |
 
 ## Build and install
 
@@ -79,7 +131,7 @@ Omarchy's own apps are built.
 
 The full plan is in [docs/plan/](docs/plan/). In short:
 
-- **Advanced mode:** a library with a tree, column browser and fast search over 100,000+ tracks.
+- **Advanced mode:** a column browser, an album-art grid, an info panel and a command palette.
 - **Tagging:** batch editing, MusicBrainz and AcoustID lookups, artwork and lyrics.
 - **Organising:** rename and move files by a pattern, with a preview before anything moves.
 - **NAS libraries:** SMB, NFS or a Navidrome/Subsonic server, with offline tracks kept in the library.
@@ -87,8 +139,8 @@ The full plan is in [docs/plan/](docs/plan/). In short:
 
 ## The library from the command line
 
-The library manager's core works today from the command line. The window
-doesn't use it yet.
+The library manager's core also works from the command line, and the
+window and the command line share one library.
 
 ```sh
 omamp scan ~/Music                       # add a folder to the library and scan it
@@ -106,7 +158,8 @@ removed.
 ## Known gaps today
 
 - Translations. Every string goes through `qsTr()`, but only English ships.
-- Tags for tracks that haven't played yet. Until a track plays, the
+- Tags for tracks added from a folder or by dropping files (rather than
+  from the library) that haven't played yet. Until such a track plays, the
   playlist shows a tidied file name and no length.
 - An equaliser window and playlist search.
 

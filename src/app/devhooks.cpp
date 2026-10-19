@@ -3,6 +3,7 @@
 #include "librarycontroller.h"
 
 #include <QCoreApplication>
+#include <QFile>
 #include <QImage>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
@@ -55,13 +56,15 @@ void DevHooks::attach(QQuickWindow *window) {
 void DevHooks::afterFirstFrame() {
     runDemo();
     const bool advanced = m_window && m_window->property("advanced").toBool();
-    if (m_profile && advanced) {
-        if (m_library)
+    if (m_profile) {
+        if (advanced && m_library)
             say(QString("library: %1 tracks listed in %2 ms")
                     .arg(m_library->tracks()->count())
                     .arg(m_library->tracks()->lastQueryMs(), 0, 'f', 1));
-        m_steps = {"jump to the last row", "sort by title", "sort by title, descending",
-                   "search: coast", "search: artist:\"neon coast\" year:1997..2001", "clear the search"};
+        // Started on the deck: time the switch into advanced mode first.
+        m_steps = {advanced ? "already in advanced mode" : "Tab into advanced mode", "jump to the last row", "sort by title", "sort by title, descending",
+                   "search: coast", "search: go (two letters, no index)",
+                   "search: artist:\"neon coast\" year:1997..2001", "clear the search"};
         m_step = -1;
         QTimer::singleShot(200, this, &DevHooks::nextProfileStep);
         return;
@@ -112,23 +115,45 @@ void DevHooks::nextProfileStep() {
     TrackListModel *tracks = m_library->tracks();
     m_stepTimer.start();
     switch (m_step) {
-    case 0: {
+    case 0:
+        if (m_window->property("advanced").toBool()) {
+            m_stepTimer.invalidate();
+            QTimer::singleShot(0, this, &DevHooks::nextProfileStep);
+            return;
+        }
+        QMetaObject::invokeMethod(m_window, "setAdvanced", Q_ARG(QVariant, true));
+        break;
+    case 1: {
         QObject *view = m_window->findChild<QObject *>("advancedView");
         if (view)
             QMetaObject::invokeMethod(view, "jumpToEnd");
         break;
     }
-    case 1: tracks->setSort(TrackListModel::Title, false); break;
-    case 2: tracks->setSort(TrackListModel::Title, true); break;
-    case 3: tracks->setFilter("coast"); break;
-    case 4: tracks->setFilter("artist:\"neon coast\" year:1997..2001"); break;
-    case 5: tracks->setFilter(""); break;
+    case 2: tracks->setSort(TrackListModel::Title, false); break;
+    case 3: tracks->setSort(TrackListModel::Title, true); break;
+    case 4: tracks->setFilter("coast"); break;
+    case 5: tracks->setFilter("go"); break;
+    case 6: tracks->setFilter("artist:\"neon coast\" year:1997..2001"); break;
+    case 7: tracks->setFilter(""); break;
     }
     say(QString("  (%1: query %2 ms, %3 rows)").arg(m_steps[m_step]).arg(tracks->lastQueryMs(), 0, 'f', 1).arg(tracks->count()));
     m_window->update();
 }
 
+// Peak resident memory, from the kernel.
+static QString peakMemory() {
+    QFile status("/proc/self/status");
+    if (!status.open(QIODevice::ReadOnly))
+        return {};
+    for (const QByteArray &line : status.readAll().split('\n'))
+        if (line.startsWith("VmHWM:"))
+            return QString::fromLatin1(line.mid(6).trimmed());
+    return {};
+}
+
 void DevHooks::finish() {
+    if (m_profile)
+        say("peak memory " + peakMemory());
     if (!m_screenshot.isEmpty() && m_window) {
         const QImage image = m_window->grabWindow();
         if (image.save(m_screenshot))

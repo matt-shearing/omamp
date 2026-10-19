@@ -14,7 +14,7 @@ FocusScope {
     // Added starts hidden, so the rest fit a 1360-pixel window.
     property var hidden: [false, false, false, false, false, false, false, false, false, true, false]
     property var widths: ({})
-    readonly property var defaultWidths: [46, 180, 170, 180, 56, 110, 64, 80, 56, 88, 110]
+    readonly property var defaultWidths: [46, 180, 170, 180, 56, 110, 64, 80, 56, 88, 124]
     signal leave() // to the tree
     signal layoutEdited()
 
@@ -70,6 +70,7 @@ FocusScope {
 
     HorizontalHeaderView {
         id: header
+        objectName: "trackHeader"
         anchors { left: parent.left; right: parent.right; top: parent.top }
         syncView: table
         clip: true
@@ -111,6 +112,7 @@ FocusScope {
 
     TableView {
         id: table
+        objectName: "trackTable"
         anchors { left: parent.left; right: parent.right; top: header.bottom; bottom: parent.bottom }
         clip: true
         focus: true

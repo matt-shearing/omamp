@@ -1,4 +1,4 @@
-QT += core gui quick quickcontrols2 testlib dbus
+QT += core gui qml quick quickcontrols2 testlib dbus
 CONFIG += c++17 testcase
 TARGET = omamp_tests
 TEMPLATE = app
@@ -16,3 +16,6 @@ HEADERS += ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h \
 SOURCES += main.cpp omamp_tests.cpp library_tests.cpp librarywindow_tests.cpp \
            ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp \
            ../src/app/librarycontroller.cpp ../src/app/librarytree.cpp ../src/app/tracklistmodel.cpp
+
+# The real window, for the keyboard test of advanced mode.
+RESOURCES += ../src/app/resources.qrc

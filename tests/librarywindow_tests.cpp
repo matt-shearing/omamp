@@ -4,6 +4,7 @@
 // a temporary folder, and no test starts playback.
 
 #include <QProcess>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -11,10 +12,18 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickItem>
+#include <QQuickWindow>
+
 #include "library.h"
 #include "librarycontroller.h"
 #include "librarytree.h"
 #include "player.h"
+#include "portal.h"
+#include "theme.h"
+#include "translator.h"
 #include "tracklistmodel.h"
 #include "volumes.h"
 
@@ -507,9 +516,132 @@ private slots:
     }
 };
 
+// The real window, offscreen, driven from the keyboard as a person would:
+// Tab into advanced mode, / to search, arrows and Enter in the list, Tab back.
+static void typeText(QWindow *window, const QString &text) {
+    for (const QChar c : text)
+        QTest::keyClick(window, c.toLatin1());
+}
+
+class AdvancedWindowTests : public QObject {
+    Q_OBJECT
+
+private slots:
+    void advancedModeWorksFromTheKeyboard() {
+        QTemporaryDir dir;
+        {
+            Library library(dir.filePath("library.db"));
+            QVERIFY(library.open());
+            fill(library, dir.path(), 300);
+        }
+        Translator translator(dir.filePath("language"));
+        Theme theme(dir.filePath("theme"), nullptr, dir.filePath("no-hyprctl"));
+        Player player;
+        player.setMuted(true);
+        LibraryController library(dir.filePath("library.db"));
+        library.setPlayer(&player);
+
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("backend", &player);
+        engine.rootContext()->setContextProperty("library", &library);
+        engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(dir.filePath("window.conf")));
+        engine.load(QUrl("qrc:/Main.qml"));
+        QCOMPARE(engine.rootObjects().size(), 1);
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QCOMPARE(window->property("advanced").toBool(), false);
+        QVERIFY(!library.ready()); // the deck alone never opens the library
+
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_VERIFY(window->property("advanced").toBool());
+        QVERIFY(library.ready());
+        QCOMPARE(library.tracks()->count(), 300);
+        QTRY_VERIFY(window->findChild<QObject *>("advancedView"));
+
+        // / focuses the search; typing filters the list.
+        QTest::keyClick(window, Qt::Key_Slash);
+        QTRY_VERIFY(window->activeFocusItem() && window->activeFocusItem()->inherits("QQuickTextInput"));
+        typeText(window, "year:1995");
+        QTRY_COMPARE(library.tracks()->count(), 15);
+        // A half-typed query says what is wrong and keeps the list.
+        typeText(window, " rating:");
+        QTRY_VERIFY(!library.tracks()->filterError().isEmpty());
+        QCOMPARE(library.tracks()->count(), 15);
+        for (int i = 0; i < 8; ++i)
+            QTest::keyClick(window, Qt::Key_Backspace);
+        QTRY_VERIFY(library.tracks()->filterError().isEmpty());
+
+        // Enter goes to the list; arrows move and Shift extends; Enter plays from there.
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!window->activeFocusItem()->inherits("QQuickTextInput"));
+        QTest::keyClick(window, Qt::Key_Down);
+        QTest::keyClick(window, Qt::Key_Down);
+        QCOMPARE(library.tracks()->currentRow(), 1);
+        QTest::keyClick(window, Qt::Key_Down, Qt::ShiftModifier);
+        QCOMPARE(library.tracks()->selectedCount(), 2);
+        QTest::keyClick(window, Qt::Key_Up);
+        QCOMPARE(library.tracks()->selectedRows(), QList<int>({1}));
+        QTest::keyClick(window, Qt::Key_Return);
+        QCOMPARE(player.playlist()->count(), 15);
+        QCOMPARE(player.currentIndex(), 1);
+        player.stop();
+
+        // Left goes to the tree; Down and Right open Collections; the list follows.
+        QTest::keyClick(window, Qt::Key_Left);
+        QTest::keyClick(window, Qt::Key_Down);
+        QTRY_COMPARE(library.currentNode(), 1);
+        QTest::keyClick(window, Qt::Key_Right);
+        QVERIFY(library.tree()->isExpanded(1));
+        QTest::keyClick(window, Qt::Key_Left);
+        QVERIFY(!library.tree()->isExpanded(1));
+
+        // The header: a click sorts, a drag on a column's edge resizes it.
+        auto *header = window->findChild<QQuickItem *>("trackHeader");
+        auto *table = window->findChild<QQuickItem *>("trackTable");
+        QVERIFY(header && table);
+        auto columnWidth = [&](int column) {
+            qreal width = 0;
+            QMetaObject::invokeMethod(table, "columnWidth", Q_RETURN_ARG(qreal, width), Q_ARG(int, column));
+            return width;
+        };
+        const qreal number = columnWidth(0), title = columnWidth(1);
+        QVERIFY(number > 20 && title > 100);
+        const QPoint titleMiddle = header->mapToScene(QPointF(number + title / 2, header->height() / 2)).toPoint();
+        QTest::mouseClick(window, Qt::LeftButton, {}, titleMiddle);
+        QTRY_COMPARE(library.tracks()->sortColumn(), int(TrackListModel::Title));
+        const QPoint edge = header->mapToScene(QPointF(number - 1, header->height() / 2)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, {}, edge);
+        for (int dx = 10; dx <= 60; dx += 10)
+            QTest::mouseMove(window, edge + QPoint(dx, 0));
+        QTest::mouseRelease(window, Qt::LeftButton, {}, edge + QPoint(60, 0));
+        QTRY_VERIFY(columnWidth(0) > number + 40);
+        QCOMPARE(library.tracks()->sortColumn(), int(TrackListModel::Title)); // the drag didn't sort
+
+        // Escape in the search clears it; Tab goes back to the deck.
+        QTest::keyClick(window, Qt::Key_Slash);
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_COMPARE(library.tracks()->filter(), QString());
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_VERIFY(!window->property("advanced").toBool());
+
+        // The mode and the window size are remembered.
+        window->close();
+        // Settings writes after a short delay.
+        auto saved = [&](const QString &key) { return QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value(key); };
+        QTRY_COMPARE(saved("window/advanced").toBool(), false);
+        QVERIFY(saved("window/advancedWidth").toInt() > 0);
+        QVERIFY(saved("window/columns").toString().contains("\"0\":"));
+    }
+};
+
 int runLibraryWindowTests(int argc, char **argv) {
     LibraryWindowTests tests;
-    return QTest::qExec(&tests, argc, argv);
+    AdvancedWindowTests window;
+    return QTest::qExec(&tests, argc, argv) + QTest::qExec(&window, argc, argv);
 }
 
 #include "librarywindow_tests.moc"

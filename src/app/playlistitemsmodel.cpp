@@ -62,7 +62,7 @@ void PlaylistItemsModel::setLocked(bool locked) {
 void PlaylistItemsModel::reload() {
     const int current = m_current;
     load();
-    m_current = m_items.isEmpty() ? -1 : qBound(0, current, int(m_items.size()) - 1);
+    m_current = m_items.isEmpty() || current < 0 ? -1 : qMin(current, int(m_items.size()) - 1);
     QSet<int> kept;
     for (int row : std::as_const(m_selected))
         if (row < m_items.size())
@@ -145,7 +145,7 @@ void PlaylistItemsModel::select(int row, int modifiers) {
 void PlaylistItemsModel::moveCurrent(int delta, int modifiers) {
     if (m_items.isEmpty())
         return;
-    const int row = qBound(0, (m_current < 0 ? 0 : m_current) + delta, int(m_items.size()) - 1);
+    const int row = qBound(0, (m_current < 0 ? -1 : m_current) + delta, int(m_items.size()) - 1);
     if (modifiers & (Qt::ShiftModifier | Qt::ControlModifier))
         select(row, modifiers & Qt::ShiftModifier ? Qt::ShiftModifier : 0);
     else

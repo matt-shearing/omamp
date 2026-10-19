@@ -36,6 +36,7 @@
 #include "pcmsink.h"
 #include "player.h"
 #include "playlists.h"
+#include "query.h"
 #include "playrecorder.h"
 #include "rulebuilder.h"
 #include "scanner.h"
@@ -491,9 +492,276 @@ private slots:
     }
 };
 
+// The same from the keyboard and the palette, in the real window.
+class P3WindowKeysTests : public QObject {
+    Q_OBJECT
+
+    // Main.qml over the made-up library, with a player that never reaches a device.
+    struct Window {
+        QTemporaryDir dir;
+        Translator translator;
+        Theme theme;
+        std::unique_ptr<Player> player;
+        std::unique_ptr<LibraryController> library;
+        QQmlApplicationEngine engine;
+        QQuickWindow *window = nullptr;
+
+        Window()
+            : translator(dir.filePath("language")), theme(dir.filePath("theme"), nullptr, dir.filePath("no-hyprctl")) {}
+        bool load() {
+            {
+                Library lib(dir.filePath("library.db"));
+                if (!lib.open() || !Fixture::fill(lib))
+                    return false;
+                QSqlQuery q(lib.db());
+                q.exec("UPDATE tracks SET availability = 'online'");
+            }
+            {
+                QSettings conf(dir.filePath("window.conf"), QSettings::IniFormat);
+                conf.setValue("window/advanced", true);
+            }
+            player.reset(silentPlayer());
+            library = std::make_unique<LibraryController>(dir.filePath("library.db"));
+            library->setPlayer(player.get());
+            library->setWatching(false);
+            library->setArtCacheDir(dir.filePath("art"));
+            library->setWriteSandbox(dir.path());
+            library->recorder()->setFlushing(false);
+            engine.rootContext()->setContextProperty("translator", &translator);
+            engine.rootContext()->setContextProperty("theme", &theme);
+            engine.rootContext()->setContextProperty("backend", player.get());
+            engine.rootContext()->setContextProperty("library", library.get());
+            engine.rootContext()->setContextProperty("commandPalette", library->palette());
+            engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(dir.filePath("window.conf")));
+            engine.addImageProvider(ArtImageProvider::name,
+                                    new ArtImageProvider(dir.filePath("library.db"), dir.filePath("art")));
+            engine.load(QUrl("qrc:/Main.qml"));
+            if (engine.rootObjects().size() != 1)
+                return false;
+            window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+            return window && QTest::qWaitForWindowExposed(window);
+        }
+        static QObject *findItem(QQuickItem *item, const QString &name) {
+            if (item->objectName() == name)
+                return item;
+            for (QQuickItem *child : item->childItems())
+                if (QObject *o = findItem(child, name))
+                    return o;
+            return nullptr;
+        }
+        QObject *find(const char *name) const {
+            QObject *o = window->findChild<QObject *>(name);
+            if (!o)
+                o = findItem(window->contentItem(), QString::fromLatin1(name));
+            if (!o && window->contentItem()->parentItem())
+                o = findItem(window->contentItem()->parentItem(), QString::fromLatin1(name));
+            return o;
+        }
+        void type(const QString &text) {
+            for (const QChar c : text)
+                QTest::keyClick(window, c.toLatin1());
+        }
+        // Runs a palette action by typing its title.
+        bool palette(const QString &text, const QString &id) {
+            QTest::keyClick(window, Qt::Key_K, Qt::ControlModifier);
+            type(">" + text);
+            if (!QTest::qWaitFor([&] { return library->palette()->get(0).value("itemId").toString() == id; }, 3000))
+                return false;
+            QTest::keyClick(window, Qt::Key_Return);
+            return true;
+        }
+    };
+
+private slots:
+    void playlistFromThePaletteReorderAndRemove() {
+        Window w;
+        QVERIFY(w.load());
+        LibraryController &c = *w.library;
+        QTRY_VERIFY(c.ready());
+        QTRY_VERIFY(w.find("advancedView"));
+
+        // New playlist from the palette: the name sheet, a name, Enter.
+        QVERIFY(w.palette("new playlist", "new-playlist"));
+        QObject *sheet = w.find("nameSheet");
+        QVERIFY(sheet);
+        QTRY_VERIFY(sheet->property("opened").toBool());
+        QTest::keyClick(w.window, Qt::Key_A, Qt::ControlModifier);
+        w.type("Mix");
+        QTest::keyClick(w.window, Qt::Key_Return);
+        QTRY_VERIFY(!sheet->property("opened").toBool());
+        QCOMPARE(c.currentKind(), QString("playlist"));
+        QCOMPARE(c.currentLabel(), QString("Mix"));
+        const qint64 id = c.playlists()->items()->playlistId();
+        QVERIFY(id > 0);
+        QObject *view = w.find("playlistView");
+        QTRY_VERIFY(view && view->property("visible").toBool());
+        QVERIFY(!w.find("trackTable")->property("visible").toBool());
+
+        // Three tracks in, as a drop would add them.
+        const qint64 a = sql(*c.library(), "SELECT id FROM tracks WHERE title = 'Coastline'").toLongLong();
+        const qint64 b = sql(*c.library(), "SELECT id FROM tracks WHERE title = 'Go West'").toLongLong();
+        const qint64 d = sql(*c.library(), "SELECT id FROM tracks WHERE title = 'Heatwave'").toLongLong();
+        QCOMPARE(c.playlists()->addTracks(id, {a, b, d}), 3);
+        PlaylistItemsModel *items = c.playlists()->items();
+        QCOMPARE(items->count(), 3);
+        // The tree's count follows.
+        const int row = c.tree()->rowOfKey(QString("playlist:%1").arg(id));
+        QCOMPARE(c.tree()->data(c.tree()->index(row), LibraryTree::TrackCountRole).toLongLong(), 3);
+
+        // From the keyboard: Down to the second entry, Alt+Up moves it first,
+        // Delete takes out the cursor's entry.
+        QMetaObject::invokeMethod(w.find("advancedView"), "focusList");
+        QTRY_VERIFY(w.find("playlistList")->property("activeFocus").toBool());
+        QTest::keyClick(w.window, Qt::Key_Down);
+        QTest::keyClick(w.window, Qt::Key_Down);
+        QCOMPARE(items->currentRow(), 1);
+        QTest::keyClick(w.window, Qt::Key_Up, Qt::AltModifier);
+        QCOMPARE(Playlists::trackIds(*c.library(), id), (QList<qint64>{b, a, d}));
+        QTest::keyClick(w.window, Qt::Key_End);
+        QTest::keyClick(w.window, Qt::Key_Delete);
+        QCOMPARE(Playlists::trackIds(*c.library(), id), (QList<qint64>{b, a}));
+        QCOMPARE(w.player->state(), QString("stopped"));
+
+        // Export to the temporary folder writes an M3U8 of both.
+        const QVariantMap r = c.playlists()->exportTo(id, w.dir.filePath("Mix.m3u8"));
+        QVERIFY(r.value("ok").toBool());
+        QFile m3u(w.dir.filePath("Mix.m3u8"));
+        QVERIFY(m3u.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(m3u.readAll()).count("#EXTINF"), 2);
+
+        // Delete from the palette asks first.
+        QVERIFY(w.palette("delete the chosen playlist", "delete-playlist"));
+        QObject *confirm = w.find("confirmSheet");
+        QTRY_VERIFY(confirm->property("opened").toBool());
+        QTest::keyClick(w.window, Qt::Key_Return, Qt::ControlModifier);
+        QTRY_VERIFY(!confirm->property("opened").toBool());
+        QVERIFY(c.playlists()->get(id).isEmpty());
+        w.window->close();
+    }
+
+    void autoPlaylistEditorCountsAsYouType() {
+        Window w;
+        QVERIFY(w.load());
+        LibraryController &c = *w.library;
+        QTRY_VERIFY(c.ready());
+        QVERIFY(w.palette("new auto-playlist", "new-autoplaylist"));
+        QObject *sheet = w.find("autoPlaylistSheet");
+        QTRY_VERIFY(sheet && sheet->property("opened").toBool());
+        QObject *query = w.find("autoQuery");
+        QObject *check = w.find("autoCheck");
+        QVERIFY(query && check);
+        const qint64 pop = Query::run(*c.library(), "genre:pop").total;
+        QVERIFY(pop > 0);
+        query->setProperty("text", "genre:pop");
+        QTRY_COMPARE(check->property("text").toString(), QString("%1 tracks match").arg(pop));
+        QCOMPARE(sheet->property("check").toMap().value("count").toLongLong(), pop);
+        // The rules show it: one row, genre contains pop.
+        QVariantMap rules = sheet->property("rules").toMap();
+        QVERIFY(rules.value("representable").toBool());
+        QCOMPARE(rules.value("rules").toList().size(), 1);
+        // A query the rules can't hold.
+        query->setProperty("text", "(genre:pop year:2004) OR rating:5");
+        QTRY_VERIFY(!sheet->property("rules").toMap().value("representable").toBool());
+        QTRY_VERIFY(w.find("advancedNote")->property("visible").toBool());
+        // A broken one says where.
+        query->setProperty("text", "year:abc");
+        QTRY_VERIFY(!sheet->property("check").toMap().value("ok").toBool());
+        QVERIFY(check->property("text").toString().contains("character"));
+        query->setProperty("text", "genre:pop limit:1");
+        QTRY_COMPARE(check->property("text").toString(), QString("1 tracks match"));
+        // Ctrl+Enter creates it and shows it.
+        QTest::keyClick(w.window, Qt::Key_Return, Qt::ControlModifier);
+        QTRY_VERIFY(!sheet->property("opened").toBool());
+        QCOMPARE(c.currentKind(), QString("autoplaylist"));
+        QCOMPARE(c.playlists()->items()->count(), 1);
+        w.window->close();
+    }
+
+    void autoDjAndSettingsFromTheKeys() {
+        Window w;
+        QVERIFY(w.load());
+        LibraryController &c = *w.library;
+        QTRY_VERIFY(c.ready());
+        // The made-up volume isn't mounted here; call it online.
+        QSqlQuery(c.library()->db()).exec("UPDATE volumes SET online = 1");
+        QSqlQuery(c.library()->db()).exec("UPDATE tracks SET availability = 'online'");
+        c.refreshAll();
+        c.dj()->saveSettings({{"upcoming", 2}, {"artistSeparation", 0}, {"skipPlayedWithinDays", 0}});
+        QTest::keyClick(w.window, Qt::Key_J, Qt::ControlModifier);
+        QTRY_VERIFY(c.dj()->enabled());
+        QTRY_COMPARE(w.player->playlist()->count(), 3);
+        QVERIFY(w.find("autoDjLamp")->property("on").toBool());
+        QTest::keyClick(w.window, Qt::Key_J, Qt::ControlModifier);
+        QTRY_VERIFY(!c.dj()->enabled());
+
+        // Ctrl+, opens Settings; a playback change goes to the player.
+        QTest::keyClick(w.window, Qt::Key_Comma, Qt::ControlModifier);
+        QObject *settings = w.find("settingsSheet");
+        QTRY_VERIFY(settings && settings->property("opened").toBool());
+        QVERIFY(w.window->property("sheetOpen").toBool());
+        QTest::keyClick(w.window, Qt::Key_Escape);
+        QTRY_VERIFY(!settings->property("opened").toBool());
+        w.window->close();
+    }
+
+    void partyModeLocksTheWindow() {
+        Window w;
+        QVERIFY(w.load());
+        LibraryController &c = *w.library;
+        QTRY_VERIFY(c.ready());
+        QTRY_COMPARE(c.tracks()->count(), int(Fixture::rows().size()));
+        QVERIFY(c.dj()->enableParty("jukebox", "1234", false));
+        QTRY_VERIFY(w.find("partyLamp")->property("on").toBool());
+
+        // Ctrl+E does nothing but say so.
+        c.tracks()->select(0);
+        QTRY_VERIFY(w.find("trackTable")->property("activeFocus").toBool());
+        QTest::keyClick(w.window, Qt::Key_E, Qt::ControlModifier);
+        QVERIFY(!w.find("tagEditor")->property("opened").toBool());
+        QObject *toast = w.find("toast");
+        QTRY_VERIFY(toast->property("visible").toBool());
+        QCOMPARE(toast->property("text").toString(), QString("Locked in party mode"));
+        // Settings and new playlists are locked too.
+        QTest::keyClick(w.window, Qt::Key_Comma, Qt::ControlModifier);
+        QVERIFY(!w.find("settingsSheet")->property("opened").toBool());
+        // Q asks for the PIN instead of quitting.
+        QTest::keyClick(w.window, Qt::Key_Q);
+        QObject *party = w.find("partySheet");
+        QTRY_VERIFY(party->property("opened").toBool());
+        QVERIFY(w.window->isVisible());
+        // A wrong PIN keeps it locked; Esc, then leave from the palette with the right one.
+        QObject *pin = w.find("partyPin");
+        QMetaObject::invokeMethod(pin, "forceActiveFocus");
+        QTRY_VERIFY(pin->property("activeFocus").toBool());
+        w.type("0000");
+        QTest::keyClick(w.window, Qt::Key_Return);
+        QVERIFY(c.dj()->partyOn());
+        QVERIFY(party->property("wrongPin").toBool());
+        QTest::keyClick(w.window, Qt::Key_Escape);
+        QTRY_VERIFY(!party->property("opened").toBool());
+        QVERIFY(w.window->isVisible());
+        party->setProperty("then", "leave");
+        QMetaObject::invokeMethod(party, "openSheet", Q_ARG(QVariant, QString("leave")));
+        QTRY_VERIFY(party->property("opened").toBool());
+        QMetaObject::invokeMethod(pin, "forceActiveFocus");
+        w.type("1234");
+        QTest::keyClick(w.window, Qt::Key_Return);
+        QTRY_VERIFY(!c.dj()->partyOn());
+        QTRY_VERIFY(!party->property("opened").toBool());
+        QVERIFY(w.window->isVisible());
+        // Unlocked: Ctrl+E opens the editor again.
+        QMetaObject::invokeMethod(w.find("advancedView"), "focusList");
+        QTest::keyClick(w.window, Qt::Key_E, Qt::ControlModifier);
+        QTRY_VERIFY(w.find("tagEditor")->property("opened").toBool());
+        QTest::keyClick(w.window, Qt::Key_Escape);
+        w.window->close();
+    }
+};
+
 int runP3WindowTests(int argc, char **argv) {
     P3WindowTests tests;
-    return QTest::qExec(&tests, argc, argv);
+    P3WindowKeysTests keys;
+    return QTest::qExec(&tests, argc, argv) + QTest::qExec(&keys, argc, argv);
 }
 
 #include "p3window_tests.moc"

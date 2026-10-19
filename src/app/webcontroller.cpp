@@ -874,6 +874,7 @@ void WebController::loadLyrics(qint64 trackId, bool fetch) {
             entry["error"] = e.error;
             entry["found"] = e.found();
         }
+        entry["asked"] = fetch;
         QMetaObject::invokeMethod(this, [this, trackId, entry] { finishLyrics(trackId, entry); }, Qt::QueuedConnection);
     });
     m_lyricsThread->setObjectName("omamp-lyrics");
@@ -898,12 +899,14 @@ void WebController::finishLyrics(qint64 trackId, const QVariantMap &entry) {
         m_lyricsLines.clear();
         for (const Lyrics::Line &l : std::as_const(m_parsed->lines))
             m_lyricsLines << QVariantMap{{"time", l.timeMs}, {"text", l.text}};
+        // Only a look-up that was asked for and failed (offline, a server
+        // error) is an error; finding nothing is just "none".
         if (entry.value("found").toBool())
             m_lyricsState = "found";
-        else if (m_lyricsSource == QLatin1String("none") || error.isEmpty())
-            m_lyricsState = "none";
-        else
+        else if (entry.value("asked").toBool() && m_lyricsSource != QLatin1String("none") && !error.isEmpty())
             m_lyricsState = "error";
+        else
+            m_lyricsState = "none";
         m_lyricsError = m_lyricsState == QLatin1String("error") ? error : QString();
         emit lyricsChanged();
     }

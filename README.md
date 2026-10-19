@@ -66,7 +66,8 @@ Double-click a track to play it.
 
 ```sh
 bin/build          # build/omamp
-bin/test           # tests, offscreen
+bin/test           # tests, offscreen (needs ffmpeg for the library tests)
+bin/bench          # times the library on 200,000 synthetic tracks
 bin/install        # makepkg -fsi: the package, system-wide (needs sudo)
 bin/install-user   # ~/.local only, no sudo
 ```
@@ -83,6 +84,24 @@ The full plan is in [docs/plan/](docs/plan/). In short:
 - **Organising:** rename and move files by a pattern, with a preview before anything moves.
 - **NAS libraries:** SMB, NFS or a Navidrome/Subsonic server, with offline tracks kept in the library.
 - **The 2000s comforts:** Auto-DJ, party mode, auto-playlists, ReplayGain, play counts and ratings.
+
+## The library from the command line
+
+The library manager's core works today from the command line. The window
+doesn't use it yet.
+
+```sh
+omamp scan ~/Music                       # add a folder to the library and scan it
+omamp scan                               # rescan every library folder; unchanged files are only stat'ed
+omamp query 'artist:"neon coast" year:1997..2001'
+omamp query 'rating:4.. -genre:christmas' --json
+omamp stats
+```
+
+Every command takes `--json` and `--db <path>`, and exits 0 or 1. The library
+is `~/.local/share/omamp/library.db`. Run `omamp help` for the query syntax.
+Tracks on a disk or share that isn't mounted show as offline and are never
+removed.
 
 ## Known gaps today
 

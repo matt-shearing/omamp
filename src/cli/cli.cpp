@@ -95,7 +95,9 @@ int scan(Library &library, const Options &o, const VolumeResolver &resolver, QTe
                    .arg(r.missing)
             << Qt::endl;
         if (r.failed)
-            out << QString("%1 files had tags that could not be read; they were added by file name.").arg(r.failed)
+            out << (r.failed == 1 ? QString("1 file could not be read; it was added by its file name.")
+                                  : QString("%1 files could not be read; they were added by their file names.")
+                                        .arg(r.failed))
                 << Qt::endl;
         for (const QString &dir : r.unreadable)
             err << "omamp: could not list " << dir << Qt::endl;

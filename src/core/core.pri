@@ -10,6 +10,7 @@ HEADERS += \
     $$PWD/job.h \
     $$PWD/library.h \
     $$PWD/migrations.h \
+    $$PWD/palette.h \
     $$PWD/query.h \
     $$PWD/scanner.h \
     $$PWD/tagreader.h \
@@ -19,6 +20,7 @@ SOURCES += \
     $$PWD/job.cpp \
     $$PWD/library.cpp \
     $$PWD/migrations.cpp \
+    $$PWD/palette.cpp \
     $$PWD/query.cpp \
     $$PWD/scanner.cpp \
     $$PWD/tagreader.cpp \

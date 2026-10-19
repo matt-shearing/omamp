@@ -5,6 +5,7 @@
         <file alias="DeckButton.qml">DeckButton.qml</file>
         <file alias="ToggleLamp.qml">ToggleLamp.qml</file>
         <file alias="Bar.qml">Bar.qml</file>
+        <file alias="CommandPalette.qml">CommandPalette.qml</file>
         <file alias="i18n/en.json">i18n/en.json</file>
     </qresource>
 </RCC>

@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRandomGenerator>
 #include <unistd.h>
 
 namespace Cli {
@@ -28,7 +29,11 @@ const char *usage = R"(Usage: omamp [files or folders...]      open the player
 Options:
   --json         print JSON on stdout
   --db <path>    use this library file (default ~/.local/share/omamp/library.db)
-  --limit <n>    query: print at most n tracks
+  --limit <n>    query: print at most n tracks (after the query's own limit:)
+  --offset <n>   query: skip the first n tracks
+  --count        query: print only how many tracks match
+  --seed <n>     query: the seed for sort:random (default: a new one each run)
+  --explain      query: print the parsed query and its SQL instead of running it
   --workers <n>  scan: threads reading tags (default 4 to 8)
 
 Query examples:
@@ -36,13 +41,20 @@ Query examples:
   omamp query 'artist:"neon coast" year:1997..2001'
   omamp query 'rating:4.. -genre:christmas'
   omamp query 'genre:rock OR genre:metal'
+  omamp query 'added:<30d plays:0 sort:-added'
+  omamp query 'rating:4.. played:>1y sort:random limit:2h'
+  omamp query --count 'genre:none'
 )";
 
 struct Options {
     bool json = false;
     QString db;
     int limit = 0;
+    int offset = 0;
     int workers = 0;
+    bool count = false;
+    bool explain = false;
+    qint64 seed = -1;
     QStringList rest;
 };
 
@@ -109,14 +121,62 @@ int scan(Library &library, const Options &o, const VolumeResolver &resolver, QTe
     return 0;
 }
 
+QString formatBytes(qint64 bytes) {
+    if (bytes >= 1024LL * 1024 * 1024)
+        return QString::number(bytes / (1024.0 * 1024 * 1024), 'f', 2) + " GB";
+    return QString::number(bytes / (1024.0 * 1024), 'f', 1) + " MB";
+}
+
+int explain(const Options &o, const QString &text, const Query::Context &context, QTextStream &out,
+            QTextStream &err) {
+    const Query::Compiled c = Query::compile(text, context);
+    if (!c.ok())
+        return failWith(o, out, err, c.error);
+    QJsonArray params;
+    for (const QVariant &v : c.params)
+        params << QJsonValue::fromVariant(v);
+    if (o.json) {
+        out << json({{"ok", true},
+                     {"query", text},
+                     {"parsed", Query::parse(text).toJson()},
+                     {"where", c.where},
+                     {"order_by", c.order()},
+                     {"limit", c.limit.toString()},
+                     {"params", params},
+                     {"seed", qint64(context.seed)}})
+            << Qt::flush;
+        return 0;
+    }
+    out << "WHERE    " << c.where << '\n' << "ORDER BY " << c.order() << '\n';
+    if (c.limit.kind != Query::Limit::None)
+        out << "LIMIT    " << c.limit.toString() << '\n';
+    out << "PARAMS   " << QString::fromUtf8(QJsonDocument(params).toJson(QJsonDocument::Compact)) << Qt::endl;
+    return 0;
+}
+
 int query(Library &library, const Options &o, const VolumeResolver &resolver, QTextStream &out, QTextStream &err) {
-    library.refreshVolumes(resolver);
     const QString text = o.rest.join(' ');
     Query::Options options;
     options.limit = o.limit;
+    options.offset = o.offset;
+    options.countOnly = o.count;
+    // A new shuffle each run unless --seed asks for an old one. The JSON
+    // says which seed was used, so a run can be repeated.
+    options.context.seed = o.seed >= 0 ? quint32(o.seed) : QRandomGenerator::global()->bounded(1u << 31);
+    if (o.explain)
+        return explain(o, text, options.context, out, err);
+    library.refreshVolumes(resolver);
     const Query::Result r = Query::run(library, text, options);
     if (!r.ok())
         return failWith(o, out, err, r.error);
+    if (o.count) {
+        if (o.json)
+            out << json({{"ok", true}, {"query", text}, {"total", r.total}, {"elapsed_ms", r.elapsedUs / 1000.0}})
+                << Qt::flush;
+        else
+            out << r.total << Qt::endl;
+        return 0;
+    }
     if (o.json) {
         QJsonArray tracks;
         for (const Query::Track &t : r.tracks)
@@ -125,12 +185,16 @@ int query(Library &library, const Options &o, const VolumeResolver &resolver, QT
                      {"query", text},
                      {"total", r.total},
                      {"count", r.tracks.size()},
+                     {"duration_ms", r.durationMs},
+                     {"seed", qint64(options.context.seed)},
                      {"elapsed_ms", r.elapsedUs / 1000.0},
                      {"tracks", tracks}})
             << Qt::flush;
         return 0;
     }
+    qint64 bytes = 0;
     for (const Query::Track &t : r.tracks) {
+        bytes += t.size;
         const QString title = t.title.isEmpty() ? QString("(untitled)") : t.title;
         const QString artist = t.artist.isEmpty() ? QString("(unknown artist)") : t.artist;
         out << artist << " - " << title;
@@ -142,7 +206,11 @@ int query(Library &library, const Options &o, const VolumeResolver &resolver, QT
             out << "  (missing)";
         out << '\n';
     }
-    out << QString("%1 of %2 tracks").arg(r.tracks.size()).arg(r.total) << Qt::endl;
+    out << QString("%1 of %2 tracks, %3, %4")
+               .arg(r.tracks.size())
+               .arg(r.total)
+               .arg(formatDuration(r.durationMs), formatBytes(bytes))
+        << Qt::endl;
     return 0;
 }
 
@@ -205,15 +273,26 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         QString v;
         if (a == "--json")
             o.json = true;
+        else if (a == "--count")
+            o.count = true;
+        else if (a == "--explain")
+            o.explain = true;
         else if (a == "--db") {
             if (!value(&o.db))
                 return failWith(o, out, err, "--db needs a path");
-        } else if (a == "--limit" || a == "--workers") {
+        } else if (a == "--limit" || a == "--workers" || a == "--offset" || a == "--seed") {
             bool ok = false;
-            const int n = value(&v) ? v.toInt(&ok) : 0;
-            if (!ok || n < 0)
+            const qint64 n = value(&v) ? v.toLongLong(&ok) : 0;
+            if (!ok || n < 0 || n > 2147483647LL)
                 return failWith(o, out, err, a + " needs a number");
-            (a == "--limit" ? o.limit : o.workers) = n;
+            if (a == "--limit")
+                o.limit = int(n);
+            else if (a == "--workers")
+                o.workers = int(n);
+            else if (a == "--offset")
+                o.offset = int(n);
+            else
+                o.seed = n;
         } else if (a == "--") {
             o.rest += arguments.mid(i + 1);
             break;

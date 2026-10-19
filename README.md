@@ -1,10 +1,26 @@
 # Omamp
 
-A music player for Omarchy, laid out like Winamp 2: a green clock, a
-bouncing analyser, a scrolling title, chunky transport buttons and a
-playlist underneath. It takes every colour from the current Omarchy theme
-and changes with it, so Night Ride gives it pink, cyan and mint, and the
-default theme gives it yellow and blue.
+**A music player and library manager for Arch Linux, built for Omarchy and Hyprland first.**
+
+Omamp has two sides. The player is a Winamp 2–style deck: a green clock, a
+bouncing analyser, a scrolling title and a playlist, all in your Omarchy
+theme. The library manager is coming next. It brings back the big local
+libraries of the 2000s, MediaMonkey-style, with modern tools on top: tagging
+from MusicBrainz, smart playlists, file organising with a preview, and
+libraries that live on a NAS.
+
+> **Status:** early. The player works today. The library manager (advanced
+> mode) is being planned in [docs/plan/](docs/plan/). Expect breaking changes.
+
+## Why Omarchy first
+
+Omamp follows the desktop instead of fighting it. Every colour comes from the
+current Omarchy theme and changes when the theme does. Window corners match
+Hyprland's rounding. Media keys, `playerctl` and the Omarchy bar control it
+over MPRIS. Everything works from the keyboard. It builds and installs as an
+Arch package. It runs on any Linux desktop, but Omarchy is where it looks right.
+
+## The player
 
 ![Omamp in the Night Ride theme](docs/omamp-night-ride.png)
 
@@ -52,7 +68,17 @@ bin/install-user   # ~/.local only, no sudo
 Built with C++ and Qt Quick (Qt Multimedia for playback), the same way
 Omarchy's own apps are built.
 
-## Not done yet
+## Coming next
+
+The full plan is in [docs/plan/](docs/plan/). In short:
+
+- **Advanced mode:** a library with a tree, column browser and fast search over 100,000+ tracks.
+- **Tagging:** batch editing, MusicBrainz and AcoustID lookups, artwork and lyrics.
+- **Organising:** rename and move files by a pattern, with a preview before anything moves.
+- **NAS libraries:** SMB, NFS or a Navidrome/Subsonic server, with offline tracks kept in the library.
+- **The 2000s comforts:** Auto-DJ, party mode, auto-playlists, ReplayGain, play counts and ratings.
+
+## Known gaps today
 
 - Translations. Every string goes through `qsTr()`, but only English ships.
 - Tags for tracks that haven't played yet. Until a track plays, the
@@ -63,3 +89,5 @@ Omarchy's own apps are built.
 
 MIT. Theme following and the project layout come from Omacut and Monologue
 by David Heinemeier Hansson, also MIT.
+
+Omamp is inspired by Winamp and MediaMonkey. It is not affiliated with either.

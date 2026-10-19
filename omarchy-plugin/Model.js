@@ -118,3 +118,10 @@ function clamp01(v) {
   if (!isFinite(n)) return 0
   return Math.max(0, Math.min(1, n))
 }
+
+// The cover to show: Omamp sends a file:// URL; other players may send
+// http(s) or an inline picture. Anything else shows the placeholder.
+function coverSource(url) {
+  var s = String(url || "")
+  return /^(file|https?):\/\//.test(s) || s.indexOf("data:image/") === 0 ? s : ""
+}

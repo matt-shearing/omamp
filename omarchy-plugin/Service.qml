@@ -30,6 +30,8 @@ Item {
   readonly property string title: running ? String(player.trackTitle || "") : ""
   readonly property string artist: running ? String(player.trackArtist || "") : ""
   readonly property string album: running ? String(player.trackAlbum || "") : ""
+  // The cover, as Omamp sends it over MPRIS (mpris:artUrl, a file:// URL).
+  readonly property string artUrl: running ? String(player.trackArtUrl || "") : ""
   readonly property string line: Model.trackLine(artist, title)
   readonly property bool hasTrack: title !== "" || artist !== ""
 
@@ -188,6 +190,7 @@ Item {
       title: root.title,
       artist: root.artist,
       album: root.album,
+      artUrl: root.artUrl,
       position: Math.round(root.position),
       length: Math.round(root.length),
       volume: Math.round(root.volume * 100),

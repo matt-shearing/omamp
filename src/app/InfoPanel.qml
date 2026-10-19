@@ -21,6 +21,9 @@ Rectangle {
     // Reads again whenever the library changes (library.revision).
     readonly property var info: trackId > 0 && library.revision >= 0 ? library.trackInfo(trackId) : ({})
     readonly property bool hasTrack: info.id !== undefined
+    // 0: the details, 1: the lyrics.
+    property alias page: tabs.currentIndex
+    signal editLyrics(var trackId)
 
     function clock(ms) {
         if (!(ms > 0)) return ""
@@ -57,10 +60,25 @@ Rectangle {
                                 : Math.round(bytes / 1024) + " KB"
     }
 
+    TabBar {
+        id: tabs
+        objectName: "infoTabs"
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        TabButton { text: qsTr("Details"); font.pixelSize: 12 }
+        TabButton { objectName: "lyricsTab"; text: qsTr("Lyrics"); font.pixelSize: 12 }
+    }
+
+    LyricsView {
+        anchors { left: parent.left; right: parent.right; top: tabs.bottom; bottom: parent.bottom; margins: 12 }
+        visible: tabs.currentIndex === 1
+        trackId: panel.hasTrack ? panel.trackId : 0
+        onEditLyrics: (id) => panel.editLyrics(id)
+    }
+
     Flickable {
         id: flick
-        anchors.fill: parent
-        anchors.margins: 12
+        anchors { left: parent.left; right: parent.right; top: tabs.bottom; bottom: parent.bottom; margins: 12 }
+        visible: tabs.currentIndex === 0
         contentHeight: column.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds

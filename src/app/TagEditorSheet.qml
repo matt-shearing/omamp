@@ -19,9 +19,10 @@ ToolSheet {
     onAccepted: save()
     onClosed: ed.close()
 
-    function openFor(ids) {
+    // tab: 0 details, 1 artwork, 2 lyrics.
+    function openFor(ids, tab) {
         if (!ed.load(ids)) return false
-        tabs.currentIndex = 0
+        tabs.currentIndex = tab || 0
         open()
         return true
     }

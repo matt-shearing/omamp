@@ -18,12 +18,18 @@ ToolSheet {
     readonly property int rev: s.revision
     property string validateText: ""
     property bool validateOk: false
+    property string flushText: ""
+    property string lastFmText: ""
+    property bool lastFmOk: false
     signal confirm(string title, string text, string confirmText, var action)
+    signal openVolumes()
 
     function openPage(page) {
         library.activate()
         tabs.currentIndex = page || 0
         validateText = ""
+        flushText = ""
+        lastFmText = ""
         open()
         tabs.forceActiveFocus()
     }
@@ -36,6 +42,15 @@ ToolSheet {
             sheet.validateOk = ok
             sheet.validateText = ok ? qsTr("Logged in as %1").arg(user) : error
             if (ok) tokenField.text = ""
+        }
+        function onFlushed(result) {
+            if (result.error) sheet.flushText = result.error
+            else if (result.offline) sheet.flushText = qsTr("Offline: nothing could be sent. The listens wait in the queue.")
+            else sheet.flushText = qsTr("Sent %1; %2 refused; %3 still waiting.").arg(result.sent || 0).arg(result.failed || 0).arg(result.remaining || 0)
+        }
+        function onLastFmResult(step, ok, text) {
+            sheet.lastFmOk = ok
+            sheet.lastFmText = text
         }
     }
 
@@ -273,6 +288,13 @@ ToolSheet {
                     RowLayout {
                         Button { text: qsTr("Add a folder…"); font.pixelSize: 13; onClicked: library.addFolder() }
                         Button { text: qsTr("Rescan now"); flat: true; font.pixelSize: 13; enabled: !library.busy; onClicked: library.rescan() }
+                        Button {
+                            objectName: "openVolumes"
+                            text: qsTr("Volumes, NAS shares and servers…")
+                            flat: true
+                            font.pixelSize: 13
+                            onClicked: { sheet.close(); sheet.openVolumes() }
+                        }
                     }
 
                     Heading { text: qsTr("Watching for changes") }
@@ -318,6 +340,7 @@ ToolSheet {
                     spacing: 4
                     readonly property var status: { void sheet.rev; return sheet.s.scrobbleStatus() }
                     readonly property var lb: status.find((x) => x.service === "listenbrainz") || ({})
+                    readonly property var fm: status.find((x) => x.service === "lastfm") || ({})
 
                     CheckBox {
                         text: qsTr("Send what I listen to")
@@ -374,7 +397,80 @@ ToolSheet {
 
                     Heading { text: qsTr("Last.fm") }
                     Note {
-                        text: qsTr("Logging in from here comes later. For now, run omamp scrobble login lastfm in a terminal; Omamp then sends to Last.fm too.")
+                        objectName: "lastFmStatus"
+                        text: parent.fm.configured
+                              ? qsTr("Logged in as %1. %2 waiting, %3 sent, %4 refused.").arg(parent.fm.user || qsTr("(unknown)"))
+                                    .arg(parent.fm.pending || 0).arg(parent.fm.sent || 0).arg(parent.fm.failed || 0)
+                              : qsTr("Last.fm asks each app for its own API account. Make one at last.fm/api/account/create (it's free), paste its key and shared secret here, then log in.")
+                        color: theme.c.foreground
+                    }
+                    GridLayout {
+                        visible: !parent.fm.configured
+                        columns: 2
+                        columnSpacing: 12
+                        rowSpacing: 4
+                        FieldLabel { text: qsTr("API key") }
+                        TextField {
+                            objectName: "lastFmKey"
+                            Layout.preferredWidth: 420
+                            placeholderText: qsTr("API key")
+                            font.pixelSize: 13
+                            text: sheet.text("lastfm.api_key")
+                            onEditingFinished: sheet.s.setValue("lastfm.api_key", text.trim())
+                        }
+                        FieldLabel { text: qsTr("Shared secret") }
+                        TextField {
+                            objectName: "lastFmSecret"
+                            Layout.preferredWidth: 420
+                            placeholderText: qsTr("Shared secret")
+                            echoMode: TextInput.Password
+                            font.pixelSize: 13
+                            text: sheet.text("lastfm.api_secret")
+                            onEditingFinished: sheet.s.setValue("lastfm.api_secret", text.trim())
+                        }
+                    }
+                    RowLayout {
+                        spacing: 8
+                        Button {
+                            objectName: "lastFmLogin"
+                            visible: !parent.parent.fm.configured
+                            text: sheet.s.lastFmBusy ? qsTr("Asking Last.fm…") : sheet.s.lastFmWaiting ? qsTr("Start again") : qsTr("Log in to Last.fm")
+                            font.pixelSize: 13
+                            enabled: !sheet.s.lastFmBusy
+                            onClicked: sheet.s.beginLastFm()
+                        }
+                        Button {
+                            objectName: "lastFmFinish"
+                            visible: !parent.parent.fm.configured && sheet.s.lastFmWaiting
+                            text: qsTr("Finish logging in")
+                            font.pixelSize: 13
+                            highlighted: true
+                            enabled: !sheet.s.lastFmBusy
+                            onClicked: sheet.s.finishLastFm()
+                        }
+                        Button {
+                            visible: !parent.parent.fm.configured && sheet.s.lastFmWaiting && sheet.s.lastFmAuthUrl() !== ""
+                            text: qsTr("Open the page again")
+                            flat: true
+                            font.pixelSize: 13
+                            onClicked: Qt.openUrlExternally(sheet.s.lastFmAuthUrl())
+                        }
+                        Button {
+                            text: qsTr("Log out")
+                            flat: true
+                            font.pixelSize: 13
+                            visible: parent.parent.fm.configured === true
+                            onClicked: sheet.s.forgetLastFm()
+                        }
+                    }
+                    Text {
+                        objectName: "lastFmMessage"
+                        Layout.fillWidth: true
+                        visible: sheet.lastFmText !== ""
+                        wrapMode: Text.Wrap
+                        text: sheet.lastFmText
+                        font.pixelSize: 13
+                        color: sheet.lastFmOk ? theme.c.green : theme.c.red
                     }
                     CheckBox {
                         text: qsTr("Send to Last.fm")
@@ -382,6 +478,41 @@ ToolSheet {
                         checked: sheet.on("scrobble.lastfm", true)
                         onClicked: sheet.s.setFlag("scrobble.lastfm", checked)
                     }
+
+                    Heading { text: qsTr("The queue") }
+                    Note {
+                        objectName: "queueStatus"
+                        text: {
+                            const lines = []
+                            for (const x of parent.status) {
+                                const name = x.service === "lastfm" ? "Last.fm" : "ListenBrainz"
+                                let line = qsTr("%1: %2 waiting, %3 sent, %4 refused").arg(name).arg(x.pending || 0).arg(x.sent || 0).arg(x.failed || 0)
+                                if (x.lastError) line += "  ·  " + qsTr("last error: %1").arg(x.lastError)
+                                lines.push(line)
+                            }
+                            return lines.join("\n")
+                        }
+                        color: theme.c.foreground
+                    }
+                    RowLayout {
+                        spacing: 10
+                        Button {
+                            objectName: "flushNow"
+                            text: sheet.s.flushing ? qsTr("Sending…") : qsTr("Send now")
+                            font.pixelSize: 13
+                            enabled: !sheet.s.flushing
+                            onClicked: { sheet.flushText = ""; sheet.s.flushScrobbles() }
+                        }
+                        Text {
+                            objectName: "flushResult"
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            text: sheet.flushText
+                            font.pixelSize: 13
+                            color: theme.c.foreground
+                        }
+                    }
+                    Note { text: qsTr("Omamp sends the queue after each counted play and when it starts; this sends it now.") }
                     Item { height: 12; width: 1 }
                 }
             }
@@ -396,7 +527,7 @@ ToolSheet {
                     spacing: 4
 
                     Heading { text: qsTr("AcoustID") }
-                    Note { text: qsTr("Identifying tracks by their sound needs an application key from acoustid.org (free for non-commercial use).") }
+                    Note { text: qsTr("Identifying tracks by their sound needs an application key from acoustid.org/new-application (free for non-commercial use). Without one, Identify matches by tags and MusicBrainz IDs only.") }
                     TextField {
                         objectName: "acoustidKey"
                         Layout.preferredWidth: 420

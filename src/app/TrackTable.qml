@@ -241,6 +241,8 @@ FocusScope {
             required property var rating
             required property var available
             required property var playing
+            required property var remote
+            required property var offlineNote
             readonly property bool isRating: column === 7
             readonly property int ratingValue: rating !== undefined ? rating : -1
 
@@ -254,9 +256,19 @@ FocusScope {
             Rectangle { visible: cell.rowCurrent && table.activeFocus; color: theme.accent; height: 1
                         anchors { left: parent.left; right: parent.right; bottom: parent.bottom } }
 
+            // A track from a Navidrome / Subsonic server: a small cloud before its title.
+            Text {
+                id: cloud
+                visible: cell.column === 1 && cell.remote === true
+                anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
+                text: String.fromCodePoint(0xF015F)
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 12
+                color: cell.available !== false ? theme.c.cyan : theme.c.muted
+            }
             Text {
                 visible: !cell.isRating
-                anchors { fill: parent; leftMargin: 8; rightMargin: 8 }
+                anchors { fill: parent; leftMargin: cloud.visible ? 26 : 8; rightMargin: 8 }
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: cell.numeric ? Text.AlignRight : Text.AlignLeft
                 elide: Text.ElideRight
@@ -283,6 +295,11 @@ FocusScope {
                 }
             }
 
+            // Why a greyed track can't play, on hover.
+            HoverHandler { id: cellHover; enabled: cell.available === false }
+            ToolTip.visible: cellHover.hovered && cell.offlineNote !== undefined && cell.offlineNote !== ""
+            ToolTip.delay: 500
+            ToolTip.text: cell.offlineNote !== undefined ? cell.offlineNote : ""
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -399,6 +416,8 @@ FocusScope {
         MenuItem { objectName: "menuEditTags"; text: qsTr("Edit tags…"); onTriggered: pane.action("edit-tags") }
         MenuItem { text: qsTr("Tag from file names…"); onTriggered: pane.action("tag-from-filename") }
         MenuItem { text: qsTr("Organise files…"); onTriggered: pane.action("organise") }
+        MenuItem { objectName: "menuIdentify"; text: qsTr("Identify with MusicBrainz…"); onTriggered: pane.action("identify") }
+        MenuItem { text: qsTr("Find a cover for the album…"); onTriggered: pane.action("find-cover") }
         MenuSeparator { }
         MenuItem { text: qsTr("Show in folder"); onTriggered: library.showInFolder(pane.tracks.currentRow) }
     }

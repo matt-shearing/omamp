@@ -103,6 +103,21 @@ Rectangle {
             }
         }
 
+        // A share that came back, and its rescan.
+        RowLayout {
+            objectName: "shareNote"
+            visible: library.nas.shareNote !== ""
+            spacing: 8
+            Rectangle { width: 1; height: 16; color: theme.c.lighter_background }
+            Text {
+                Layout.maximumWidth: 420
+                elide: Text.ElideMiddle
+                text: library.nas.shareNote
+                font.pixelSize: 12
+                color: theme.c.green
+            }
+        }
+
         Item { Layout.fillWidth: true }
 
         Text {

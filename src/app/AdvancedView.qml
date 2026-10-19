@@ -77,6 +77,8 @@ FocusScope {
     function currentBrowserHeight() { return Math.round(browserPanes.height) }
     function currentInfoWidth() { return Math.round(info.width) }
     function jumpToEnd() { table.jumpToEnd() }
+    // The info panel's Lyrics tab, or its details.
+    function showInfoPage(page) { info.page = page }
     // F2: the title of the track under the cursor, edited in place.
     function editTitle() { if (!special && !showingGrid) table.editTitle() }
     readonly property bool listShowing: !special && !showingGrid
@@ -336,6 +338,7 @@ FocusScope {
                         anchors.fill: parent
                         visible: view.showingGrid
                         onLeave: view.showingBrowser ? view.focusBrowser() : view.focusTree()
+                        onAction: (id) => view.action(id)
                         onOpenAlbum: (albumId) => {
                             if (library.showAlbum(albumId) >= 0) {
                                 view.toggleGrid()
@@ -373,6 +376,7 @@ FocusScope {
                 SplitView.preferredWidth: view.infoWidth
                 SplitView.minimumWidth: 220
                 onWidthChanged: view.layoutEdited()
+                onEditLyrics: (id) => view.action("edit-lyrics:" + id)
                 chosenHeading: view.showingGrid ? qsTr("Chosen album, first track") : ""
                 // The track under the cursor, or the album chosen in the grid;
                 // 0 shows the track that is playing.

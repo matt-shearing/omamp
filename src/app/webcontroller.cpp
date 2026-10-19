@@ -846,9 +846,11 @@ void WebController::loadLyrics(qint64 trackId, bool fetch) {
         m_lyricsSynced = false;
         m_lyricsInstrumental = false;
     }
+    // Reading the same track again keeps its lines on screen meanwhile.
+    if (trackId != m_lyricsTrack || m_lyricsState != QLatin1String("found") || fetch)
+        m_lyricsState = "loading";
     m_lyricsTrack = trackId;
     m_lyricsWanted = 0;
-    m_lyricsState = "loading";
     m_lyricsError.clear();
     emit lyricsChanged();
     const QString path = m_controller->databasePath();

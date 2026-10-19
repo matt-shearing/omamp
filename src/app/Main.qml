@@ -31,6 +31,8 @@ ApplicationWindow {
                                       || historySheet.opened || confirmSheet.opened || nameSheet.opened
                                       || autoSheet.opened || collectionSheet.opened || djSheet.opened
                                       || partySheet.opened || settingsSheet.opened
+                                      || identifySheet.opened || coverChooser.opened || volumesSheet.opened
+                                      || nasGuideSheet.opened || remoteSheet.opened
     // Party mode: what guests may do (PartyMode's action names).
     function may(action) { void library.dj.partyOn; return library.dj.allowed(action) }
     // Asks first; says so when party mode locks it.
@@ -193,6 +195,16 @@ ApplicationWindow {
         p.addAction("settings", qsTr("Settings…"), ["preferences", "options", "config"], "Ctrl+,")
         p.addAction("settings-playback", qsTr("Equaliser, crossfade and ReplayGain…"), ["eq", "equalizer", "crossfade", "replaygain", "gapless", "engine"], "")
         p.addAction("settings-scrobbling", qsTr("Scrobbling: ListenBrainz and Last.fm…"), ["scrobble", "listenbrainz", "lastfm"], "")
+        // Phases 4 and 5: the web, and the NAS.
+        p.addAction("identify", qsTr("Identify with MusicBrainz…"), ["picard", "tag", "lookup", "musicbrainz", "acoustid", "fingerprint", "match"], "Ctrl+I")
+        p.addAction("find-cover", qsTr("Find a cover for the chosen album…"), ["artwork", "picture", "cover art archive"], "")
+        p.addAction("find-missing-covers", qsTr("Find missing covers"), ["artwork", "pictures", "cover art archive", "fetch"], "")
+        p.addAction("lyrics", qsTr("Show lyrics"), ["words", "lrc", "lrclib", "karaoke"], "")
+        p.addAction("volumes", qsTr("Volumes, NAS shares and servers…"), ["drives", "disks", "nas", "smb", "nfs", "offline", "reassign", "location"], "")
+        p.addAction("connect-nas", qsTr("Connect a NAS…"), ["mount", "smb", "nfs", "share", "samba", "network"], "")
+        p.addAction("add-server", qsTr("Add Navidrome / Subsonic server…"), ["navidrome", "subsonic", "opensubsonic", "remote", "stream"], "")
+        p.addAction("sync-servers", qsTr("Sync Navidrome / Subsonic servers"), ["navidrome", "subsonic", "refresh", "update"], "")
+        p.addAction("settings-web", qsTr("Web services: AcoustID, MusicBrainz, covers…"), ["acoustid", "musicbrainz", "key", "cover size"], "")
         p.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help", "keys"], "?")
         p.addAction("quit", qsTr("Quit"), ["exit", "close"], "Q")
     }
@@ -206,6 +218,15 @@ ApplicationWindow {
         if (view && view.special) return []
         if (prefs.gridVisible && library.albumGrid.currentAlbum > 0) return library.albumTrackIds(library.albumGrid.currentAlbum)
         return library.selectedTrackIds()
+    }
+    // The album a cover command works on: the grid's, or the cursor track's.
+    function chosenAlbum() {
+        if (!advanced || !library.ready) return 0
+        if (prefs.gridVisible && library.albumGrid.currentAlbum > 0) return library.albumGrid.currentAlbum
+        const row = library.tracks.currentRow
+        if (row < 0) return 0
+        const info = library.trackInfo(library.tracks.trackId(row))
+        return info.albumId || 0
     }
     function withTracks(run) {
         const ids = chosenTrackIds()
@@ -235,8 +256,12 @@ ApplicationWindow {
         const chosen = (advanced && library.ready && !(view && view.special)
                        && (prefs.gridVisible ? library.albumGrid.currentAlbum > 0 : library.tracks.count > 0)) || inPlaylist
         const editing = may("edit-tags")
-        for (const id of ["edit-tags", "organise", "tag-from-filename"])
+        for (const id of ["edit-tags", "organise", "tag-from-filename", "identify", "find-cover"])
             p.setActionEnabled(id, chosen && editing)
+        p.setActionEnabled("find-missing-covers", editing)
+        for (const id of ["volumes", "connect-nas", "add-server", "settings-web"])
+            p.setActionEnabled(id, may("settings"))
+        p.setActionEnabled("sync-servers", may("settings") && library.nas.servers.length > 0)
         // Playlists: what the chosen node allows.
         const kind = library.currentKind
         const isList = kind === "playlist" || kind === "autoplaylist"
@@ -267,6 +292,14 @@ ApplicationWindow {
     // A tree node's menu command (LibraryTreePane.nodeAction), or the same
     // from the palette on the chosen node.
     function nodeAction(id, node) {
+        switch (id) {
+        case "volumes": case "connect-nas": case "add-server": case "find-missing-covers":
+            runAction(id)
+            return
+        case "rescan-volume":
+            if (guard("settings")) library.nas.rescanVolume(node.id, true)
+            return
+        }
         const pl = library.playlists
         const parent = node && node.kind === "plfolder" ? node.id : 0
         const playing = ["play", "queue", "append", "export"]
@@ -331,6 +364,9 @@ ApplicationWindow {
         const locks = { "edit-tags": "edit-tags", "edit-title": "edit-tags", "organise": "edit-tags",
                         "tag-from-filename": "edit-tags", "undo": "edit-tags", "redo": "edit-tags",
                         "undo-history": "edit-tags", "find-duplicates": "edit-tags",
+                        "identify": "edit-tags", "find-cover": "edit-tags", "find-missing-covers": "edit-tags",
+                        "volumes": "settings", "connect-nas": "settings", "add-server": "settings",
+                        "sync-servers": "settings", "settings-web": "settings",
                         "add-folder": "settings", "rescan": "settings", "prefetch-art": "settings",
                         "autodj": "settings", "autodj-settings": "settings", "settings": "settings",
                         "settings-playback": "settings", "settings-scrobbling": "settings",
@@ -415,6 +451,26 @@ ApplicationWindow {
         case "settings": settingsSheet.openPage(0); break
         case "settings-playback": settingsSheet.openPage(0); break
         case "settings-scrobbling": settingsSheet.openPage(2); break
+        case "identify": withTracks((ids) => identifySheet.openFor(ids)); break
+        case "find-cover": {
+            const album = chosenAlbum()
+            if (album > 0) library.web.findCover(album)
+            else toast.show(qsTr("Choose an album in the grid, or a track of it in the list, first"))
+            break
+        }
+        case "find-missing-covers": setAdvanced(true); library.web.findMissingCovers(); break
+        case "lyrics":
+            setAdvanced(true)
+            if (!prefs.infoVisible) toggleInfo()
+            if (advancedLoader.item) advancedLoader.item.showInfoPage(1)
+            break
+        case "volumes": setAdvanced(true); volumesSheet.openSheet(); break
+        case "connect-nas": setAdvanced(true); nasGuideSheet.openSheet(); break
+        case "add-server": setAdvanced(true); remoteSheet.openSheet(); break
+        case "sync-servers":
+            for (const s of library.nas.servers) library.nas.syncServer(s.id, false)
+            break
+        case "settings-web": settingsSheet.openPage(3); break
         case "shortcuts": helpVisible = true; break
         case "quit":
             // Party mode: quitting takes the PIN.
@@ -423,6 +479,7 @@ ApplicationWindow {
             break
         default:
             if (id.startsWith("audit:")) goToNode(["filestoedit", id])
+            else if (id.startsWith("edit-lyrics:") && guard("edit-tags")) tagSheet.openFor([Number(id.slice(12))], 2)
         }
     }
 
@@ -503,6 +560,8 @@ ApplicationWindow {
     // Phase 3: Auto-DJ and Settings.
     Shortcut { sequence: "Ctrl+J"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("autodj") }
     Shortcut { sequences: ["Ctrl+,", StandardKey.Preferences]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("settings") }
+    // Phase 4: I is the info panel, so identifying takes Ctrl+I.
+    Shortcut { sequence: "Ctrl+I"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.advanced; onActivated: win.runAction("identify") }
 
     Item {
         anchors.fill: parent
@@ -946,6 +1005,27 @@ ApplicationWindow {
             id: settingsSheet
             onClosed: win.backToList()
             onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
+            onOpenVolumes: volumesSheet.openSheet()
+        }
+        // Phases 4 and 5.
+        IdentifySheet {
+            id: identifySheet
+            onClosed: win.backToList()
+            onOpenSettings: (page) => settingsSheet.openPage(page)
+        }
+        CoverChooserSheet { id: coverChooser; onClosed: win.backToList() }
+        VolumesSheet {
+            id: volumesSheet
+            onClosed: win.backToList()
+            onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
+            onConnectNas: nasGuideSheet.openSheet()
+            onAddServer: remoteSheet.openSheet()
+        }
+        NasGuideSheet { id: nasGuideSheet; onClosed: if (!volumesSheet.opened) win.backToList() }
+        RemoteSourceSheet { id: remoteSheet; onClosed: if (!volumesSheet.opened) win.backToList() }
+        Connections {
+            target: library.web
+            function onCoverChanged() { if (library.web.coverState === "choose" && !coverChooser.opened) coverChooser.open() }
         }
 
         Toast {
@@ -1041,12 +1121,13 @@ ApplicationWindow {
                             ["Ctrl+E", qsTr("Edit tags of the selected tracks")],
                             ["F2", qsTr("Edit the title in place")],
                             ["Ctrl+Shift+O", qsTr("Organise files: rename and move")],
+                            ["Ctrl+I", qsTr("Identify with MusicBrainz")],
                             ["Menu", qsTr("Tag from file names")],
                             ["Ctrl+Z", qsTr("Undo the last edit or organise")],
                             ["Ctrl+Shift+Z", qsTr("Redo")],
                             ["Ctrl+Enter", qsTr("Save, in an editor")],
                             ["Esc", qsTr("Close an editor")],
-                            ["Ctrl+K", qsTr("Undo history, Files to Edit")]
+                            ["Ctrl+K", qsTr("Undo history, covers, lyrics, volumes")]
                         ]],
                         [qsTr("Playlists"), [
                             ["Menu", qsTr("On a tree node: new, rename, move, delete")],

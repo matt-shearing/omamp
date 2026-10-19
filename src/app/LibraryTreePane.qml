@@ -300,5 +300,18 @@ FocusScope {
                    enabled: menu.edit; onTriggered: pane.nodeAction("edit-collection", menu.node) }
         MenuItem { text: qsTr("Delete collection…"); visible: menu.kind === "collection"; height: visible ? implicitHeight : 0
                    enabled: menu.edit; onTriggered: pane.nodeAction("delete", menu.node) }
+        // Location: the volumes, shares and servers.
+        MenuItem { text: qsTr("Rescan this volume"); visible: menu.kind === "volume"; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("rescan-volume", menu.node) }
+        MenuItem { text: qsTr("Volumes, shares and servers…"); visible: menu.kind === "volume" || menu.node.key === "locations"
+                   height: visible ? implicitHeight : 0; onTriggered: pane.nodeAction("volumes", menu.node) }
+        MenuItem { text: qsTr("Connect a NAS…"); visible: menu.node.key === "locations"; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("connect-nas", menu.node) }
+        MenuItem { text: qsTr("Add Navidrome / Subsonic server…"); visible: menu.node.key === "locations"; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("add-server", menu.node) }
+        // Files to Edit > Missing artwork.
+        MenuItem { objectName: "menuFindCovers"; text: qsTr("Find the missing covers on the Cover Art Archive")
+                   visible: menu.node.key === "audit:missing-artwork"; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("find-missing-covers", menu.node) }
     }
 }

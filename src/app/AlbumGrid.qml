@@ -16,6 +16,8 @@ FocusScope {
     property int tileSize: 168
     signal leave()          // to the tree
     signal openAlbum(var albumId)
+    // A command from the menu (identify, find-cover...), run by the window.
+    signal action(string id)
 
     readonly property int coverSize: tileSize <= 130 ? 96 : 256
 
@@ -176,5 +178,9 @@ FocusScope {
         Material.roundedScale: theme.radius
         MenuItem { text: qsTr("Play"); onTriggered: library.playAlbum(pane.albums.currentAlbum) }
         MenuItem { text: qsTr("Show tracks"); onTriggered: pane.openAlbum(pane.albums.currentAlbum) }
+        MenuSeparator { }
+        MenuItem { text: qsTr("Identify with MusicBrainz…"); onTriggered: pane.action("identify") }
+        MenuItem { text: qsTr("Find a cover…"); onTriggered: pane.action("find-cover") }
+        MenuItem { text: qsTr("Find covers for every album without one"); onTriggered: pane.action("find-missing-covers") }
     }
 }

@@ -399,6 +399,41 @@ static const QStringList version7 = {
     "CREATE INDEX import_journal_batch ON import_journal(batch)",
 };
 
+// Phase 4: the web.
+//
+// - lyrics caches what LRCLIB said for a track (plain and synced text, or
+//   that it had nothing, so the next look-up can wait), and what was read
+//   from a .lrc sidecar or the tags. One row per track; a rescan doesn't
+//   touch it.
+// - scrobble_queue holds every listen until the service accepts it, so
+//   plays made offline are sent later. One row per listen per service;
+//   payload is the JSON the service is sent, minus the time.
+static const QStringList version8 = {
+    R"(CREATE TABLE lyrics (
+        track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+        plain TEXT,
+        synced TEXT,
+        source TEXT NOT NULL,
+        lrclib_id INTEGER,
+        instrumental INTEGER NOT NULL DEFAULT 0,
+        fetched INTEGER NOT NULL
+    ))",
+    R"(CREATE TABLE scrobble_queue (
+        id INTEGER PRIMARY KEY,
+        service TEXT NOT NULL CHECK (service IN ('listenbrainz', 'lastfm')),
+        track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+        listened_at INTEGER NOT NULL,
+        duration_ms INTEGER,
+        payload TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'sent', 'failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created INTEGER NOT NULL,
+        sent INTEGER
+    ))",
+    "CREATE INDEX scrobble_queue_pending ON scrobble_queue(service, state, listened_at)",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
@@ -408,6 +443,7 @@ const QList<Migration> &migrations() {
         {5, "text sort indexes", version5},
         {6, "fingerprints for the duplicate finder", version6},
         {7, "playlists, play statistics, import journal", version7},
+        {8, "lyrics cache and scrobble queue", version8},
     };
     return all;
 }

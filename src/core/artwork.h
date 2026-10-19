@@ -52,6 +52,11 @@ public:
     // now have a picture made.
     int prefetch(int size = 256, Job *job = nullptr, bool all = false);
 
+    // Makes a picture file the album's picture (fetched from the Cover Art
+    // Archive, for example): its sizes are made and the album marked as
+    // searched. Gives the artwork row id, or 0 with lastError() set.
+    qint64 setAlbumPicture(qint64 albumId, const QString &file, QString *thumbnail = nullptr, int size = 256);
+
     QString cacheDir() const { return m_dir; }
     QString lastError() const { return m_error; }
 

@@ -341,6 +341,31 @@ qint64 ArtworkCache::store(const Picture &picture, int size, QString *path) {
     return id;
 }
 
+qint64 ArtworkCache::setAlbumPicture(qint64 albumId, const QString &file, QString *thumbnail, int size) {
+    m_error.clear();
+    const Picture picture = readSource("file:" + file);
+    if (picture.bytes.isEmpty()) {
+        m_error = QString("Can't read the picture %1").arg(file);
+        return 0;
+    }
+    QString made;
+    const qint64 stored = store(picture, snapSize(size), &made);
+    if (!stored)
+        return 0;
+    QSqlQuery u(m_library.db());
+    u.prepare("UPDATE albums SET artwork_id = ?, art_checked = ? WHERE id = ?");
+    u.addBindValue(stored);
+    u.addBindValue(QDateTime::currentSecsSinceEpoch());
+    u.addBindValue(albumId);
+    if (!u.exec()) {
+        m_error = u.lastError().text();
+        return 0;
+    }
+    if (thumbnail)
+        *thumbnail = made;
+    return stored;
+}
+
 int ArtworkCache::prefetch(int size, Job *job, bool all) {
     QList<qint64> albums;
     {

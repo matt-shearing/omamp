@@ -15,6 +15,7 @@
 #include <QJsonDocument>
 #include <QMimeDatabase>
 #include <QRandomGenerator>
+#include <QSaveFile>
 #include <QScopeGuard>
 #include <QSet>
 #include <QSqlError>
@@ -41,6 +42,45 @@ namespace {
 const QStringList multiValueFields = {"artist", "albumartist", "genre", "composer"};
 const QStringList numberFields = {"year", "originalyear", "track", "tracktotal", "disc", "disctotal", "bpm"};
 const QStringList customFields = {"custom1", "custom2", "custom3", "custom4", "custom5"};
+// MusicBrainz identifiers that may hold several values (one per artist).
+const QStringList idListFields = {"mbartistid", "mbalbumartistid"};
+// Plain text fields Picard writes, by Omamp's name and TagLib's property
+// key. TagLib maps each to the format's own frame or atom (UFID and TXXX in
+// ID3v2, ----:com.apple.iTunes in MP4).
+const QList<QPair<QString, const char *>> &extraFields() {
+    static const QList<QPair<QString, const char *>> list = {
+        {"isrc", "ISRC"},
+        {"label", "LABEL"},
+        {"catalognumber", "CATALOGNUMBER"},
+        {"releasecountry", "RELEASECOUNTRY"},
+        {"mbrecordingid", "MUSICBRAINZ_TRACKID"},
+        {"mbreleasetrackid", "MUSICBRAINZ_RELEASETRACKID"},
+        {"mbreleaseid", "MUSICBRAINZ_ALBUMID"},
+        {"mbartistid", "MUSICBRAINZ_ARTISTID"},
+        {"mbalbumartistid", "MUSICBRAINZ_ALBUMARTISTID"},
+        {"mbreleasegroupid", "MUSICBRAINZ_RELEASEGROUPID"},
+    };
+    return list;
+}
+// The lyrics sidecar: the .lrc file beside the track, written and undone
+// like a tag but never inside the audio file.
+const QString lrcField = "lrcfile";
+
+QString lrcPathFor(const QString &audioPath) {
+    const QFileInfo info(audioPath);
+    return info.absolutePath() + '/' + info.completeBaseName() + ".lrc";
+}
+
+QString readLrcFile(const QString &audioPath) {
+    QFile f(lrcPathFor(audioPath));
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    QString text = QString::fromUtf8(f.readAll());
+    if (text.startsWith(QChar(0xFEFF)))
+        text.remove(0, 1);
+    text.replace("\r\n", "\n");
+    return text.trimmed();
+}
 
 TagLib::String ts(const QString &s) { return TagLib::String(s.toStdString(), TagLib::String::UTF8); }
 QString qs(const TagLib::String &s) { return QString::fromStdString(s.to8Bit(true)); }
@@ -80,7 +120,7 @@ QString normalise(const QString &field, const QString &value) {
         const QString v = value.trimmed().toLower();
         return v == "1" || v == "true" || v == "yes" ? QString("1") : QString();
     }
-    if (field == "lyrics") {
+    if (field == "lyrics" || field == lrcField) {
         QString v = value;
         v.replace("\r\n", "\n");
         return v.trimmed();
@@ -228,6 +268,9 @@ bool writeTags(const QString &path, const QMap<QString, QString> &changes, const
         if (simple.contains(it.key()))
             set(simple.value(it.key()), it.value(), multiValueFields.contains(it.key()));
     }
+    for (const auto &extra : extraFields())
+        if (changes.contains(extra.first))
+            set(extra.second, changes.value(extra.first), idListFields.contains(extra.first));
     auto pair = [&](const char *numberKey, const char *totalKey, const char *altTotal, const QString &n,
                     const QString &total) {
         map.erase(altTotal);
@@ -360,7 +403,10 @@ const QStringList &TagWriter::fields() {
     static const QStringList list = {"title",  "artist",      "albumartist", "album",   "genre",   "composer",
                                      "year",   "originalyear", "track",      "tracktotal", "disc", "disctotal",
                                      "comment", "bpm",        "compilation", "lyrics",  "rating",  "artwork",
-                                     "custom1", "custom2",    "custom3",     "custom4", "custom5"};
+                                     "custom1", "custom2",    "custom3",     "custom4", "custom5",
+                                     "isrc",    "label",      "catalognumber", "releasecountry",
+                                     "mbrecordingid", "mbreleasetrackid", "mbreleaseid", "mbartistid",
+                                     "mbalbumartistid", "mbreleasegroupid", "lrcfile"};
     return list;
 }
 
@@ -379,6 +425,12 @@ QString TagWriter::canonicalField(const QString &name) {
         {"unsyncedlyrics", "lyrics"}, {"picture", "artwork"}, {"cover", "artwork"},
         {"art", "artwork"},       {"ti", "title"},           {"ar", "artist"},
         {"al", "album"},          {"ge", "genre"},           {"co", "composer"},
+        {"publisher", "label"},   {"catalog", "catalognumber"}, {"catalogno", "catalognumber"},
+        {"musicbrainztrackid", "mbrecordingid"}, {"musicbrainzrecordingid", "mbrecordingid"},
+        {"musicbrainzreleasetrackid", "mbreleasetrackid"}, {"musicbrainzalbumid", "mbreleaseid"},
+        {"musicbrainzreleaseid", "mbreleaseid"}, {"musicbrainzartistid", "mbartistid"},
+        {"musicbrainzalbumartistid", "mbalbumartistid"}, {"musicbrainzreleasegroupid", "mbreleasegroupid"},
+        {"lrc", "lrcfile"}, {"syncedlyricsfile", "lrcfile"},
     };
     return aliases.value(key);
 }
@@ -440,6 +492,10 @@ QMap<QString, QString> TagWriter::readFile(const QString &path, QString *error) 
         }
     }
     v["lyrics"] = normalise("lyrics", lyrics);
+    for (const auto &extra : extraFields())
+        v[extra.first] = idListFields.contains(extra.first)
+                             ? TagReader::splitValues(allValues(map, extra.second)).join("; ")
+                             : firstValue(map, extra.second);
     QJsonArray pictures;
     for (const TagLib::VariantMap &p : file.complexProperties("PICTURE")) {
         const TagLib::ByteVector data = p.value("data").toByteVector();
@@ -556,9 +612,9 @@ TagFileResult TagWriter::writeOne(qint64 trackId, const QList<TagEdit> &edits, c
         wanted[e.field] = normalise(e.field, value);
     }
     auto inFile = [&](const QString &field) {
-        return !isDatabaseOnly(field) && (field != "rating" || writeRatings);
+        return !isDatabaseOnly(field) && field != lrcField && (field != "rating" || writeRatings);
     };
-    bool needsFile = false;
+    bool needsFile = wanted.contains(lrcField);
     for (auto it = wanted.constBegin(); it != wanted.constEnd(); ++it)
         needsFile = needsFile || inFile(it.key());
 
@@ -597,6 +653,8 @@ TagFileResult TagWriter::writeOne(qint64 trackId, const QList<TagEdit> &edits, c
         }
         for (auto it = file.constBegin(); it != file.constEnd(); ++it)
             current[it.key()] = it.value();
+        if (wanted.contains(lrcField))
+            current[lrcField] = normalise(lrcField, readLrcFile(r.path));
     }
 
     QMap<QString, QString> fileChanges;
@@ -688,6 +746,34 @@ TagFileResult TagWriter::writeOne(qint64 trackId, const QList<TagEdit> &edits, c
         after = statOf(r.path);
         reread = TagReader::read(r.path);
         reread.quickHash = TagReader::quickHash(r.path);
+    }
+
+    // The sidecar, after the tags: written atomically, or removed when
+    // emptied. A failure here leaves the library as it was.
+    for (const TagFieldChange &c : std::as_const(r.changes)) {
+        if (c.field != lrcField)
+            continue;
+        const QString lrc = lrcPathFor(r.path);
+        if (!Journal::insideSandbox(m_sandbox, lrc)) {
+            r.ok = false;
+            r.error = "Outside the allowed folder";
+            return r;
+        }
+        if (c.newValue.isEmpty()) {
+            if (QFileInfo::exists(lrc) && !QFile::remove(lrc)) {
+                r.ok = false;
+                r.error = QString("Can't remove %1").arg(lrc);
+                return r;
+            }
+        } else {
+            QSaveFile out(lrc);
+            const QByteArray bytes = (c.newValue + '\n').toUtf8();
+            if (!out.open(QIODevice::WriteOnly) || out.write(bytes) != bytes.size() || !out.commit()) {
+                r.ok = false;
+                r.error = QString("Can't write %1").arg(lrc);
+                return r;
+            }
+        }
     }
 
     // Journal and library row in one transaction.

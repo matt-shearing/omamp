@@ -52,3 +52,5 @@ SOURCES += \
     $$PWD/tagwriter.cpp \
     $$PWD/volumes.cpp \
     $$PWD/watcher.cpp
+
+include($$PWD/net/net.pri)

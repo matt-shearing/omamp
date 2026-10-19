@@ -121,6 +121,7 @@ void LibraryController::applyWatchSettings() {
 }
 
 LibraryController::~LibraryController() {
+    m_queued.clear();
     m_watcher.reset();
     if (m_prefetch) {
         m_prefetch->cancel();
@@ -194,6 +195,7 @@ void LibraryController::startWatcher() {
                        .arg(QLocale().toString(watched), QLocale().toString(limit)));
     });
     m_watcher->start();
+    holdWatcher();
 }
 
 QString LibraryController::currentLabel() const {
@@ -242,7 +244,11 @@ void LibraryController::cancelJob() {
 void LibraryController::startScan(const QStringList &folders) {
     if (!activate())
         return;
-    if (m_scanThread) {
+    // A rescan of everything already running or waiting covers this one.
+    bool scanAhead = m_scanThread && m_jobKind == QLatin1String("scan");
+    for (const Queued &q : std::as_const(m_queued))
+        scanAhead = scanAhead || q.kind == QLatin1String("scan");
+    if (scanAhead && folders.isEmpty()) {
         setMessage(tr("A scan is already running"));
         return;
     }
@@ -256,12 +262,48 @@ void LibraryController::startScan(const QStringList &folders) {
            [this](const QJsonObject &result) { onScanFinished(result); });
 }
 
+QString LibraryController::waitingText() const {
+    if (m_queued.isEmpty())
+        return {};
+    QString text = m_jobKind == QLatin1String("scan") ? tr("Waiting for the scan to finish…")
+                                                      : tr("Waiting for the running job to finish…");
+    if (m_queued.size() > 1)
+        text += "  " + tr("(%n jobs waiting)", "", int(m_queued.size()));
+    return text;
+}
+
+void LibraryController::enqueue(const QString &kind, std::function<void()> start) {
+    m_queued.append({kind, std::move(start)});
+    emit jobChanged();
+    emit toast(waitingText());
+}
+
+// Starts what waits, in order, until one of them takes the slot (an undo
+// with nothing left to undo, say, takes nothing).
+void LibraryController::startQueued() {
+    while (!m_scanThread && !m_queued.isEmpty()) {
+        const Queued next = m_queued.takeFirst();
+        next.start();
+    }
+    emit jobChanged();
+}
+
+// The folder watcher holds its rescans while a job of ours runs, so the
+// job never shares the library with a rescan, and starts them again after.
+void LibraryController::holdWatcher() {
+    if (m_watcher)
+        m_watcher->setHeld(m_scanThread != nullptr);
+}
+
 bool LibraryController::runJob(const QString &kind, const QString &text, JobWork work, JobDone done) {
     if (!activate())
         return false;
     if (m_scanThread) {
-        setMessage(m_jobKind == "scan" ? tr("Wait for the scan to finish") : tr("Wait for the running job to finish"));
-        return false;
+        // Not refused: it waits its turn and starts the moment the slot frees.
+        enqueue(kind, [this, kind, text, work = std::move(work), done = std::move(done)] {
+            runJob(kind, text, work, done);
+        });
+        return true;
     }
     m_job = new Job(kind, this);
     m_jobKind = kind;
@@ -296,6 +338,7 @@ bool LibraryController::runJob(const QString &kind, const QString &text, JobWork
     });
     m_scanThread->setObjectName("omamp-" + kind);
     m_scanThread->start(QThread::LowPriority);
+    holdWatcher();
     emit jobChanged();
     return true;
 }
@@ -320,6 +363,8 @@ void LibraryController::finishJob(const QJsonObject &result) {
     if (done)
         done(result);
     emit jobFinished(kind, result);
+    startQueued();
+    holdWatcher();
 }
 
 void LibraryController::onScanFinished(const QJsonObject &result) {

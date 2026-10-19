@@ -236,7 +236,7 @@ ApplicationWindow {
                        && (prefs.gridVisible ? library.albumGrid.currentAlbum > 0 : library.tracks.count > 0)) || inPlaylist
         const editing = may("edit-tags")
         for (const id of ["edit-tags", "organise", "tag-from-filename"])
-            p.setActionEnabled(id, chosen && !library.busy && editing)
+            p.setActionEnabled(id, chosen && editing)
         // Playlists: what the chosen node allows.
         const kind = library.currentKind
         const isList = kind === "playlist" || kind === "autoplaylist"
@@ -251,9 +251,10 @@ ApplicationWindow {
         p.setActionEnabled("edit-collection", lists && kind === "collection")
         for (const id of ["autodj", "autodj-settings", "settings", "settings-playback", "settings-scrobbling"])
             p.setActionEnabled(id, may("settings"))
-        p.setActionEnabled("edit-title", chosen && !prefs.gridVisible && library.tracks.currentRow >= 0 && !library.busy)
-        p.setActionEnabled("undo", library.undoText !== "" && !library.busy)
-        p.setActionEnabled("redo", library.redoText !== "" && !library.busy)
+        p.setActionEnabled("edit-title", chosen && !prefs.gridVisible && library.tracks.currentRow >= 0)
+        // A job running meanwhile only makes these wait their turn.
+        p.setActionEnabled("undo", library.undoText !== "" || library.busy)
+        p.setActionEnabled("redo", library.redoText !== "" || library.busy)
     }
 
     // The tree node that is chosen, as the tree's menu hands it over.

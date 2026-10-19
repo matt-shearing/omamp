@@ -23,6 +23,7 @@ HEADERS += \
     $$PWD/mask.h \
     $$PWD/migrations.h \
     $$PWD/organise.h \
+    $$PWD/ownwrites.h \
     $$PWD/palette.h \
     $$PWD/query.h \
     $$PWD/scanner.h \
@@ -45,6 +46,7 @@ SOURCES += \
     $$PWD/mask.cpp \
     $$PWD/migrations.cpp \
     $$PWD/organise.cpp \
+    $$PWD/ownwrites.cpp \
     $$PWD/palette.cpp \
     $$PWD/query.cpp \
     $$PWD/scanner.cpp \

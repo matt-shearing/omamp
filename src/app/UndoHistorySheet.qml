@@ -167,7 +167,7 @@ ToolSheet {
             objectName: "undoChosen"
             text: qsTr("Undo this change")
             highlighted: true
-            enabled: sheet.chosen >= 0 && sheet.batches[sheet.chosen].canUndo && !library.busy
+            enabled: sheet.chosen >= 0 && sheet.batches[sheet.chosen].canUndo
             onClicked: library.undoBatch(sheet.batches[sheet.chosen].batch)
         }
     ]

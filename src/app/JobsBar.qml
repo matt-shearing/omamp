@@ -53,6 +53,16 @@ Rectangle {
                 font.pixelSize: 12
                 color: theme.c.foreground
             }
+            // What was asked for meanwhile; it starts when this one ends.
+            Text {
+                objectName: "jobsWaiting"
+                visible: library.waitingText !== ""
+                Layout.maximumWidth: 300
+                elide: Text.ElideRight
+                text: "·  " + library.waitingText
+                font.pixelSize: 12
+                color: theme.c.light_foreground
+            }
             Button {
                 text: qsTr("Cancel")
                 flat: true

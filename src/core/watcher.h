@@ -89,6 +89,17 @@ public:
     // Quick-rescans whole library roots (ChangedFolders mode), as a
     // "remount" request: for a share that has just come back.
     Q_INVOKABLE void rescanRoots(const QStringList &roots);
+    // Holds rescans back while the window runs a job of its own (a tag
+    // save, an organise, an undo, a scan): changes are still collected and
+    // rescanned when the hold ends, and a rescan already running stops and
+    // runs again then. The window's jobs never wait for the watcher.
+    void setHeld(bool held);
+    bool isHeld() const { return m_held; }
+    // Rescans started so far, and inotify events left alone because Omamp
+    // made the change itself (see OwnWrites). For tests and diagnostics.
+    int rescansStarted() const { return m_rescansStarted; }
+    int ownEventsIgnored() const { return m_ownEvents; }
+
     // Follows a MountMonitor: when a volume comes back online, the roots are
     // re-read (a network root that was offline isn't scheduled yet) and the
     // volume's library folders are quick-rescanned, and only those.
@@ -142,9 +153,14 @@ private:
         QString kind;
         QList<FolderScan> folders; // for "changes"
         QStringList roots;         // for "scheduled" and "overflow"
+        int full = -1;             // -1 until its first run decides
     };
     QList<Request> m_queue;
+    Request m_current;             // the one running, to rerun if it gives way
     bool m_busy = false;
+    bool m_held = false, m_yielding = false;
+    int m_rescansStarted = 0, m_ownEvents = 0;
+    int m_runId = 0;               // numbers each run, so a cancel finds the right one
     int m_scheduledRuns = 0;
     QThread *m_thread = nullptr;
     QObject *m_worker = nullptr;

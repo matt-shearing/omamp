@@ -3,6 +3,7 @@
 #include "job.h"
 #include "library.h"
 #include "mounts.h"
+#include "ownwrites.h"
 #include "tagreader.h"
 
 #include <QDateTime>
@@ -36,8 +37,8 @@ public:
     RescanWorker(const QString &db, const VolumeResolver &resolver, int workers)
         : m_db(db), m_resolver(resolver), m_workers(workers) {}
 
-    QJsonObject run(const QString &kind, const QList<FolderScan> &folders, const QStringList &roots, bool full,
-                    bool *changed) {
+    QJsonObject run(int id, const QString &kind, const QList<FolderScan> &folders, const QStringList &roots,
+                    bool full, bool *changed) {
         *changed = false;
         if (!m_library) {
             m_library = std::make_unique<Library>(m_db);
@@ -51,6 +52,10 @@ public:
         {
             QMutexLocker lock(&m_mutex);
             m_job = &job;
+            m_jobId = id;
+            // Cancelled before it began (the watcher was held meanwhile).
+            if (m_cancelId == id)
+                job.cancel();
         }
         Scanner scanner(*m_library, m_resolver, &job);
         if (m_workers > 0)
@@ -79,10 +84,14 @@ public:
         return o;
     }
 
-    void cancel() {
+    // Cancels the run with this id, whether it is running or was asked for
+    // and hasn't begun yet. id 0 means whichever run is going now.
+    void cancel(int id = 0) {
         QMutexLocker lock(&m_mutex);
-        if (m_job)
+        if (m_job && (id == 0 || id == m_jobId))
             m_job->cancel();
+        else if (id != 0)
+            m_cancelId = id;
     }
 
     void close() { m_library.reset(); }
@@ -94,6 +103,7 @@ private:
     std::unique_ptr<Library> m_library;
     QMutex m_mutex;
     Job *m_job = nullptr;
+    int m_jobId = 0, m_cancelId = 0;
 };
 
 bool isHidden(const QString &name) { return name.startsWith('.'); }
@@ -207,6 +217,7 @@ bool Watcher::start(QString *error) {
 }
 
 void Watcher::stop() {
+    m_yielding = false;
     m_debounce->stop();
     m_schedule->stop();
     m_pending.clear();
@@ -351,19 +362,29 @@ void Watcher::readEvents() {
             if (name.isEmpty() || isHidden(name))
                 continue;
             const QString path = dir + '/' + name;
+            // Omamp's own writes (tags saved, files organised or trashed)
+            // update the library themselves: they are no reason to rescan.
+            // A folder we made is still watched, so later changes in it count.
+            const bool own = OwnWrites::isOwn(path);
+            if (own)
+                ++m_ownEvents;
             if (e->mask & IN_ISDIR) {
                 if (e->mask & (IN_CREATE | IN_MOVED_TO)) {
                     addTree(path, m_pathRoot.value(dir, dir));
-                    queue(path, true);
-                    any = true;
+                    if (!own) {
+                        queue(path, true);
+                        any = true;
+                    }
                 } else if (e->mask & (IN_DELETE | IN_MOVED_FROM)) {
                     removeTree(path);
-                    queue(path, true);
-                    any = true;
+                    if (!own) {
+                        queue(path, true);
+                        any = true;
+                    }
                 }
                 continue;
             }
-            if (TagReader::isAudio(name)) {
+            if (!own && TagReader::isAudio(name)) {
                 queue(dir, false);
                 any = true;
             }
@@ -465,25 +486,51 @@ void Watcher::followMounts(MountMonitor *monitor) {
     });
 }
 
-void Watcher::runNext() {
-    if (m_busy || m_queue.isEmpty() || !m_thread)
+void Watcher::setHeld(bool held) {
+    if (held == m_held)
         return;
-    const Request request = m_queue.takeFirst();
+    m_held = held;
+    if (held) {
+        // A rescan already running gives way: it stops at the next file
+        // and runs again, from the start, once the hold ends.
+        if (m_busy && m_worker) {
+            m_yielding = true;
+            static_cast<RescanWorker *>(m_worker)->cancel(m_runId);
+        }
+    } else {
+        runNext();
+    }
+}
+
+void Watcher::runNext() {
+    if (m_busy || m_held || m_queue.isEmpty() || !m_thread)
+        return;
+    Request request = m_queue.takeFirst();
+    // Every fourth scheduled run lists every folder, to catch files changed
+    // in place (which leave their folder's modification time alone). A run
+    // that gave way keeps what it was.
+    if (request.full < 0)
+        request.full = request.kind == "overflow" || (request.kind == "scheduled" && ++m_scheduledRuns % 4 == 0);
+    const bool full = request.full > 0;
+    // Numbered before anyone hears of it, so a hold that comes from a
+    // handler of rescanStarted cancels this run.
+    m_current = request;
+    ++m_rescansStarted;
+    const int id = ++m_runId;
     m_busy = true;
     emit busyChanged();
     QStringList shown = request.roots;
     for (const FolderScan &f : request.folders)
         shown << f.path;
     emit rescanStarted(request.kind, shown);
+    if (!m_busy || !m_worker)
+        return; // stopped by a handler meanwhile
 
-    // Every fourth scheduled run lists every folder, to catch files changed
-    // in place (which leave their folder's modification time alone).
-    const bool full = request.kind == "overflow" || (request.kind == "scheduled" && ++m_scheduledRuns % 4 == 0);
     auto *worker = static_cast<RescanWorker *>(m_worker);
     QPointer<Watcher> self(this);
-    QMetaObject::invokeMethod(worker, [worker, request, full, self] {
+    QMetaObject::invokeMethod(worker, [worker, id, request, full, self] {
         bool changed = false;
-        const QJsonObject result = worker->run(request.kind, request.folders, request.roots, full, &changed);
+        const QJsonObject result = worker->run(id, request.kind, request.folders, request.roots, full, &changed);
         if (Watcher *watcher = self.data())
             QMetaObject::invokeMethod(watcher, [self, result, changed] {
                 if (self)
@@ -496,6 +543,21 @@ void Watcher::finished(const QJsonObject &result, bool changed) {
     if (!m_busy)
         return; // stopped meanwhile
     m_busy = false;
+    const bool yielded = m_yielding && result.value("cancelled").toBool();
+    m_yielding = false;
+    if (yielded) {
+        // It gave way to a job of the window's: it runs again first, once
+        // the hold ends.
+        m_queue.prepend(m_current);
+        QJsonObject r = result;
+        r["yielded"] = true;
+        emit rescanFinished(r);
+        if (changed)
+            emit libraryChanged();
+        emit busyChanged();
+        runNext();
+        return;
+    }
     emit rescanFinished(result);
     if (changed)
         emit libraryChanged();

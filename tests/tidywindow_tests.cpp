@@ -23,6 +23,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include <atomic>
 #include <memory>
 
 #include "artprovider.h"
@@ -31,6 +32,7 @@
 #include "fixture_library.h"
 #include "library.h"
 #include "librarycontroller.h"
+#include "ownwrites.h"
 #include "player.h"
 #include "scanner.h"
 #include "tagreader.h"
@@ -38,6 +40,7 @@
 #include "theme.h"
 #include "translator.h"
 #include "volumes.h"
+#include "watcher.h"
 
 namespace {
 
@@ -118,6 +121,12 @@ void typeText(QWindow *window, const QString &text) {
     for (const QChar c : text)
         QTest::keyClick(window, c.toLatin1());
 }
+
+// True once the spy has caught its signal, waiting up to ms for it. Unlike
+// QSignalSpy::wait() alone, it counts a signal that came before the call: a
+// small job can finish while QTest::keyClick is still delivering the key,
+// and wait() only counts what arrives while it waits.
+bool seen(QSignalSpy &spy, int ms = 30000) { return !spy.isEmpty() || spy.wait(ms); }
 
 } // namespace
 
@@ -554,12 +563,12 @@ class TidyWindowKeysTests : public QObject {
         QQmlApplicationEngine engine;
         QQuickWindow *window = nullptr;
 
-        explicit Window(QTemporaryDir &d, const QString &root)
+        explicit Window(QTemporaryDir &d, const QString &root, bool watching = false)
             : dir(d), translator(d.filePath("language")), theme(d.filePath("theme"), nullptr, d.filePath("no-hyprctl")),
               library(d.filePath("library.db")) {
             player.setMuted(true);
             library.setPlayer(&player);
-            library.setWatching(false);
+            library.setWatching(watching);
             library.setArtCacheDir(d.filePath("art"));
             library.setWriteSandbox(root);
             engine.rootContext()->setContextProperty("translator", &translator);
@@ -641,7 +650,7 @@ private slots:
         // Ctrl+Enter saves; the editor closes when every file is written.
         QSignalSpy finished(&c, &LibraryController::jobFinished);
         QTest::keyClick(window, Qt::Key_Return, Qt::ControlModifier);
-        QVERIFY(finished.wait(30000));
+        QVERIFY(seen(finished));
         QTRY_VERIFY(!sheet->property("opened").toBool());
         QVERIFY(!window->property("sheetOpen").toBool());
         const QString one = c.library()->absolutePath(m.id("01 One.flac", &c));
@@ -657,7 +666,7 @@ private slots:
         QTRY_VERIFY(w.find("trackTable")->property("activeFocus").toBool());
         finished.clear();
         QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
-        QVERIFY(finished.wait(30000));
+        QVERIFY(seen(finished));
         QCOMPARE(TagWriter::readFile(one).value("genre"), QString("Rock"));
         QCOMPARE(TagWriter::readFile(two).value("genre"), QString("Pop"));
         QTRY_VERIFY(toast->property("visible").toBool());
@@ -669,7 +678,7 @@ private slots:
         QTRY_VERIFY(!c.property("redoText").toString().isEmpty());
         finished.clear();
         QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
-        QVERIFY(finished.wait(30000));
+        QVERIFY(seen(finished));
         QCOMPARE(TagWriter::readFile(two).value("genre"), QString("Q Jazz"));
 
         // F2 renames the track under the cursor in place.
@@ -682,7 +691,7 @@ private slots:
         typeText(window, "Uno");
         finished.clear();
         QTest::keyClick(window, Qt::Key_Return);
-        QVERIFY(finished.wait(30000));
+        QVERIFY(seen(finished));
         QCOMPARE(TagWriter::readFile(one).value("title"), QString("Uno"));
 
         // The undo history opens from the palette and lists all four changes.
@@ -706,7 +715,7 @@ private slots:
         QCOMPARE(c.organiser()->moves(), 2);
         finished.clear();
         QTest::keyClick(window, Qt::Key_Return, Qt::ControlModifier);
-        QVERIFY(finished.wait(30000));
+        QVERIFY(seen(finished));
         QVERIFY(QFile::exists(m.music + "/Band/01 Uno.flac"));
         QVERIFY(QFile::exists(m.music + "/Band/02 Two.flac"));
         QTest::keyClick(window, Qt::Key_Escape);
@@ -714,10 +723,77 @@ private slots:
         // Ctrl+Z moves them back.
         finished.clear();
         QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
-        QVERIFY(finished.wait(30000));
+        QVERIFY(seen(finished));
         QVERIFY(QFile::exists(one));
         QVERIFY(QFile::exists(two));
         QVERIFY(!QDir(m.music + "/Band").exists("01 Uno.flac"));
+        window->close();
+    }
+
+    // A save followed at once by Ctrl+Z, while a rescan for a change from
+    // outside is waiting on the watcher: the undo still happens (it waits
+    // its turn if the save is still running), it undoes that save, and the
+    // only rescan is the one for the outside change.
+    void saveThenUndoAtOnceWhileTheWatcherWaits() {
+        if (!haveFfmpeg())
+            QSKIP("needs ffmpeg for the fixtures");
+        Music m;
+        QVERIFY(m.add("Band/Album/01 One.flac", {"title=One", "artist=Band", "album=Album", "track=1"}));
+        QVERIFY(m.add("Band/Album/02 Two.flac", {"title=Two", "artist=Band", "album=Album", "track=2"}));
+        QVERIFY(m.scan());
+        {
+            QSettings conf(m.dir.filePath("window.conf"), QSettings::IniFormat);
+            conf.setValue("window/advanced", true);
+        }
+        Window w(m.dir, m.root, true);
+        QVERIFY(w.load());
+        QQuickWindow *window = w.window;
+        LibraryController &c = w.library;
+        QTRY_VERIFY(c.ready());
+        QTRY_VERIFY(c.watcher() && c.watcher()->watchedFolders() >= 3);
+        Watcher *watcher = c.watcher();
+        QTRY_COMPARE(c.tracks()->count(), 2);
+        QTRY_VERIFY(w.find("trackTable") && w.find("trackTable")->property("activeFocus").toBool());
+
+        QStringList jobs;
+        connect(&c, &LibraryController::jobFinished, &c, [&](const QString &kind, const QJsonObject &) { jobs << kind; });
+        int rescans = 0, added = 0;
+        connect(watcher, &Watcher::rescanFinished, &c, [&](const QJsonObject &r) {
+            if (!r.value("yielded").toBool()) {
+                ++rescans;
+                added += r.value("added").toInt();
+            }
+        });
+
+        // A file arrives from outside: its rescan waits out the debounce.
+        QVERIFY(m.add("Band/Album/03 Three.flac", {"title=Three", "artist=Band", "album=Album", "track=3"}));
+
+        // F2, a new title, Return; then Ctrl+Z straight away.
+        const qint64 one = m.id("01 One.flac", &c);
+        const QString onePath = c.library()->absolutePath(one);
+        c.tracks()->select(0);
+        QCOMPARE(c.tracks()->trackId(0), one);
+        QTest::keyClick(window, Qt::Key_F2);
+        QObject *input = w.find("titleInput");
+        QVERIFY(input);
+        QTRY_VERIFY(input->property("activeFocus").toBool());
+        QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier);
+        typeText(window, "Uno");
+        QTest::keyClick(window, Qt::Key_Return);
+        QVERIFY(w.find("trackTable")->property("activeFocus").toBool());
+        QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier);
+
+        // Both ran, in order, and the title is back.
+        QTRY_COMPARE_WITH_TIMEOUT(jobs, (QStringList{"tag", "undo"}), 30000);
+        QCOMPARE(TagWriter::readFile(onePath).value("title"), QString("One"));
+        QCOMPARE(c.queuedJobs(), 0);
+
+        // The outside change is rescanned once; our two writes add none.
+        QTRY_COMPARE_WITH_TIMEOUT(added, 1, 30000);
+        QTRY_COMPARE(c.tracks()->count(), 3);
+        QTest::qWait(2500); // longer than the debounce: anything late would show
+        QCOMPARE(rescans, 1);
+        QVERIFY(watcher->ownEventsIgnored() >= 2);
         window->close();
     }
 
@@ -765,10 +841,249 @@ private slots:
     }
 };
 
+// Omamp's own writes and the folder watcher: tag saves, organise, undo and
+// the trash never start a rescan, a change from outside still does, and
+// the window's jobs never wait for (or give way to) a rescan.
+class OwnWritesTests : public QObject {
+    Q_OBJECT
+
+    // A controller with the folder watcher on, quick to react.
+    static LibraryController &openWatching(Music &m) {
+        m.controller = std::make_unique<LibraryController>(m.root + "/library.db");
+        m.controller->setArtCacheDir(m.root + "/art");
+        m.controller->setWriteSandbox(m.root);
+        m.controller->activate();
+        if (Watcher *w = m.controller->watcher()) {
+            w->setDebounce(100);
+            w->setMaxDelay(1000);
+        }
+        return *m.controller;
+    }
+
+    static bool twoTracks(Music &m) {
+        return m.add("Band/Album/01 One.flac", {"title=One", "artist=Band", "album=Album", "track=1"}) &&
+               m.add("Band/Album/02 Two.flac", {"title=Two", "artist=Band", "album=Album", "track=2"}) && m.scan();
+    }
+
+private slots:
+    void cleanup() { OwnWrites::clear(); }
+
+    void ownWritesStartNoRescan() {
+        if (!haveFfmpeg())
+            QSKIP("needs ffmpeg for the fixtures");
+        Music m;
+        QVERIFY(twoTracks(m));
+        LibraryController &c = openWatching(m);
+        QVERIFY(c.ready());
+        Watcher *w = c.watcher();
+        QVERIFY(w && w->isRunning());
+        QCOMPARE(w->watchedFolders(), 3); // music, Band and Album
+        QSignalSpy started(w, &Watcher::rescanStarted);
+        QSignalSpy finished(&c, &LibraryController::jobFinished);
+        // Longer than the debounce: a rescan the write caused would start.
+        auto quiet = [&] {
+            QTest::qWait(600);
+            return started.isEmpty();
+        };
+        const qint64 one = m.id("01 One.flac"), two = m.id("02 Two.flac");
+
+        // A tag save (written beside the file, then renamed over it).
+        QVERIFY(c.tagEditor()->quickSet(one, "title", "Uno"));
+        QVERIFY(seen(finished));
+        QCOMPARE(TagWriter::readFile(m.music + "/Band/Album/01 One.flac").value("title"), QString("Uno"));
+        QVERIFY(quiet());
+        QVERIFY(w->ownEventsIgnored() > 0);
+
+        // Its undo.
+        finished.clear();
+        QVERIFY(c.undo());
+        QVERIFY(seen(finished));
+        QCOMPARE(TagWriter::readFile(m.music + "/Band/Album/01 One.flac").value("title"), QString("One"));
+        QVERIFY(quiet());
+
+        // An organise into folders it makes, removing the one it empties.
+        OrganiseModel *org = c.organiser();
+        QVERIFY(org->load({one, two}));
+        org->setMask("<Artist> Sorted/<Album>/<Track#:2> <Title>");
+        org->replan();
+        QCOMPARE(org->moves(), 2);
+        finished.clear();
+        QVERIFY(org->apply());
+        QVERIFY(seen(finished));
+        QVERIFY(QFile::exists(m.music + "/Band Sorted/Album/01 One.flac"));
+        QVERIFY(!QDir(m.music + "/Band/Album").exists());
+        QVERIFY(quiet());
+        // The folders it made are watched, so later changes in them count.
+        QTRY_COMPARE(w->watchedFolders(), 3); // music, Band Sorted and its Album
+
+        // Its undo puts the files and the folders back.
+        finished.clear();
+        QVERIFY(c.undo());
+        QVERIFY(seen(finished));
+        QVERIFY(QFile::exists(m.music + "/Band/Album/01 One.flac"));
+        QVERIFY(QFile::exists(m.music + "/Band/Album/02 Two.flac"));
+        QVERIFY(quiet());
+
+        // The trash.
+        c.setTrashFunction([&](const QString &path, QString *) {
+            QDir().mkpath(m.root + "/trash");
+            return QFile::rename(path, m.root + "/trash/" + QFileInfo(path).fileName());
+        });
+        finished.clear();
+        QVERIFY(c.moveToTrash({two}));
+        QVERIFY(seen(finished));
+        QVERIFY(QFile::exists(m.root + "/trash/02 Two.flac"));
+        QVERIFY(quiet());
+        QCOMPARE(w->rescansStarted(), 0);
+
+        // A change from outside still starts one.
+        QSignalSpy rescanned(w, &Watcher::rescanFinished);
+        QVERIFY(m.add("Band/Album/03 Three.flac", {"title=Three", "artist=Band", "album=Album", "track=3"}));
+        QVERIFY(seen(rescanned, 10000));
+        QCOMPARE(rescanned.first().at(0).toJsonObject().value("added").toInt(), 1);
+        QCOMPARE(started.size(), 1);
+        // So does an outside edit of a file we wrote, once the note has run out.
+        OwnWrites::clear();
+        rescanned.clear();
+        {
+            QFile f(m.music + "/Band/Album/01 One.flac");
+            QVERIFY(f.open(QIODevice::Append));
+            f.write(QByteArray(16, '\0'));
+        }
+        QVERIFY(seen(rescanned, 10000));
+        QCOMPARE(rescanned.first().at(0).toJsonObject().value("updated").toInt(), 1);
+        QCOMPARE(w->rescansStarted(), 2);
+        // Nothing temporary is left behind.
+        for (const QString &f : files(m.music))
+            QVERIFY2(!QFileInfo(f).fileName().startsWith(OwnWrites::temporaryPrefix), qPrintable(f));
+    }
+
+    void ownWritesAreNotedForALittleWhile() {
+        OwnWrites::setLifetime(200);
+        QTemporaryDir dir;
+        const QString folder = dir.filePath("a/b/c");
+        OwnWrites::noteFolder(folder);
+        QVERIFY(OwnWrites::isOwn(folder));
+        QVERIFY(OwnWrites::isOwn(dir.filePath("a/b")));
+        QVERIFY(OwnWrites::isOwn(dir.filePath("a")));
+        QVERIFY(!OwnWrites::isOwn(dir.path())); // it was there already
+        OwnWrites::note(dir.filePath("x//y.flac"));
+        QVERIFY(OwnWrites::isOwn(dir.filePath("x/y.flac")));
+        QVERIFY(!OwnWrites::isOwn(dir.filePath("x/z.flac")));
+        QTest::qWait(300);
+        QVERIFY(!OwnWrites::isOwn(folder));
+        QVERIFY(!OwnWrites::isOwn(dir.filePath("x/y.flac")));
+        OwnWrites::setLifetime(5000);
+    }
+
+    // Jobs asked for while another runs wait their turn, in order, and the
+    // jobs bar says so; an undo waiting behind a save undoes that save. The
+    // watcher holds its rescans meanwhile and runs them after.
+    void userJobsWaitTheirTurnAndRescansWait() {
+        if (!haveFfmpeg())
+            QSKIP("needs ffmpeg for the fixtures");
+        Music m;
+        QVERIFY(twoTracks(m));
+        LibraryController &c = openWatching(m);
+        Watcher *w = c.watcher();
+        QVERIFY(w);
+        QStringList order;
+        connect(&c, &LibraryController::jobFinished, &c, [&](const QString &kind, const QJsonObject &) { order << "job:" + kind; });
+        connect(w, &Watcher::rescanStarted, &c, [&] { order << "rescan"; });
+        connect(w, &Watcher::rescanFinished, &c, [&](const QJsonObject &r) {
+            order << (r.value("yielded").toBool() ? "yielded" : "rescanned");
+        });
+
+        // A long job holds the slot, as a big rescan of everything would.
+        std::atomic_bool release = false;
+        QVERIFY(c.runJob("scan", "Blocking", [&](Library &, Job *) {
+            while (!release)
+                QThread::msleep(5);
+            return QJsonObject{{"ok", true}};
+        }, {}));
+        QVERIFY(c.busy());
+        QVERIFY(w->isHeld());
+        QVERIFY(c.waitingText().isEmpty());
+
+        // A title edit and Ctrl+Z meanwhile: neither is refused.
+        const qint64 one = m.id("01 One.flac");
+        QVERIFY(c.tagEditor()->quickSet(one, "title", "Uno"));
+        QVERIFY(c.undo());
+        QCOMPARE(c.queuedJobs(), 2);
+        QVERIFY(c.waitingText().startsWith("Waiting for the scan to finish"));
+        QVERIFY(c.waitingText().contains("2 jobs waiting"));
+        QVERIFY(c.message().isEmpty());
+
+        // A change from outside is noticed, but its rescan waits too.
+        QVERIFY(m.add("Band/Album/03 Three.flac", {"title=Three", "artist=Band", "album=Album", "track=3"}));
+        QTest::qWait(500);
+        QCOMPARE(w->rescansStarted(), 0);
+
+        release = true;
+        QTRY_COMPARE_WITH_TIMEOUT(order.size(), 5, 30000);
+        QCOMPARE(order, (QStringList{"job:scan", "job:tag", "job:undo", "rescan", "rescanned"}));
+        QVERIFY(!c.busy());
+        QVERIFY(!w->isHeld());
+        QCOMPARE(c.queuedJobs(), 0);
+        // The undo waited for the save, so it undid the save.
+        QCOMPARE(TagWriter::readFile(m.music + "/Band/Album/01 One.flac").value("title"), QString("One"));
+        QCOMPARE(c.undoText(), QString());
+        QVERIFY(!c.redoText().isEmpty());
+    }
+
+    // A rescan already running when a job of the window's starts gives way:
+    // it stops, and runs again in full once the job is done.
+    void aRunningRescanGivesWay() {
+        if (!haveFfmpeg())
+            QSKIP("needs ffmpeg for the fixtures");
+        Music m;
+        QVERIFY(twoTracks(m));
+        LibraryController &c = openWatching(m);
+        Watcher *w = c.watcher();
+        QVERIFY(w);
+        QStringList order;
+        std::atomic_bool release = false;
+        bool blocked = false;
+        connect(&c, &LibraryController::jobFinished, &c, [&](const QString &kind, const QJsonObject &) { order << "job:" + kind; });
+        // The job starts the moment the rescan does.
+        connect(w, &Watcher::rescanStarted, &c, [&] {
+            order << "rescan";
+            if (blocked)
+                return;
+            blocked = true;
+            QVERIFY(c.runJob("tag", "Blocking", [&](Library &, Job *) {
+                while (!release)
+                    QThread::msleep(5);
+                return QJsonObject{{"ok", true}};
+            }, {}));
+        });
+        QList<QJsonObject> results;
+        connect(w, &Watcher::rescanFinished, &c, [&](const QJsonObject &r) {
+            results << r;
+            order << (r.value("yielded").toBool() ? "yielded" : "rescanned");
+        });
+
+        QVERIFY(m.add("Band/Album/03 Three.flac", {"title=Three", "artist=Band", "album=Album", "track=3"}));
+        QTRY_COMPARE_WITH_TIMEOUT(order.size(), 2, 10000);
+        QCOMPARE(order, (QStringList{"rescan", "yielded"}));
+        QVERIFY(results.first().value("cancelled").toBool());
+        QVERIFY(w->isHeld());
+        QTest::qWait(300);
+        QCOMPARE(order.size(), 2); // held: no rerun yet
+
+        release = true;
+        QTRY_COMPARE_WITH_TIMEOUT(order.size(), 5, 30000);
+        QCOMPARE(order, (QStringList{"rescan", "yielded", "job:tag", "rescan", "rescanned"}));
+        QCOMPARE(results.last().value("added").toInt(), 1);
+        QCOMPARE(w->rescansStarted(), 2);
+    }
+};
+
 int runTidyWindowTests(int argc, char **argv) {
     TidyWindowTests tests;
     TidyWindowKeysTests keys;
-    return QTest::qExec(&tests, argc, argv) + QTest::qExec(&keys, argc, argv);
+    OwnWritesTests own;
+    return QTest::qExec(&tests, argc, argv) + QTest::qExec(&keys, argc, argv) + QTest::qExec(&own, argc, argv);
 }
 
 #include "tidywindow_tests.moc"

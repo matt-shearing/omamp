@@ -8,6 +8,7 @@
 #include "job.h"
 #include "library.h"
 #include "organise.h"
+#include "ownwrites.h"
 #include "tagwriter.h"
 
 #include <QDateTime>
@@ -180,6 +181,12 @@ void LibraryController::refreshUndo() {
 bool LibraryController::undo() {
     if (!activate())
         return false;
+    // While a job runs (a save, say), what Ctrl+Z means is decided when its
+    // turn comes, so it undoes that save rather than the change before it.
+    if (m_scanThread) {
+        enqueue("undo", [this] { undo(); });
+        return true;
+    }
     const UndoTargets t = undoTargets(*m_library);
     if (t.undo.isEmpty()) {
         emit toast(tr("Nothing to undo"));
@@ -191,6 +198,10 @@ bool LibraryController::undo() {
 bool LibraryController::redo() {
     if (!activate())
         return false;
+    if (m_scanThread) {
+        enqueue("undo", [this] { redo(); });
+        return true;
+    }
     const UndoTargets t = undoTargets(*m_library);
     if (t.redo.isEmpty()) {
         emit toast(tr("Nothing to redo"));
@@ -350,8 +361,12 @@ bool LibraryController::moveToTrash(const QVariantList &ids) {
                     error = tr("it is outside the allowed folder");
                 else if (!QFileInfo::exists(path))
                     error = tr("the file is already gone");
-                else if (!trash(path, &error) && error.isEmpty())
-                    error = tr("the trash refused it");
+                if (error.isEmpty()) {
+                    // Our own change: the folder watcher leaves it to us.
+                    OwnWrites::note(path);
+                    if (!trash(path, &error) && error.isEmpty())
+                        error = tr("the trash refused it");
+                }
                 if (error.isEmpty())
                     trashed << QJsonObject{{"id", id}, {"path", path}};
                 else

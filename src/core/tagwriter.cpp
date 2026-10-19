@@ -2,6 +2,7 @@
 
 #include "job.h"
 #include "library.h"
+#include "ownwrites.h"
 #include "scanner.h"
 #include "tagreader.h"
 
@@ -217,7 +218,9 @@ void syncPath(const QString &path, bool directory) {
 QString temporaryBeside(const QString &path) {
     const QFileInfo info(path);
     for (int attempt = 0; attempt < 100; ++attempt) {
-        const QString candidate = info.absolutePath() + QString("/.omamp-%1-").arg(QRandomGenerator::global()->generate(), 8, 16, QChar('0')) +
+        // Hidden, so neither the folder watcher nor the scanner looks at it.
+        const QString candidate = info.absolutePath() + '/' + QLatin1String(OwnWrites::temporaryPrefix) +
+                                  QString("%1-").arg(QRandomGenerator::global()->generate(), 8, 16, QChar('0')) +
                                   info.fileName();
         if (!QFileInfo::exists(candidate))
             return candidate;
@@ -735,11 +738,15 @@ TagFileResult TagWriter::writeOne(qint64 trackId, const QList<TagEdit> &edits, c
             r.error = "Something else changed the file while its tags were written; it was left alone";
             return r;
         }
+        // The rename is our own change: the watcher must not rescan for it
+        // (the library row is updated below).
+        OwnWrites::note(r.path);
         if (::rename(QFile::encodeName(temporary).constData(), QFile::encodeName(r.path).constData()) != 0) {
             r.ok = false;
             r.error = QString("Can't replace the original: %1").arg(QString::fromLocal8Bit(strerror(errno)));
             return r;
         }
+        OwnWrites::note(r.path);
         removeTemporary.dismiss();
         syncPath(QFileInfo(r.path).absolutePath(), true);
         r.fileWritten = true;
@@ -759,6 +766,7 @@ TagFileResult TagWriter::writeOne(qint64 trackId, const QList<TagEdit> &edits, c
             r.error = "Outside the allowed folder";
             return r;
         }
+        OwnWrites::note(lrc);
         if (c.newValue.isEmpty()) {
             if (QFileInfo::exists(lrc) && !QFile::remove(lrc)) {
                 r.ok = false;

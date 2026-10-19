@@ -2,6 +2,7 @@
 
 #include "job.h"
 #include "library.h"
+#include "ownwrites.h"
 #include "tagreader.h"
 #include "tagwriter.h"
 
@@ -421,6 +422,15 @@ bool Organiser::moveFile(const QString &from, const QString &to, bool *copied, Q
         return false;
     }
     const QString toFolder = folderOf(to);
+    // Every path this move touches is our own change: the folder watcher
+    // must not rescan for it (the library row is updated by the caller).
+    OwnWrites::note(from);
+    OwnWrites::note(to);
+    OwnWrites::noteFolder(toFolder);
+    auto noteAgain = qScopeGuard([&] {
+        OwnWrites::note(from);
+        OwnWrites::note(to);
+    });
     if (!QDir().mkpath(toFolder)) {
         *error = QString("Can't make the folder %1").arg(toFolder);
         return false;
@@ -443,8 +453,8 @@ bool Organiser::moveFile(const QString &from, const QString &to, bool *copied, Q
     // Across filesystems: copy beside the target, check, name it, then
     // delete the original.
     const QString temporary =
-        toFolder + QString("/.omamp-%1-").arg(QRandomGenerator::global()->generate(), 8, 16, QChar('0')) +
-        QFileInfo(to).fileName();
+        toFolder + '/' + QLatin1String(OwnWrites::temporaryPrefix) +
+        QString("%1-").arg(QRandomGenerator::global()->generate(), 8, 16, QChar('0')) + QFileInfo(to).fileName();
     auto cleanup = qScopeGuard([&] { QFile::remove(temporary); });
     if (!QFile::copy(from, temporary)) {
         *error = "Can't copy the file to the other filesystem";
@@ -553,6 +563,7 @@ bool Organiser::removeEmptyFolders(const QStringList &folders, const QString &ba
                 insideRoot = true;
         if (!insideRoot)
             continue;
+        OwnWrites::note(folder);
         if (!QDir().rmdir(folder))
             continue;
         ++*removed;
@@ -731,6 +742,8 @@ OrganiseResult Organiser::undo(const QString &batch) {
             continue;
         bool ok = false;
         if (e.field == "folder_removed") {
+            if (Journal::insideSandbox(m_sandbox, e.oldValue))
+                OwnWrites::noteFolder(e.oldValue);
             ok = Journal::insideSandbox(m_sandbox, e.oldValue) && QDir().mkpath(e.oldValue);
             if (ok)
                 journal(m_library, undoBatch, 0, "folder_created", QString(), e.oldValue, source);

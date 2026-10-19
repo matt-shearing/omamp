@@ -1599,7 +1599,9 @@ noise); the schema 4 to 6 upgrade; and each new command with `--json`.
   written file belongs to the user who ran Omamp.
 - **The watcher sees the temporary file** (it has an audio extension) and
   queues a rescan of its folder, which finds nothing new. Harmless, but a
-  little work.
+  little work. *Fixed; see "Fix: own writes and the job slot" at the end.
+  The temporary file was already hidden; the rename over the original was
+  the event that started the rescan.*
 - **A crash between a move and its database commit** leaves the file moved
   and the row pointing at the old place. The next scan's moved-file matching
   repairs it (same content hash), but it is not journalled.
@@ -3220,3 +3222,110 @@ autoplaylist`, captured offscreen in software with `OMAMP_DEMO` and
 - **Translations**: English only, with the new plural forms in
   `src/app/i18n/en.json`. The tests run without the translator, so they
   check English plurals only where the count isn't 1.
+
+## Fix: own writes and the job slot (20 October 2026)
+
+`TidyWindowKeysTests::editTagsFromTheKeyboardAndUndo` failed about two runs
+in five at a `finished.wait(30000)` line. The report blamed the folder
+watcher: Omamp's own writes woke it, and its rescan took the window's single
+job slot, so a `Ctrl+Z` pressed during the rescan was refused. Part of that
+was true and is fixed below, but it was not what broke the test.
+
+### What actually broke the test
+
+The test turns the watcher off (`setWatching(false)`), so no rescan ever ran.
+Logging the window's state at the failure showed the save, or the redo, had
+already run and finished. `QSignalSpy::wait()` in Qt 6 counts only signals
+that arrive while it waits. A two-file tag job on tmpfs can finish while
+`QTest::keyClick` is still delivering the key, so `jobFinished` came before
+`wait()` began and the wait timed out. The test now uses `seen(spy)`, which
+returns at once when the spy already holds the signal. The `QTRY` on
+`redoText` before the redo key stays: it is harmless and says what the
+redo depends on.
+
+### What was wrong in the app
+
+- **Own writes woke the watcher.** The tag writer's temporary copy was
+  already hidden (`.omamp-…`), and the watcher and scanner skip hidden names.
+  But the rename over the original, the organiser's moves, the folders it
+  makes and removes, and files sent to the trash were all inotify events, so
+  each started a rescan 1.5 seconds later. The rescan found nothing new
+  (the writers update the library rows themselves), but during a long
+  organise it could run while files were half moved.
+- **The window's jobs refused each other.** The watcher's rescans run on
+  their own thread and never held the job slot, but the window's own jobs
+  did: a save, an undo or an organise asked for while a rescan of
+  everything (F5), a duplicate search or another save was running was
+  refused with "Wait for the running job to finish". Undo, redo and the edit
+  actions were also greyed out in the palette while anything ran.
+
+### The fix
+
+- **`src/core/ownwrites.{h,cpp}`**: a process-wide list of paths Omamp is
+  changing itself. `OwnWrites::note(path)` marks a path as ours for five
+  seconds; `noteFolder()` also marks each parent that `mkpath` is about to
+  make. The tag writer notes the file before and after the rename and the
+  `.lrc` sidecar; the organiser notes the source, the target and the target
+  folder for every move (including undo), and each folder it removes or
+  makes again; the trash notes each file. Temporary names come from one
+  constant, `OwnWrites::temporaryPrefix`.
+- **The watcher** checks `OwnWrites::isOwn()` for every event. An own event
+  queues no rescan; a folder we made is still watched, so later changes in
+  it count. An edit from outside to a file we wrote still counts once the
+  note has run out.
+- **The watcher yields.** `Watcher::setHeld(true)` holds rescans back while
+  the window runs a job: changes are still collected, and a rescan already
+  running is cancelled (by run number, so a cancel that arrives before the
+  run begins still finds it) and runs again first when the hold ends. The
+  controller holds the watcher whenever its job slot is busy.
+- **Jobs wait their turn.** `LibraryController::runJob` no longer refuses
+  while another job runs: the new job joins a queue and starts the moment
+  the slot is free. `undo()` and `redo()` queue themselves rather than a
+  fixed batch, so a `Ctrl+Z` pressed during a save undoes that save. The
+  jobs bar shows "Waiting for the scan to finish…" (or "…the running job…",
+  with "(2 jobs waiting)" when there are more), and a toast says the same.
+  New properties: `queuedJobs`, `waitingText`. A second rescan of
+  everything while one is running or waiting is still refused, since the
+  first covers it.
+- **The window**: undo, redo, edit tags, organise, tags from file names and
+  the title edit stay enabled in the palette while a job runs, as does
+  "Undo this change" in the undo history.
+
+### Tests
+
+- `editTagsFromTheKeyboardAndUndo` waits with `seen()`.
+- `TidyWindowKeysTests::saveThenUndoAtOnceWhileTheWatcherWaits`: the real
+  window with the watcher on. A file arrives from outside, then F2, a new
+  title, Return and `Ctrl+Z` straight away. The undo runs after the save
+  and puts the title back, and the only rescan is the one for the outside
+  file.
+- `OwnWritesTests::ownWritesStartNoRescan`: a tag save, its undo, an
+  organise into new folders, its undo and the trash start no rescan
+  (`Watcher::rescansStarted()` stays 0, `ownEventsIgnored()` rises). A file
+  added from outside starts one, and so does an outside edit of a file we
+  wrote earlier.
+- `OwnWritesTests::ownWritesAreNotedForALittleWhile`: notes, parents and
+  expiry.
+- `OwnWritesTests::userJobsWaitTheirTurnAndRescansWait`: while a long job
+  holds the slot, a title save and `Ctrl+Z` both queue with the right
+  waiting text, and a change from outside waits too. Afterwards the order is
+  scan, save, undo, rescan, and the undo undid the save.
+- `OwnWritesTests::aRunningRescanGivesWay`: a job started the moment a
+  rescan starts makes it give way (`"yielded": true` in `rescanFinished`);
+  it reruns in full after the job.
+
+Disabling the own-write check in the watcher makes
+`ownWritesStartNoRescan` and the window test fail, so the tests detect the
+bug.
+
+### Results
+
+Before the fix, 2 of 5 runs of the `tidywindow` tests failed (at lines 644
+and 672). After it, with `QT_QPA_PLATFORM=offscreen`,
+`QT_QUICK_BACKEND=software`, `OMAMP_NO_AUDIO_DEVICE=1` and a temporary
+`HOME`:
+
+- `OMAMP_TESTS=tidywindow`, 10 runs in a row: 10 passed (TidyWindowTests
+  9/9, TidyWindowKeysTests 5/5, OwnWritesTests 6/6 each time).
+- The full suite, twice: every class passed both times. The only skips are
+  the opt-in ones (four engine CPU benchmarks, the live web smoke test).

@@ -73,6 +73,10 @@ class LibraryController : public QObject {
     Q_PROPERTY(QString redoText READ redoText NOTIFY undoChanged)
     // The kind of the running job: scan, tag, organise, undo, duplicates, trash.
     Q_PROPERTY(QString jobKind READ jobKind NOTIFY jobChanged)
+    // Jobs asked for while another ran, waiting their turn, and what the
+    // jobs bar says about them ("Waiting for the scan to finish…"), or "".
+    Q_PROPERTY(int queuedJobs READ queuedJobs NOTIFY jobChanged)
+    Q_PROPERTY(QString waitingText READ waitingText NOTIFY jobChanged)
     // Phase 3: playlists and collections, Auto-DJ and party mode, and the
     // Settings page's library settings.
     Q_PROPERTY(PlaylistsController *playlists READ playlists CONSTANT)
@@ -130,12 +134,17 @@ public:
     QString undoText() const { return m_undoText; }
     QString redoText() const { return m_redoText; }
     QString jobKind() const { return m_jobKind; }
+    int queuedJobs() const { return int(m_queued.size()); }
+    QString waitingText() const;
 
     // Work that writes to the library or the files runs here, one job at a
     // time, on a worker thread with its own Library on the same file. work
     // gets that Library and the Job (for progress and cancel); done runs on
-    // the window's thread with work's result. Returns false, with a message,
-    // when another job is running or the library won't open.
+    // the window's thread with work's result. A job asked for while another
+    // runs waits its turn (the jobs bar says so) and starts as soon as the
+    // slot is free, so nothing the user asks for is dropped. The folder
+    // watcher holds its rescans while any job runs. Returns false only when
+    // the library won't open.
     using JobWork = std::function<QJsonObject(Library &library, Job *job)>;
     using JobDone = std::function<void(const QJsonObject &result)>;
     bool runJob(const QString &kind, const QString &text, JobWork work, JobDone done);
@@ -278,6 +287,10 @@ private:
     void onScanFinished(const QJsonObject &result);
     void finishJob(const QJsonObject &result);
     bool runUndo(const QString &batch, const QString &label, bool redo);
+    // Puts work in line behind the running job; start runs when it is its turn.
+    void enqueue(const QString &kind, std::function<void()> start);
+    void startQueued();
+    void holdWatcher();
     void setMessage(const QString &text);
     void updatePlayingTrack();
     void startWatcher();
@@ -305,6 +318,11 @@ private:
     Job *m_job = nullptr;
     QString m_jobKind;
     JobDone m_jobDone;
+    struct Queued {
+        QString kind;
+        std::function<void()> start;
+    };
+    QList<Queued> m_queued;
     QString m_sandbox;
     std::function<bool(const QString &, QString *)> m_trash;
     QString m_undoText, m_redoText;

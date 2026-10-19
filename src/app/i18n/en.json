@@ -17,6 +17,7 @@
   "New picture for all %n tracks: %1": { "one": "New picture: %1", "other": "New picture for all %n tracks: %1" },
   "Saving tags of %n tracks": { "one": "Saving the tags of %n track", "other": "Saving tags of %n tracks" },
   "%n tracks saved": { "one": "%n track saved", "other": "%n tracks saved" },
+  "(%n jobs waiting)": { "one": "(%n job waiting)", "other": "(%n jobs waiting)" },
   "%n failed": { "one": "%n failed", "other": "%n failed" },
   "Organising %n files": { "one": "Organising %n file", "other": "Organising %n files" },
   "%n files moved": { "one": "%n file moved", "other": "%n files moved" },

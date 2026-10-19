@@ -2,8 +2,9 @@
 
 Omamp can fill in tags, covers and lyrics from free web services, and send
 what you play to ListenBrainz or Last.fm. Nothing goes online until you run
-one of the commands below (or, later, press the matching button in the
-window). This page lists each service, what it needs, how fast Omamp may ask
+one of the commands below or press the matching button in the window
+(Identify with MusicBrainz, Find missing covers, Find a cover, Fetch from
+LRCLIB, the scrobbling log-ins and Send now). This page lists each service, what it needs, how fast Omamp may ask
 it, and exactly what leaves your machine.
 
 ## Services

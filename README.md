@@ -177,6 +177,61 @@ window size for each.
   ListenBrainz (paste a token and check it) and Last.fm; the AcoustID key,
   MusicBrainz preferences and cover size.
 
+### MusicBrainz, covers, lyrics and the NAS
+
+- **Identify with MusicBrainz** (`Ctrl+I`, a track's or an album's menu, or
+  the palette) works as Picard does. The chosen tracks are grouped into
+  albums. Each album gets MusicBrainz releases, best first, with a score, a
+  confidence (high, medium or low) and the reasons. Below that you see which
+  file went to which track, how well each fits, and every tag that would
+  change, old and new. Pick another release from the list, or paste a
+  release's ID or link. **Save tags** writes each ticked album, with its
+  front cover if you want it; `Ctrl+Z` undoes it. Without an AcoustID key
+  (Settings → Web), tracks are matched by their tags and any MusicBrainz IDs
+  already in them, and the sheet says so. When MusicBrainz can't be reached,
+  it says that too.
+- **Covers**: **Find missing covers** (the palette, the album grid's menu,
+  or Files to Edit → Missing artwork) fetches a front cover from the Cover
+  Art Archive for every album without one, as a job you can cancel. **Find
+  a cover…** on one album shows the candidates side by side when there are
+  several.
+- **Lyrics**: the info panel's Lyrics tab (`I`, then Lyrics, or **Show
+  lyrics** in the palette) shows the words from a `.lrc` file beside the
+  track, from its tags, or from LRCLIB. Timed lyrics follow the playing
+  track, with the line being sung lit; click a line to jump there. **Fetch
+  from LRCLIB**, **Save as .lrc** and **Save into the file** are buttons;
+  saving can be undone.
+- **Scrobbling** (Settings → Scrobbling): ListenBrainz with a pasted token;
+  Last.fm by logging in through its web page, with your own API key; the
+  queue's waiting, sent and refused counts; **Send now**.
+- **Volumes** (the palette, Settings → Library, or Location's menu in the
+  tree) lists every disk, NAS share and server the library uses, whether it
+  is connected, and its tracks. Rescan or quick-rescan one, point it at a new
+  folder when the music moved, forget one that is gone, or set how many
+  folders it reads at once. Shares are checked on a separate thread, which
+  gives up after 1.5 seconds, so a NAS that is asleep never freezes the
+  window. Its tracks stay in the library, greyed, with a tooltip saying which
+  share isn't connected; when it comes back, Omamp rescans it and the jobs
+  bar says so.
+- **Connect a NAS…** turns a share's name (`//nas/music` or
+  `nas:/volume1/music`) into the two systemd units and the commands that
+  mount it on demand, each with a Copy button. Omamp never runs `sudo` or
+  mounts anything itself. The full guide is [docs/nas.md](docs/nas.md).
+- **Navidrome and other Subsonic servers** (**Add Navidrome / Subsonic
+  server…**): the address, a user and password or an API key, **Test the
+  connection**, and a streaming quality. The password is kept in the desktop
+  keyring, never in the library. The server's tracks join the library with a
+  small cloud mark and its covers; sync again or remove the server from the
+  Volumes page.
+
+![Identify with MusicBrainz: releases, scores and the tag changes](docs/identify.png)
+
+![Synced lyrics in the info panel](docs/lyrics.png)
+
+![Volumes: a local disk, a NAS share that isn't connected, and a Navidrome server](docs/volumes.png)
+
+![Adding a Navidrome server](docs/remote-source.png)
+
 ![Playlists in the tree, with a repeat and an entry not in the library](docs/playlists.png)
 
 ![The auto-playlist editor: query, rules and preview](docs/autoplaylist-editor.png)
@@ -253,6 +308,7 @@ instead of the playlist, and these keys work too:
 | `Ctrl+E` | Edit the tags of the selected tracks (in the grid, the chosen album's) |
 | `F2` | Edit the title of the track under the cursor; `Enter` saves, `Esc` leaves it |
 | `Ctrl+Shift+O` | Organise files: rename and move the selected tracks by a mask |
+| `Ctrl+I` | Identify the selected tracks (in the grid, the chosen album) with MusicBrainz |
 | `Ctrl+Z` | Undo the last tag edit or organise |
 | `Ctrl+Shift+Z` or `Ctrl+Y` | Redo what was undone |
 | `Ctrl+Enter` or `Ctrl+S` in an editor | Save, organise or tag |
@@ -282,9 +338,8 @@ Omarchy's own apps are built.
 
 The full plan is in [docs/plan/](docs/plan/). In short:
 
-- **Tagging:** MusicBrainz and AcoustID lookups, and lyrics from the web.
-- **NAS libraries:** SMB, NFS or a Navidrome/Subsonic server, with offline tracks kept in the library.
-- **Web in the window:** identify, covers and lyrics from MusicBrainz, AcoustID and LRCLIB (the command line has them now).
+- **Playing from a Navidrome server:** its tracks are in the library; streaming them is next.
+- **Tried on a real NAS and a real library:** so far only mock servers and made-up music.
 
 ## The library from the command line
 
@@ -321,7 +376,9 @@ removed.
   from the library) that haven't played yet. Until such a track plays, the
   playlist shows a tidied file name and no length.
 - Searching inside a playlist, and dragging tracks from the album grid.
-- Logging in to Last.fm from the window (`omamp scrobble login lastfm` works).
+- Playing tracks from a Navidrome / Subsonic server (they list, search and
+  show covers, but the player can't stream them yet).
+- Last.fm needs your own API account: Omamp doesn't ship a key.
 - A change of playback engine takes effect at the next start.
 
 ## Licence

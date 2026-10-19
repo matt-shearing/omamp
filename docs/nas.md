@@ -113,11 +113,14 @@ When a share cannot be reached, its volume is **offline**:
   and an I/O error (`EIO`) also count as offline.
 - When the share comes back, Omamp notices within 30 seconds (at once if the
   mount itself appears), marks its tracks online, and quick-rescans just that
-  share. `omamp watch` does this today; the window will once it starts the
-  same mount monitor.
+  share. Both `omamp watch` and the window do this; the window's jobs bar
+  says when a share is back and being rescanned.
 
 `omamp volume list` shows each volume and why it is offline (`absent`,
-`timed-out`, `stale`, `io-error`, `denied`).
+`timed-out`, `stale`, `io-error`, `denied`). In the window, the Volumes page
+(palette, Settings → Library, or the tree's Location menu) shows the same in
+words, and **Connect a NAS…** there writes out the steps below for your
+share.
 
 ### Moving to a new NAS
 

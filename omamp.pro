@@ -1,26 +1,26 @@
-QT += core gui qml quick quickcontrols2 dbus multimedia
+QT += core gui qml quick quickcontrols2 dbus
 
 CONFIG += c++17 release
 TARGET = omamp
 TEMPLATE = app
 
+include(src/core/core.pri)
+include(src/engine/engine.pri)
+include(src/cli/cli.pri)
+
+INCLUDEPATH += src/app
+
 HEADERS += \
-    src/player.h \
-    src/playlist.h \
-    src/spectrum.h \
-    src/mpris.h \
-    src/portal.h \
-    src/theme.h \
-    src/translator.h
+    src/app/mpris.h \
+    src/app/portal.h \
+    src/app/theme.h \
+    src/app/translator.h
 
 SOURCES += \
-    src/main.cpp \
-    src/player.cpp \
-    src/playlist.cpp \
-    src/spectrum.cpp \
-    src/mpris.cpp \
-    src/portal.cpp \
-    src/theme.cpp \
-    src/translator.cpp
+    src/app/main.cpp \
+    src/app/mpris.cpp \
+    src/app/portal.cpp \
+    src/app/theme.cpp \
+    src/app/translator.cpp
 
-RESOURCES += src/resources.qrc
+RESOURCES += src/app/resources.qrc

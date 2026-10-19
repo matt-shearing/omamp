@@ -1,10 +1,16 @@
-QT += core gui quick quickcontrols2 testlib dbus multimedia
+QT += core gui quick quickcontrols2 testlib dbus
 CONFIG += c++17 testcase
 TARGET = omamp_tests
 TEMPLATE = app
 
-INCLUDEPATH += ../src
+include(../src/core/core.pri)
+include(../src/engine/engine.pri)
+include(../src/cli/cli.pri)
+INCLUDEPATH += ../src/app
 
-HEADERS += ../src/player.h ../src/playlist.h ../src/spectrum.h ../src/portal.h ../src/theme.h ../src/translator.h
-SOURCES += omamp_tests.cpp ../src/player.cpp ../src/playlist.cpp ../src/spectrum.cpp ../src/portal.cpp \
-           ../src/theme.cpp ../src/translator.cpp
+# Where make-fixtures lives, so the tests can build their audio files.
+DEFINES += OMAMP_TESTS_DIR=\\\"$$PWD\\\"
+
+HEADERS += ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h
+SOURCES += main.cpp omamp_tests.cpp library_tests.cpp \
+           ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp

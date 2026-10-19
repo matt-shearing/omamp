@@ -1,0 +1,61 @@
+#!/bin/bash
+# Makes a small library of tagged audio files for the tests: several formats,
+# a two-disc album, a compilation, multi-value artists and genres, files with
+# no tags, Unicode names, an audiobook, a broken file and files the scanner
+# must skip. Every file is a second or two of a quiet sine tone.
+#
+#   tests/make-fixtures <folder>
+#
+# The tests run this into a temporary folder; nothing here is checked in.
+set -euo pipefail
+
+out="${1:?usage: make-fixtures <folder>}"
+mkdir -p "$out"
+cd "$out"
+
+# tone <file> <seconds> <ffmpeg args...>: the args carry -metadata and codec options.
+tone() {
+    local file="$1" seconds="$2"
+    shift 2
+    mkdir -p "$(dirname "$file")"
+    ffmpeg -nostdin -hide_banner -loglevel error -y \
+        -f lavfi -i "sine=frequency=440:sample_rate=22050:duration=$seconds" \
+        -af volume=0.05 -map_metadata -1 "$@" "$file"
+}
+
+# A two-disc album with a guest on one track.
+album=(-metadata album="Night Drive" -metadata album_artist="Neon Coast" -metadata date=1997 -metadata genre=Synthwave)
+tone "Neon Coast/Night Drive/1-01 Midnight Highway.flac" 1 "${album[@]}" \
+    -metadata title="Midnight Highway" -metadata artist="Neon Coast" -metadata track=1/2 -metadata disc=1/2 \
+    -metadata composer="Ada Moreau"
+tone "Neon Coast/Night Drive/1-02 Coastline.flac" 2 "${album[@]}" \
+    -metadata title="Coastline" -metadata artist="Neon Coast; Lena Park" -metadata track=2/2 -metadata disc=1/2
+tone "Neon Coast/Night Drive/2-01 Afterglow.flac" 1 "${album[@]}" \
+    -metadata title="Afterglow" -metadata artist="Neon Coast" -metadata track=1/1 -metadata disc=2/2
+
+# A compilation across formats.
+comp=(-metadata album="Summer Mix" -metadata album_artist="Various Artists" -metadata compilation=1 -metadata date=2001)
+tone "Compilations/Summer Mix/01 Heatwave.mp3" 1 "${comp[@]}" -c:a libmp3lame -b:a 64k \
+    -metadata title="Heatwave" -metadata artist="Sunset Riders" -metadata track=1 -metadata genre="Rock; Metal"
+tone "Compilations/Summer Mix/02 Tidal.ogg" 1 "${comp[@]}" -c:a libvorbis \
+    -metadata title="Tidal" -metadata artist="Björk" -metadata track=2 -metadata genre=Pop
+tone "Compilations/Summer Mix/03 Snow Day.opus" 1 "${comp[@]}" -c:a libopus -b:a 32k \
+    -metadata title="Snow Day" -metadata artist="Sunset Riders" -metadata track=3 -metadata genre=Christmas
+
+# Unicode names and tags.
+tone "日本語/夜の歌.m4a" 1 -c:a aac -b:a 64k \
+    -metadata title="夜の歌" -metadata artist="坂本 龍一" -metadata album="東京" -metadata date=1983 -metadata track=1
+tone "Mötley/Crüe Song.wav" 1 -metadata title="Crüe Song" -metadata artist="Mötley"
+
+# No tags at all, and a title only.
+tone "Loose/untagged track.mp3" 1 -c:a libmp3lame -b:a 64k
+tone "Loose/title only.opus" 1 -c:a libopus -b:a 32k -metadata title="Only A Title"
+
+# An audiobook, recognised by its extension.
+tone "Books/Chapter One.m4b" 1 -c:a aac -b:a 32k -f ipod -metadata title="Chapter One" -metadata artist="Reader"
+
+# Things the scanner must cope with or skip.
+printf 'not really audio\n' > "Loose/broken.mp3"
+printf 'jpeg\n' > "Neon Coast/Night Drive/cover.jpg"
+mkdir -p .hidden
+cp "Loose/untagged track.mp3" ".hidden/skipped.mp3"

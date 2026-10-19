@@ -151,5 +151,9 @@ private:
     }
 };
 
-QTEST_MAIN(OmampTests)
+int runPlayerTests(int argc, char **argv) {
+    OmampTests tests;
+    return QTest::qExec(&tests, argc, argv);
+}
+
 #include "omamp_tests.moc"

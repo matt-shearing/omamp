@@ -4,8 +4,8 @@ pkgrel=1
 pkgdesc='A Winamp-style music player that wears the Omarchy theme'
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-multimedia' 'qt6-wayland' 'xdg-desktop-portal' 'ttf-jetbrains-mono-nerd')
-makedepends=('gcc' 'make')
+depends=('qt6-base' 'qt6-declarative' 'qt6-multimedia' 'qt6-wayland' 'xdg-desktop-portal' 'ttf-jetbrains-mono-nerd' 'taglib' 'sqlite')
+makedepends=('gcc' 'make' 'pkgconf')
 source=()
 sha256sums=()
 

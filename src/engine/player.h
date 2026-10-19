@@ -10,8 +10,6 @@
 #include "playlist.h"
 #include "spectrum.h"
 
-class FolderPicker;
-
 // The player's state and every action the window, the keyboard and MPRIS can
 // take. QML only lays it out.
 class Player : public QObject {
@@ -61,7 +59,6 @@ public:
     void setShuffle(bool on);
     void setRepeat(bool on);
     void setMuted(bool muted) { m_output.setMuted(muted); }
-    void setPicker(FolderPicker *picker);
 
     Q_INVOKABLE void play();
     Q_INVOKABLE void pause();
@@ -80,6 +77,10 @@ public:
     Q_INVOKABLE void openFolder();
     Q_INVOKABLE void dismissError();
 
+    // Adds folders the user picked, starting playback if the list was empty.
+    void addPicked(const QStringList &paths);
+    void reportError(const QString &message) { setError(message); }
+
     // Which row comes after the current one, or -1 at the end of the list.
     int nextIndex();
 
@@ -93,6 +94,9 @@ signals:
     void levelsChanged();
     void errorChanged();
     void seeked(qint64 position);
+    // The window asked for a folder. The app connects this to the desktop's
+    // folder picker, so the engine needs no D-Bus or portal code.
+    void folderRequested();
 
 private:
     void load(int row);
@@ -108,7 +112,6 @@ private:
     Playlist m_playlist;
     Spectrum m_spectrum;
     QTimer m_spectrumTimer, m_saveTimer;
-    FolderPicker *m_picker = nullptr;
     QString m_statePath;
     QList<int> m_history;
     int m_current = -1;

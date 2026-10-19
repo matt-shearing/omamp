@@ -1,13 +1,12 @@
 #include "player.h"
 
-#include "portal.h"
-
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMediaMetaData>
+#include <QMetaMethod>
 #include <QRandomGenerator>
 #include <QSaveFile>
 #include <QUrl>
@@ -77,16 +76,12 @@ Player::~Player() {
         save();
 }
 
-void Player::setPicker(FolderPicker *picker) {
-    m_picker = picker;
-    connect(picker, &FolderPicker::picked, this, [this](const QStringList &paths) {
-        const bool wasEmpty = m_playlist.count() == 0;
-        if (addPaths(paths) == 0)
-            setError(tr("No music found there"));
-        else if (wasEmpty)
-            playIndex(0);
-    });
-    connect(picker, &FolderPicker::failed, this, &Player::setError);
+void Player::addPicked(const QStringList &paths) {
+    const bool wasEmpty = m_playlist.count() == 0;
+    if (addPaths(paths) == 0)
+        setError(tr("No music found there"));
+    else if (wasEmpty)
+        playIndex(0);
 }
 
 QString Player::state() const {
@@ -328,8 +323,8 @@ void Player::clear() {
 }
 
 void Player::openFolder() {
-    if (m_picker)
-        m_picker->pickFolders();
+    if (isSignalConnected(QMetaMethod::fromSignal(&Player::folderRequested)))
+        emit folderRequested();
     else
         setError(tr("No folder picker is available"));
 }

@@ -664,7 +664,9 @@ private slots:
         QVERIFY(toast->property("text").toString().startsWith("Undone: tag edit of 2 tracks"));
         QCOMPARE(w.player.state(), QString("stopped"));
 
-        // Ctrl+Shift+Z redoes it.
+        // Ctrl+Shift+Z redoes it, once the journal says there is something to
+        // redo (it is re-read just after the undo job reports back).
+        QTRY_VERIFY(!c.property("redoText").toString().isEmpty());
         finished.clear();
         QTest::keyClick(window, Qt::Key_Z, Qt::ControlModifier | Qt::ShiftModifier);
         QVERIFY(finished.wait(30000));

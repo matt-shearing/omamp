@@ -27,6 +27,9 @@ Rectangle {
                   ? qsTr("%Ln tracks in Now Playing", "", backend.playlist.count)
                   : library.currentKind === "duplicates"
                   ? (library.duplicates.searched ? library.duplicates.summary : qsTr("Duplicates"))
+                  : library.currentKind === "playlist" || library.currentKind === "autoplaylist" || library.currentKind === "plfolder"
+                  ? qsTr("%Ln entries", "", library.playlists.items.count)
+                    + (library.playlists.items.selectedCount > 1 ? "  ·  " + qsTr("%Ln selected", "", library.playlists.items.selectedCount) : "")
                   : qsTr("%Ln tracks", "", bar.tracks.count)
                     + (bar.tracks.selectedCount > 1 ? "  ·  " + qsTr("%Ln selected", "", bar.tracks.selectedCount) : "")
             font.pixelSize: 12

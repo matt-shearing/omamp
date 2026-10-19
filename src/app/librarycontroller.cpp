@@ -7,6 +7,10 @@
 #include "tagwriter.h"
 
 #include "artwork.h"
+#include "djcontroller.h"
+#include "playlistscontroller.h"
+#include "playrecorder.h"
+#include "settingscontroller.h"
 #include "audit.h"
 #include "duplicatesmodel.h"
 #include "job.h"
@@ -67,6 +71,53 @@ LibraryController::LibraryController(const QString &databasePath, QObject *paren
     m_organiser = new OrganiseModel(this, this);
     m_tagFromName = new TagFromNameModel(this, this);
     m_duplicates = new DuplicatesModel(this, this);
+    m_playlists = new PlaylistsController(this);
+    m_dj = new DjController(this);
+    m_settings = new SettingsController(this);
+    m_recorder = new PlayRecorder(m_path, this);
+    // A counted play changes Plays and Last played on screen.
+    connect(m_recorder, &PlayRecorder::recorded, this, [this](qint64, const QString &outcome) {
+        if (!m_ready || outcome == QLatin1String("ignored"))
+            return;
+        m_tracks.refresh();
+        ++m_revision;
+        emit revisionChanged();
+    });
+}
+
+void LibraryController::setPlayer(Player *player) {
+    m_player = player;
+    m_recorder->attach(player);
+}
+
+void LibraryController::reloadTree() {
+    if (!m_ready)
+        return;
+    const QString key = m_tree.key(m_currentNode);
+    m_tree.reload();
+    const int row = m_tree.rowOfKey(key);
+    if (row >= 0) {
+        m_currentNode = row;
+        emit currentNodeChanged();
+    } else {
+        selectNode(qMin(m_currentNode, m_tree.count() - 1));
+    }
+}
+
+void LibraryController::applyWatchSettings() {
+    if (!m_ready || !m_watching)
+        return;
+    const bool on = m_library->setting("watch.enabled", "1").toString() != "0";
+    if (!on) {
+        m_watcher.reset();
+        return;
+    }
+    if (!m_watcher)
+        startWatcher();
+    else
+        m_watcher->reload();
+    const int minutes = m_library->setting("watch.network_minutes", 15).toInt();
+    m_watcher->setNetworkInterval(qMax(0, minutes) * 60);
 }
 
 LibraryController::~LibraryController() {
@@ -117,9 +168,15 @@ bool LibraryController::activate() {
         m_error.clear();
         emit errorChanged();
     }
+    m_playlists->attach();
+    m_dj->attach();
     selectNode(0);
     updatePlayingTrack();
-    startWatcher();
+    if (m_library->setting("watch.enabled", "1").toString() != "0") {
+        startWatcher();
+        if (m_watcher)
+            m_watcher->setNetworkInterval(qMax(0, m_library->setting("watch.network_minutes", 15).toInt()) * 60);
+    }
     refreshUndo();
     emit readyChanged();
     return true;
@@ -151,6 +208,13 @@ void LibraryController::selectNode(int row) {
     m_currentNode = row;
     const LibraryTree::Node &n = m_tree.node(row);
     m_tracks.setScope(n.where, n.params);
+    // Playlists show in their own view, in their own order.
+    const bool playlist = n.kind == QLatin1String("playlist") || n.kind == QLatin1String("autoplaylist") ||
+                          n.kind == QLatin1String("plfolder");
+    const qint64 id = playlist ? n.value.toLongLong() : 0;
+    if (m_playlists->items()->playlistId() != id)
+        m_playlists->items()->setPlaylist(id);
+    m_collection = n.kind == QLatin1String("collection") ? n.value.toLongLong() : 0;
     emit currentNodeChanged();
 }
 
@@ -400,6 +464,9 @@ void LibraryController::refreshAll() {
     }
     m_albumGrid.refresh();
     m_palette.refresh();
+    m_dj->invalidate();
+    if (m_playlists->items()->playlistId())
+        m_playlists->items()->reload();
     updatePlayingTrack();
     refreshUndo();
     ++m_revision;

@@ -28,7 +28,17 @@ ApplicationWindow {
     // A sheet (tag editor, organise...) is open: the window's own keys are
     // off, so letters typed or pressed there never play, skip or quit.
     readonly property bool sheetOpen: tagSheet.opened || organiseSheet.opened || tagFromNameSheet.opened
-                                      || historySheet.opened || confirmSheet.opened
+                                      || historySheet.opened || confirmSheet.opened || nameSheet.opened
+                                      || autoSheet.opened || collectionSheet.opened || djSheet.opened
+                                      || partySheet.opened || settingsSheet.opened
+    // Party mode: what guests may do (PartyMode's action names).
+    function may(action) { void library.dj.partyOn; return library.dj.allowed(action) }
+    // Asks first; says so when party mode locks it.
+    function guard(action) {
+        if (library.dj.allowed(action)) return true
+        toast.show(qsTr("Locked in party mode"))
+        return false
+    }
 
     // The mode, each mode's window size, and the library's layout, kept
     // between runs in ~/.config/omamp/window.conf.
@@ -109,7 +119,14 @@ ApplicationWindow {
         function onArtistModeChanged() { prefs.browserArtistMode = library.browser.artistMode }
     }
 
-    onClosing: rememberLayout()
+    onClosing: (close) => {
+        if (!library.dj.allowed("quit")) {
+            close.accepted = false
+            partySheet.openSheet("quit")
+            return
+        }
+        rememberLayout()
+    }
     Component.onCompleted: {
         if (advanced) library.activate()
         registerActions()
@@ -157,6 +174,25 @@ ApplicationWindow {
         p.addAction("find-duplicates", qsTr("Find duplicates"), ["duplicate", "same", "copies", "dupes", "files to edit"], "")
         for (const a of library.auditList())
             p.addAction("audit:" + a.id, qsTr("Files to Edit: %1").arg(a.title), ["files to edit", "audit", "fix", "check"], "")
+        // Phase 3: playlists, collections, Auto-DJ, party mode, settings.
+        p.addAction("new-playlist", qsTr("New playlist…"), ["create", "list", "static"], "")
+        p.addAction("new-autoplaylist", qsTr("New auto-playlist…"), ["smart", "query", "rules", "create"], "")
+        p.addAction("new-playlist-folder", qsTr("New playlist folder…"), ["folder", "group"], "")
+        p.addAction("import-playlists", qsTr("Import playlists (M3U, PLS)…"), ["m3u", "m3u8", "pls", "open"], "")
+        p.addAction("export-playlist", qsTr("Export the chosen playlist to M3U…"), ["m3u", "m3u8", "save"], "")
+        p.addAction("save-now-playing", qsTr("Save Now Playing as a playlist…"), ["queue", "save", "playlist"], "")
+        p.addAction("play-playlist", qsTr("Play the chosen playlist"), ["start"], "")
+        p.addAction("rename-playlist", qsTr("Rename the chosen playlist…"), ["name"], "")
+        p.addAction("delete-playlist", qsTr("Delete the chosen playlist…"), ["remove"], "")
+        p.addAction("edit-autoplaylist", qsTr("Edit the chosen auto-playlist…"), ["query", "rules", "smart"], "")
+        p.addAction("new-collection", qsTr("New collection…"), ["collections", "view"], "")
+        p.addAction("edit-collection", qsTr("Edit the chosen collection…"), ["collections", "columns"], "")
+        p.addAction("autodj", qsTr("Auto-DJ on or off"), ["dj", "auto", "radio", "endless"], "Ctrl+J")
+        p.addAction("autodj-settings", qsTr("Auto-DJ settings…"), ["dj", "source", "separation"], "")
+        p.addAction("party", qsTr("Party mode…"), ["guests", "lock", "kiosk", "pin"], "")
+        p.addAction("settings", qsTr("Settings…"), ["preferences", "options", "config"], "Ctrl+,")
+        p.addAction("settings-playback", qsTr("Equaliser, crossfade and ReplayGain…"), ["eq", "equalizer", "crossfade", "replaygain", "gapless", "engine"], "")
+        p.addAction("settings-scrobbling", qsTr("Scrobbling: ListenBrainz and Last.fm…"), ["scrobble", "listenbrainz", "lastfm"], "")
         p.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help", "keys"], "?")
         p.addAction("quit", qsTr("Quit"), ["exit", "close"], "Q")
     }
@@ -166,6 +202,7 @@ ApplicationWindow {
     function chosenTrackIds() {
         if (!advanced || !library.ready) return []
         const view = advancedLoader.item
+        if (view && view.playlistNode) return library.playlists.items.selectedTrackIds()
         if (view && view.special) return []
         if (prefs.gridVisible && library.albumGrid.currentAlbum > 0) return library.albumTrackIds(library.albumGrid.currentAlbum)
         return library.selectedTrackIds()
@@ -193,17 +230,114 @@ ApplicationWindow {
         for (const id of ["play-selection", "queue-selection", "append-selection", "select-all", "show-folder"])
             p.setActionEnabled(id, listed && !prefs.gridVisible && library.tracks.count > 0)
         p.setActionEnabled("clear-browser", prefs.browserVisible && library.browser.filtering)
-        const chosen = advanced && library.ready && !(advancedLoader.item && advancedLoader.item.special)
-                       && (prefs.gridVisible ? library.albumGrid.currentAlbum > 0 : library.tracks.count > 0)
+        const view = advancedLoader.item
+        const inPlaylist = advanced && library.ready && view && view.playlistNode && library.playlists.items.count > 0
+        const chosen = (advanced && library.ready && !(view && view.special)
+                       && (prefs.gridVisible ? library.albumGrid.currentAlbum > 0 : library.tracks.count > 0)) || inPlaylist
+        const editing = may("edit-tags")
         for (const id of ["edit-tags", "organise", "tag-from-filename"])
-            p.setActionEnabled(id, chosen && !library.busy)
+            p.setActionEnabled(id, chosen && !library.busy && editing)
+        // Playlists: what the chosen node allows.
+        const kind = library.currentKind
+        const isList = kind === "playlist" || kind === "autoplaylist"
+        const lists = may("edit-playlists")
+        for (const id of ["new-playlist", "new-autoplaylist", "new-playlist-folder", "import-playlists", "save-now-playing", "new-collection"])
+            p.setActionEnabled(id, lists)
+        p.setActionEnabled("export-playlist", isList)
+        p.setActionEnabled("play-playlist", isList)
+        p.setActionEnabled("rename-playlist", lists && (isList || kind === "plfolder"))
+        p.setActionEnabled("delete-playlist", lists && (isList || kind === "plfolder"))
+        p.setActionEnabled("edit-autoplaylist", lists && kind === "autoplaylist")
+        p.setActionEnabled("edit-collection", lists && kind === "collection")
+        for (const id of ["autodj", "autodj-settings", "settings", "settings-playback", "settings-scrobbling"])
+            p.setActionEnabled(id, may("settings"))
         p.setActionEnabled("edit-title", chosen && !prefs.gridVisible && library.tracks.currentRow >= 0 && !library.busy)
         p.setActionEnabled("undo", library.undoText !== "" && !library.busy)
         p.setActionEnabled("redo", library.redoText !== "" && !library.busy)
     }
 
+    // The tree node that is chosen, as the tree's menu hands it over.
+    function chosenNode() {
+        const row = library.currentNode
+        return { row: row, kind: library.tree.kind(row), key: library.tree.key(row), id: library.tree.value(row),
+                 label: library.currentLabel }
+    }
+
+    // A tree node's menu command (LibraryTreePane.nodeAction), or the same
+    // from the palette on the chosen node.
+    function nodeAction(id, node) {
+        const pl = library.playlists
+        const parent = node && node.kind === "plfolder" ? node.id : 0
+        const playing = ["play", "queue", "append", "export"]
+        if (playing.indexOf(id) < 0 && !guard("edit-playlists")) return
+        switch (id) {
+        case "new-playlist":
+            nameSheet.ask(qsTr("New playlist"), qsTr("Name"), qsTr("New playlist"), qsTr("Create"), (name) => {
+                const made = pl.createPlaylist(name, parent)
+                if (made > 0) pl.show(made)
+                return made > 0
+            })
+            break
+        case "new-folder":
+            nameSheet.ask(qsTr("New playlist folder"), qsTr("Name"), qsTr("New folder"), qsTr("Create"), (name) => {
+                const made = pl.createFolder(name, parent)
+                if (made > 0) pl.show(made)
+                return made > 0
+            })
+            break
+        case "new-autoplaylist": autoSheet.openFor(0, parent); break
+        case "edit-autoplaylist": autoSheet.openFor(node.id, 0); break
+        case "rename":
+            nameSheet.ask(node.kind === "plfolder" ? qsTr("Rename the folder") : qsTr("Rename the playlist"), qsTr("Name"),
+                          node.label, qsTr("Rename"), (name) => pl.rename(node.id, name))
+            break
+        case "delete":
+            if (node.kind === "collection") {
+                confirmSheet.ask(qsTr("Delete the collection?"),
+                                 qsTr("“%1” leaves the tree. Its tracks stay in the library.").arg(node.label),
+                                 qsTr("Delete"), () => pl.removeCollection(node.id))
+            } else {
+                confirmSheet.ask(node.kind === "plfolder" ? qsTr("Delete the folder?") : qsTr("Delete the playlist?"),
+                                 node.kind === "plfolder"
+                                 ? qsTr("“%1” and every playlist in it are deleted. The tracks stay in the library.").arg(node.label)
+                                 : qsTr("“%1” is deleted. Its tracks stay in the library.").arg(node.label),
+                                 qsTr("Delete"), () => pl.remove(node.id))
+            }
+            break
+        case "play": pl.play(node.id, 0); break
+        case "queue": pl.queueNext(node.id); break
+        case "append": pl.append(node.id); break
+        case "export": pl.exportPlaylist(node.id); break
+        case "import": pl.importPlaylists(); break
+        case "save-now-playing":
+            nameSheet.ask(qsTr("Save Now Playing as a playlist"), qsTr("Name"),
+                          qsTr("Now Playing %1").arg(new Date().toLocaleDateString(Qt.locale(), Locale.ShortFormat)),
+                          qsTr("Save"), (name) => {
+                const made = pl.saveNowPlaying(name)
+                if (made > 0) pl.show(made)
+                return made > 0
+            })
+            break
+        case "new-collection": collectionSheet.openFor(0); break
+        case "edit-collection": collectionSheet.openFor(node.id); break
+        case "restore-collections": pl.restoreCollections(); break
+        }
+    }
+
     function runAction(id) {
         const view = advancedLoader.item
+        // Party mode locks what guests may not do.
+        const locks = { "edit-tags": "edit-tags", "edit-title": "edit-tags", "organise": "edit-tags",
+                        "tag-from-filename": "edit-tags", "undo": "edit-tags", "redo": "edit-tags",
+                        "undo-history": "edit-tags", "find-duplicates": "edit-tags",
+                        "add-folder": "settings", "rescan": "settings", "prefetch-art": "settings",
+                        "autodj": "settings", "autodj-settings": "settings", "settings": "settings",
+                        "settings-playback": "settings", "settings-scrobbling": "settings",
+                        "play-pause": "play", "play": "play", "stop": "play", "next": "skip", "previous": "skip",
+                        "volume-up": "volume", "volume-down": "volume", "shuffle": "reorder", "repeat": "reorder",
+                        "queue-selection": "add", "append-selection": "add", "play-selection": "play",
+                        "advanced": "library", "search": "library" }
+        if (locks[id] !== undefined && !guard(locks[id])) return
         switch (id) {
         case "play-pause": backend.toggle(); break
         case "play": backend.play(); break
@@ -252,8 +386,40 @@ ApplicationWindow {
             // By artist and title is quick; the other ways wait for Find.
             if (!library.duplicates.searched && library.duplicates.by === "tags") library.duplicates.find()
             break
+        case "new-playlist": setAdvanced(true); nodeAction("new-playlist", library.currentKind === "plfolder" ? chosenNode() : {}); break
+        case "new-autoplaylist": setAdvanced(true); nodeAction("new-autoplaylist", library.currentKind === "plfolder" ? chosenNode() : {}); break
+        case "new-playlist-folder": setAdvanced(true); nodeAction("new-folder", {}); break
+        case "import-playlists": setAdvanced(true); nodeAction("import", {}); break
+        case "save-now-playing": setAdvanced(true); nodeAction("save-now-playing", {}); break
+        case "new-collection": setAdvanced(true); nodeAction("new-collection", {}); break
+        case "export-playlist": nodeAction("export", chosenNode()); break
+        case "play-playlist": nodeAction("play", chosenNode()); break
+        case "rename-playlist": nodeAction("rename", chosenNode()); break
+        case "delete-playlist": nodeAction("delete", chosenNode()); break
+        case "edit-autoplaylist": nodeAction("edit-autoplaylist", chosenNode()); break
+        case "edit-collection": nodeAction("edit-collection", chosenNode()); break
+        case "new-playlist-from-selection": {
+            const ids = chosenTrackIds()
+            if (!guard("edit-playlists")) break
+            nameSheet.ask(qsTr("New playlist"), qsTr("Name"), qsTr("New playlist"), qsTr("Create"), (name) => {
+                const made = library.playlists.createPlaylist(name, 0)
+                if (made > 0) library.playlists.addTracks(made, ids)
+                return made > 0
+            })
+            break
+        }
+        case "autodj": library.dj.toggle(); break
+        case "autodj-settings": djSheet.openSheet(); break
+        case "party": partySheet.openSheet("leave"); break
+        case "settings": settingsSheet.openPage(0); break
+        case "settings-playback": settingsSheet.openPage(0); break
+        case "settings-scrobbling": settingsSheet.openPage(2); break
         case "shortcuts": helpVisible = true; break
-        case "quit": Qt.quit(); break
+        case "quit":
+            // Party mode: quitting takes the PIN.
+            if (!library.dj.allowed("quit")) partySheet.openSheet("quit")
+            else Qt.quit()
+            break
         default:
             if (id.startsWith("audit:")) goToNode(["filestoedit", id])
         }
@@ -297,31 +463,31 @@ ApplicationWindow {
     // Winamp's own keys (Z X C V B) alongside the Omarchy ones.
     Shortcut { sequences: ["?", "Shift+/"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.helpVisible = !win.helpVisible }
     Shortcut { sequence: "Escape"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.helpVisible); onActivated: win.helpVisible = false }
-    Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: Qt.quit() }
-    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.toggle() }
-    Shortcut { sequence: "Z"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.previous() }
-    Shortcut { sequence: "X"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.play() }
-    Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.pause() }
-    Shortcut { sequence: "V"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.stop() }
-    Shortcut { sequence: "B"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.next() }
-    Shortcut { sequence: "Left"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: backend.seekBy(-5000) }
-    Shortcut { sequence: "Right"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: backend.seekBy(5000) }
+    Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("quit") }
+    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("play"); onActivated: backend.toggle() }
+    Shortcut { sequence: "Z"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("skip"); onActivated: backend.previous() }
+    Shortcut { sequence: "X"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("play"); onActivated: backend.play() }
+    Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("play"); onActivated: backend.pause() }
+    Shortcut { sequence: "V"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("play"); onActivated: backend.stop() }
+    Shortcut { sequence: "B"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("skip"); onActivated: backend.next() }
+    Shortcut { sequence: "Left"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced) && win.may("seek"); onActivated: backend.seekBy(-5000) }
+    Shortcut { sequence: "Right"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced) && win.may("seek"); onActivated: backend.seekBy(5000) }
     Shortcut { sequence: "Up"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: win.select(win.selected - 1) }
     Shortcut { sequence: "Down"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: win.select(win.selected + 1) }
     Shortcut { sequence: "Return"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: backend.playIndex(win.selected) }
-    Shortcut { sequence: "Delete"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced); onActivated: { backend.remove(win.selected); win.select(win.selected) } }
-    Shortcut { sequences: ["-", "Ctrl+Down"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.volume -= 5 }
-    Shortcut { sequences: ["=", "+", "Ctrl+Up"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.volume += 5 }
-    Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.shuffle = !backend.shuffle }
-    Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: backend.repeat = !backend.repeat }
-    Shortcut { sequences: ["O", "L"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen
+    Shortcut { sequence: "Delete"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (!win.advanced) && win.may("remove"); onActivated: { backend.remove(win.selected); win.select(win.selected) } }
+    Shortcut { sequences: ["-", "Ctrl+Down"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("volume"); onActivated: backend.volume -= 5 }
+    Shortcut { sequences: ["=", "+", "Ctrl+Up"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("volume"); onActivated: backend.volume += 5 }
+    Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("reorder"); onActivated: backend.shuffle = !backend.shuffle }
+    Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("reorder"); onActivated: backend.repeat = !backend.repeat }
+    Shortcut { sequences: ["O", "L"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("settings")
                onActivated: win.advanced ? library.addFolder() : backend.openFolder() }
     Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.showRemaining = !win.showRemaining }
     // Advanced mode.
-    Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.setAdvanced(!win.advanced) }
+    Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("library"); onActivated: win.setAdvanced(!win.advanced) }
     Shortcut { sequences: ["/", "Ctrl+F"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced)
                onActivated: advancedLoader.item.focusSearch() }
-    Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: library.rescan() }
+    Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.runAction("rescan") }
     // B stays Winamp's "next", so the column browser takes Ctrl+B.
     Shortcut { sequence: "Ctrl+B"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleBrowser() }
     Shortcut { sequence: "I"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleInfo() }
@@ -333,6 +499,9 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Shift+O"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.advanced; onActivated: win.runAction("organise") }
     Shortcut { sequences: [StandardKey.Undo]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("undo") }
     Shortcut { sequences: ["Ctrl+Shift+Z", "Ctrl+Y"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("redo") }
+    // Phase 3: Auto-DJ and Settings.
+    Shortcut { sequence: "Ctrl+J"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("autodj") }
+    Shortcut { sequences: ["Ctrl+,", StandardKey.Preferences]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("settings") }
 
     Item {
         anchors.fill: parent
@@ -742,7 +911,17 @@ ApplicationWindow {
                 onToggleGrid: win.toggleGrid()
                 onAction: (id) => win.runAction(id)
                 onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
+                onNodeAction: (id, node) => win.nodeAction(id, node)
+                onAutoDjClicked: win.runAction("autodj")
+                onPartyClicked: win.runAction("party")
             }
+        }
+
+        // Party mode's big now-playing display, over everything but the sheets.
+        PartyDisplay {
+            anchors.fill: parent
+            visible: library.dj.partyDisplay
+            onUnlock: partySheet.openSheet("leave")
         }
 
         // Phase 2's sheets, over the library.
@@ -752,6 +931,21 @@ ApplicationWindow {
         TagFromNameSheet { id: tagFromNameSheet; onClosed: win.backToList() }
         UndoHistorySheet { id: historySheet; onClosed: win.backToList() }
         ConfirmSheet { id: confirmSheet; onClosed: win.backToList() }
+        // Phase 3's sheets.
+        NameSheet { id: nameSheet; onClosed: win.backToList() }
+        AutoPlaylistSheet { id: autoSheet; onClosed: win.backToList() }
+        CollectionSheet {
+            id: collectionSheet
+            onClosed: win.backToList()
+            onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
+        }
+        AutoDjSheet { id: djSheet; onClosed: win.backToList() }
+        PartySheet { id: partySheet; onClosed: win.backToList() }
+        SettingsSheet {
+            id: settingsSheet
+            onClosed: win.backToList()
+            onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
+        }
 
         Toast {
             id: toast
@@ -804,9 +998,12 @@ ApplicationWindow {
             color: Qt.alpha(theme.c.darker_background, 0.94)
             MouseArea { anchors.fill: parent; onClicked: win.helpVisible = false }
 
-            Row {
+            // Two groups a row in advanced mode, so all four fit.
+            Grid {
                 anchors.centerIn: parent
-                spacing: win.advanced ? 32 : 48
+                columns: win.advanced ? 2 : 1
+                columnSpacing: 48
+                rowSpacing: 22
 
                 Repeater {
                     // The player's keys, and in advanced mode the library's beside them.
@@ -849,6 +1046,15 @@ ApplicationWindow {
                             ["Ctrl+Enter", qsTr("Save, in an editor")],
                             ["Esc", qsTr("Close an editor")],
                             ["Ctrl+K", qsTr("Undo history, Files to Edit")]
+                        ]],
+                        [qsTr("Playlists"), [
+                            ["Menu", qsTr("On a tree node: new, rename, move, delete")],
+                            ["Drag", qsTr("Tracks onto a playlist in the tree")],
+                            ["Alt+↑ ↓", qsTr("Move entries in a playlist")],
+                            ["Delete", qsTr("Remove entries from a playlist")],
+                            ["Ctrl+J", qsTr("Auto-DJ on or off")],
+                            ["Ctrl+,", qsTr("Settings: playback, EQ, library")],
+                            ["Ctrl+K", qsTr("New playlist, import, party mode")]
                         ]]
                     ] : [
                         [qsTr("Keys"), [
@@ -865,6 +1071,8 @@ ApplicationWindow {
                             ["T", qsTr("Show time left or time played")],
                             ["Tab", qsTr("Open the library (advanced mode)")],
                             ["Ctrl+K", qsTr("Command palette")],
+                            ["Ctrl+J", qsTr("Auto-DJ on or off")],
+                            ["Ctrl+,", qsTr("Settings")],
                             ["?", qsTr("Show or hide these keys")],
                             ["Q", qsTr("Quit")]
                         ]]

@@ -2,7 +2,7 @@
 // Totals line; the exit code is non-zero if any of them failed.
 //
 // OMAMP_TESTS=query,palette runs only the named classes (player, library,
-// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, nas, subsonic), for a quick loop or a machine that must stay silent.
+// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, nas, subsonic, p3window), for a quick loop or a machine that must stay silent.
 #include <QGuiApplication>
 #include <QtTest>
 
@@ -20,6 +20,7 @@ int runWebTests(int argc, char **argv);
 int runTidyWindowTests(int argc, char **argv);
 int runNasTests(int argc, char **argv);
 int runSubsonicTests(int argc, char **argv);
+int runP3WindowTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
@@ -63,5 +64,7 @@ int main(int argc, char **argv) {
         failures += runNasTests(argc, argv);
     if (wanted("subsonic"))
         failures += runSubsonicTests(argc, argv);
+    if (wanted("p3window"))
+        failures += runP3WindowTests(argc, argv);
     return failures ? 1 : 0;
 }

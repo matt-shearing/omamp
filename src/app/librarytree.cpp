@@ -4,6 +4,8 @@
 #include "query.h"
 
 #include <QCollator>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QMap>
 #include <QSet>
 #include <QSqlError>
@@ -25,6 +27,14 @@ QString stars(int halfStars) {
     if (halfStars <= 0)
         return LibraryTree::tr("No stars");
     return QString(halfStars / 2, QChar(0x2605)) + (halfStars % 2 ? QStringLiteral("½") : QString());
+}
+
+// A collection's tree column holds a JSON array of node ids.
+QStringList treeIds(const QString &json) {
+    QStringList out;
+    for (const QJsonValue &v : QJsonDocument::fromJson(json.toUtf8()).array())
+        out << v.toString();
+    return out;
 }
 
 QString placeholders(int n) {
@@ -265,13 +275,70 @@ QVector<LibraryTree::Node> LibraryTree::children(const Node &parent) const {
     };
 
     if (parent.key == "collections") {
-        if (!q.exec("SELECT id, name, query FROM collections WHERE visible != 'never' ORDER BY position, name"))
+        if (!q.exec("SELECT id, name, query, tree FROM collections WHERE visible != 'never' ORDER BY position, name"))
             return out;
         while (q.next()) {
             const Query::Compiled c = Query::compile(q.value(2).toString());
-            out << make("collection", "collection:" + q.value(0).toString(), q.value(1).toString(), -1,
-                        c.ok() ? c.where : "0", c.params);
+            Node n = make("collection", "collection:" + q.value(0).toString(), q.value(1).toString(), -1,
+                          c.ok() ? c.where : "0", c.params);
+            n.value = q.value(0);
+            // The collection's own tree nodes (Artist, Album, Genre...), as
+            // MediaMonkey shows them under each collection.
+            n.expandable = !treeIds(q.value(3).toString()).isEmpty();
+            out << n;
         }
+    } else if (parent.kind == "collection") {
+        QSqlQuery t(m_db);
+        t.prepare("SELECT tree FROM collections WHERE id = ?");
+        if (!exec(t, {parent.value}) || !t.next())
+            return out;
+        const QHash<QString, QString> labels = {
+            {"artist", tr("Artist")}, {"albumartist", tr("Album Artist")}, {"album", tr("Album")},
+            {"genre", tr("Genre")},   {"year", tr("Year")},                {"rating", tr("Rating")},
+            {"composer", tr("Composer")}};
+        for (const QString &id : treeIds(t.value(0).toString())) {
+            if (!labels.contains(id))
+                continue;
+            Node n = make("cgroup", parent.key + "/" + id, labels.value(id), -1, parent.where, parent.params);
+            n.value = id;
+            n.expandable = true;
+            out << n;
+        }
+    } else if (parent.kind == "cgroup") {
+        // One value per track column, inside the collection's scope.
+        const QString field = parent.value.toString();
+        const QString expr = field == "artist"        ? "t.artist"
+                             : field == "albumartist" ? "t.sort_artist"
+                             : field == "album"       ? "t.album"
+                             : field == "genre"       ? "t.genre"
+                             : field == "year"        ? "t.year"
+                             : field == "rating"      ? "((t.rating + 5) / 10)"
+                                                      : "t.composer";
+        q.prepare(QString("SELECT %1, count(*) FROM tracks t WHERE %2 GROUP BY 1 ORDER BY 1 COLLATE NOCASE")
+                      .arg(expr, parent.where));
+        if (!exec(q, parent.params))
+            return out;
+        while (q.next()) {
+            const QVariant v = q.value(0);
+            const bool numeric = field == "year" || field == "rating";
+            QString label = v.toString();
+            if (field == "rating")
+                label = v.isNull() ? tr("Unrated") : stars(v.toInt());
+            const bool unknown = v.isNull() || (field == "year" && v.toInt() <= 0) || (!numeric && label.isEmpty());
+            if (unknown && field != "rating")
+                label = tr("Unknown");
+            QVariantList params = parent.params;
+            QString where;
+            if (unknown) {
+                where = QString("(%1) AND coalesce(%2, %3) = %3").arg(parent.where, expr, numeric ? "0" : "''");
+            } else {
+                where = QString("(%1) AND %2 = ?").arg(parent.where, expr);
+                params << v;
+            }
+            out << make("cvalue", parent.key + ":" + v.toString(), label, q.value(1).toLongLong(), where, params);
+        }
+        if (field == "year" || field == "rating")
+            std::reverse(out.begin(), out.end());
     } else if (parent.key == "artists") {
         out = peopleWithRole(parent, "artist", "artist");
     } else if (parent.key == "composers") {
@@ -438,20 +505,29 @@ QVector<LibraryTree::Node> LibraryTree::children(const Node &parent) const {
             n.dim = m_auditCounts.contains(a.id) && m_auditCounts.value(a.id) == 0;
             out << n;
         }
-    } else if (parent.key == "playlists") {
-        out << make("nowplaying", "nowplaying", tr("Now Playing"), -1, "0", {});
-        if (!q.exec("SELECT p.id, p.name, p.kind, p.query FROM playlists p WHERE p.kind != 'folder' "
-                    "ORDER BY p.name COLLATE NOCASE"))
+    } else if (parent.key == "playlists" || parent.kind == "playlist" || parent.kind == "autoplaylist" ||
+               parent.kind == "plfolder") {
+        // Folders, static and auto-playlists, nested, siblings in their own
+        // order. The playlist view shows a node's entries (Playlists::items),
+        // so the track list's scope is empty.
+        const qint64 parentId = parent.key == "playlists" ? 0 : parent.value.toLongLong();
+        if (parentId == 0)
+            out << make("nowplaying", "nowplaying", tr("Now Playing"), -1, "0", {});
+        q.prepare("SELECT p.id, p.name, p.kind, "
+                  "(SELECT count(*) FROM playlist_items i WHERE i.playlist_id = p.id), "
+                  "(SELECT count(*) FROM playlists c WHERE c.parent_id = p.id) "
+                  "FROM playlists p WHERE coalesce(p.parent_id, 0) = ? "
+                  "ORDER BY p.position, p.name COLLATE NOCASE, p.id");
+        if (!exec(q, {parentId}))
             return out;
         while (q.next()) {
-            if (q.value(2).toString() == "auto") {
-                const Query::Compiled c = Query::compile(q.value(3).toString());
-                out << make("playlist", "playlist:" + q.value(0).toString(), q.value(1).toString(), -1,
-                            c.ok() ? c.where : "0", c.params);
-            } else {
-                out << make("playlist", "playlist:" + q.value(0).toString(), q.value(1).toString(), -1,
-                            "t.id IN (SELECT track_id FROM playlist_items WHERE playlist_id = ?)", {q.value(0)});
-            }
+            const QString kind = q.value(2).toString();
+            Node n = make(kind == "folder" ? "plfolder" : kind == "auto" ? "autoplaylist" : "playlist",
+                          "playlist:" + q.value(0).toString(), q.value(1).toString(),
+                          kind == "static" ? q.value(3).toLongLong() : -1, "0", {});
+            n.value = q.value(0);
+            n.expandable = q.value(4).toLongLong() > 0;
+            out << n;
         }
     }
     return out;
@@ -543,6 +619,8 @@ int LibraryTree::rowOfKey(const QString &key) const {
             return i;
     return -1;
 }
+
+QVariant LibraryTree::value(int row) const { return row >= 0 && row < m_nodes.size() ? m_nodes[row].value : QVariant(); }
 
 QString LibraryTree::kind(int row) const { return row >= 0 && row < m_nodes.size() ? m_nodes[row].kind : QString(); }
 QString LibraryTree::key(int row) const { return row >= 0 && row < m_nodes.size() ? m_nodes[row].key : QString(); }

@@ -25,7 +25,13 @@ HEADERS += \
     src/app/tagfromname.h \
     src/app/theme.h \
     src/app/tracklistmodel.h \
-    src/app/translator.h
+    src/app/translator.h \
+    src/app/djcontroller.h \
+    src/app/playlistitemsmodel.h \
+    src/app/playlistscontroller.h \
+    src/app/playrecorder.h \
+    src/app/rulebuilder.h \
+    src/app/settingscontroller.h
 
 SOURCES += \
     src/app/albumgridmodel.cpp \
@@ -44,6 +50,12 @@ SOURCES += \
     src/app/tagfromname.cpp \
     src/app/theme.cpp \
     src/app/tracklistmodel.cpp \
-    src/app/translator.cpp
+    src/app/translator.cpp \
+    src/app/djcontroller.cpp \
+    src/app/playlistitemsmodel.cpp \
+    src/app/playlistscontroller.cpp \
+    src/app/playrecorder.cpp \
+    src/app/rulebuilder.cpp \
+    src/app/settingscontroller.cpp
 
 RESOURCES += src/app/resources.qrc

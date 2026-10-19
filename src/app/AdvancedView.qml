@@ -29,11 +29,20 @@ FocusScope {
     // A command from a menu (edit-tags, organise, tag-from-filename), run by the window.
     signal action(string id)
     signal confirm(string title, string text, string confirmText, var action)
+    // Phase 3: a tree node's menu command, and the deck strip's lamps.
+    signal nodeAction(string id, var node)
+    signal autoDjClicked()
+    signal partyClicked()
 
     readonly property bool nowPlaying: library.currentKind === "nowplaying"
     // Files to Edit > Duplicates shows its own view instead of the list.
     readonly property bool duplicatesNode: library.currentKind === "duplicates"
-    readonly property bool special: nowPlaying || duplicatesNode
+    // A playlist, auto-playlist or playlist folder shows the playlist view.
+    readonly property bool playlistNode: library.currentKind === "playlist" || library.currentKind === "autoplaylist"
+                                         || library.currentKind === "plfolder"
+    readonly property bool special: nowPlaying || duplicatesNode || playlistNode
+    // Party mode locks changing playlists.
+    readonly property bool playlistsLocked: library.dj.partyOn && !library.dj.allowed("edit-playlists")
     readonly property bool showingBrowser: browserVisible && !special
     readonly property bool showingGrid: gridVisible && !special
 
@@ -41,12 +50,29 @@ FocusScope {
     function focusList() {
         if (nowPlaying) nowPlayingList.forceActiveFocus()
         else if (duplicatesNode) duplicatesView.forceActiveFocus()
+        else if (playlistNode) playlistView.forceActiveFocus()
         else if (showingGrid) grid.forceActiveFocus()
         else table.forceActiveFocus()
     }
     function focusTree() { tree.forceActiveFocus() }
     function focusBrowser() { if (showingBrowser) browserPanes.focusPane(0) }
-    function columnState() { return table.columnState() }
+    // A collection shows its own columns; the window keeps the others.
+    property var collectionId: library.currentKind === "collection" ? library.tree.value(library.currentNode) : 0
+    property string globalColumns: ""
+    property bool applyingColumns: false
+    onCollectionIdChanged: {
+        applyingColumns = true
+        if (collectionId > 0) {
+            if (globalColumns === "") globalColumns = table.columnState()
+            const c = library.playlists.collection(collectionId)
+            if (c.columns && c.columns.length > 0) table.showOnly(c.columns)
+        } else if (globalColumns !== "") {
+            table.restoreColumns(globalColumns)
+            globalColumns = ""
+        }
+        applyingColumns = false
+    }
+    function columnState() { return globalColumns !== "" ? globalColumns : table.columnState() }
     function currentTreeWidth() { return Math.round(tree.width) }
     function currentBrowserHeight() { return Math.round(browserPanes.height) }
     function currentInfoWidth() { return Math.round(info.width) }
@@ -90,6 +116,8 @@ FocusScope {
             Layout.bottomMargin: 6
             showRemaining: view.showRemaining
             onClockClicked: view.clockClicked()
+            onAutoDjClicked: view.autoDjClicked()
+            onPartyClicked: view.partyClicked()
         }
 
         // Library actions, the search, and the view switches.
@@ -260,6 +288,8 @@ FocusScope {
                 SplitView.minimumWidth: 150
                 onLeave: view.showingBrowser ? view.focusBrowser() : view.focusList()
                 onWidthChanged: view.layoutEdited()
+                locked: view.playlistsLocked
+                onNodeAction: (id, node) => view.nodeAction(id, node)
             }
 
             SplitView {
@@ -292,8 +322,14 @@ FocusScope {
                         anchors.fill: parent
                         visible: !view.special && !view.showingGrid
                         onLeave: view.showingBrowser ? view.focusBrowser() : view.focusTree()
-                        onLayoutEdited: view.layoutEdited()
+                        onLayoutEdited: {
+                            if (view.collectionId > 0 && !view.applyingColumns)
+                                library.playlists.setCollectionColumns(view.collectionId, table.visibleNames())
+                            view.layoutEdited()
+                        }
                         onAction: (id) => view.action(id)
+                        onTracksDragged: (pos) => tree.dragOver(pos)
+                        onTracksDropped: (pos, ids) => tree.dropAt(pos, ids)
                     }
                     AlbumGrid {
                         id: grid
@@ -312,6 +348,14 @@ FocusScope {
                         anchors.fill: parent
                         visible: view.nowPlaying
                         onLeave: view.focusTree()
+                    }
+                    PlaylistView {
+                        id: playlistView
+                        anchors.fill: parent
+                        visible: view.playlistNode
+                        locked: view.playlistsLocked
+                        onLeave: view.focusTree()
+                        onAction: (id) => view.action(id)
                     }
                     DuplicatesView {
                         id: duplicatesView
@@ -332,7 +376,8 @@ FocusScope {
                 chosenHeading: view.showingGrid ? qsTr("Chosen album, first track") : ""
                 // The track under the cursor, or the album chosen in the grid;
                 // 0 shows the track that is playing.
-                chosenTrack: view.special ? 0
+                chosenTrack: view.playlistNode ? (library.playlists.items.currentRow >= 0 ? library.playlists.items.trackId(library.playlists.items.currentRow) : 0)
+                           : view.special ? 0
                            : view.showingGrid ? (library.albumGrid.currentAlbum > 0 ? library.firstTrackOfAlbum(library.albumGrid.currentAlbum) : 0)
                            : library.tracks.currentRow >= 0 ? library.tracks.trackId(library.tracks.currentRow) : 0
             }

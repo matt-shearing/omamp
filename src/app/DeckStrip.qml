@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 // The deck folded into one strip across the top of advanced mode: the
@@ -9,6 +10,10 @@ Rectangle {
     id: strip
     property bool showRemaining: false
     signal clockClicked()
+    // The Auto-DJ and party lamps: a click switches Auto-DJ, or asks for
+    // the PIN to leave party mode.
+    signal autoDjClicked()
+    signal partyClicked()
 
     readonly property string mono: "JetBrainsMono Nerd Font"
 
@@ -99,6 +104,30 @@ Rectangle {
             DeckButton { glyph: 0xF03E4; implicitWidth: 32; lit: backend.state === "paused"; onClicked: backend.pause() }
             DeckButton { glyph: 0xF04DB; implicitWidth: 32; onClicked: backend.stop() }
             DeckButton { glyph: 0xF04AD; implicitWidth: 32; onClicked: backend.next() }
+        }
+
+        Column {
+            spacing: 4
+            ToggleLamp {
+                objectName: "autoDjLamp"
+                label: qsTr("AUTO-DJ")
+                on: library.dj.enabled
+                width: Math.max(implicitWidth, partyLamp.implicitWidth)
+                ToolTip.visible: hoverDj.hovered
+                ToolTip.delay: 600
+                ToolTip.text: library.dj.enabled ? qsTr("Auto-DJ is keeping the queue full from %1 (Ctrl+J)").arg(library.dj.sourceLabel)
+                                                 : qsTr("Auto-DJ: keep the queue full by itself (Ctrl+J)")
+                HoverHandler { id: hoverDj }
+                onToggled: strip.autoDjClicked()
+            }
+            ToggleLamp {
+                id: partyLamp
+                objectName: "partyLamp"
+                label: qsTr("PARTY")
+                on: library.dj.partyOn
+                width: Math.max(implicitWidth, parent.children[0].implicitWidth)
+                onToggled: strip.partyClicked()
+            }
         }
 
         RowLayout {

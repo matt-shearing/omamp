@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Controls.Material
 
@@ -19,6 +20,10 @@ FocusScope {
     signal layoutEdited()
     // A command from the menu, run by the window: edit-tags, tag-from-filename, organise.
     signal action(string id)
+    // Tracks dragged out of the list: where the pointer is in the window,
+    // and where they were let go.
+    signal tracksDragged(point scenePos)
+    signal tracksDropped(point scenePos, var trackIds)
 
     // F2: edit the title of the track under the cursor in place. Enter
     // saves it to the file (one undoable batch), Esc leaves it.
@@ -48,6 +53,14 @@ FocusScope {
             if (s.hidden && s.hidden.length === defaultWidths.length) hidden = s.hidden
             for (const c in s.widths) table.setColumnWidth(Number(c), s.widths[c])
         } catch (e) { }
+        table.forceLayout()
+    }
+    // Column names in the model's order, for collections.
+    readonly property var columnNames: ["number", "title", "artist", "album", "year", "genre", "length", "rating",
+                                        "plays", "added", "format"]
+    function visibleNames() { return columnNames.filter((n, i) => !hidden[i]) }
+    function showOnly(names) {
+        hidden = columnNames.map((n) => n !== "title" && names.indexOf(n) < 0)
         table.forceLayout()
     }
     function setHidden(column, hide) {
@@ -274,15 +287,43 @@ FocusScope {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 preventStealing: true
+                property point pressedAt
+                property bool deferred: false
                 onPressed: (mouse) => {
                     table.forceActiveFocus()
+                    pressedAt = Qt.point(mouse.x, mouse.y)
+                    deferred = false
                     if (mouse.button === Qt.RightButton) {
                         if (!pane.tracks.isSelected(cell.row)) pane.tracks.select(cell.row, 0)
                         const p = mapToItem(pane, mouse.x, mouse.y)
                         pane.openMenu(p.x, p.y)
                         return
                     }
-                    pane.tracks.select(cell.row, mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier))
+                    const mods = mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)
+                    // A press on a chosen row keeps the selection until the
+                    // release, so several tracks can be dragged together.
+                    if (mods === 0 && cell.rowSelected && pane.tracks.selectedCount > 1) deferred = true
+                    else pane.tracks.select(cell.row, mods)
+                }
+                // Dragging tracks out of the list, onto a playlist in the tree.
+                onPositionChanged: (mouse) => {
+                    if (!pressed || !(pressedButtons & Qt.LeftButton)) return
+                    if (!dragProxy.active) {
+                        if (Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) < 10) return
+                        dragProxy.start(library.selectedTrackIds())
+                    }
+                    const p = mapToItem(dragProxy.parent, mouse.x, mouse.y)
+                    dragProxy.x = p.x + 12
+                    dragProxy.y = p.y + 4
+                    pane.tracksDragged(mapToItem(null, mouse.x, mouse.y))
+                }
+                onReleased: (mouse) => {
+                    if (dragProxy.active) {
+                        pane.tracksDropped(mapToItem(null, mouse.x, mouse.y), dragProxy.trackIds)
+                        dragProxy.active = false
+                    }
+                    else if (deferred) pane.tracks.select(cell.row, 0)
+                    deferred = false
                 }
                 onDoubleClicked: (mouse) => {
                     if (mouse.button === Qt.LeftButton) library.playRow(cell.row)
@@ -304,12 +345,56 @@ FocusScope {
         color: theme.c.muted
     }
 
+    // What is being dragged: the chosen tracks, under the pointer.
+    Rectangle {
+        id: dragProxy
+        property var trackIds: []
+        property bool active: false
+        function start(ids) {
+            trackIds = ids
+            parent = pane.Window.contentItem
+            active = ids.length > 0
+        }
+        visible: active
+        z: 1000
+        width: dragText.implicitWidth + 20
+        height: 26
+        radius: Math.min(4, theme.radius)
+        color: theme.c.dark_background
+        border.width: 1
+        border.color: theme.accent
+        Text {
+            id: dragText
+            anchors.centerIn: parent
+            text: qsTr("%n tracks", "", dragProxy.trackIds.length)
+            font.pixelSize: 12
+            color: theme.c.bright_foreground
+        }
+    }
+
     Menu {
         id: rowMenu
         Material.roundedScale: theme.radius
         MenuItem { text: qsTr("Play"); onTriggered: library.playSelection() }
         MenuItem { text: qsTr("Play next"); onTriggered: library.queueSelection() }
         MenuItem { text: qsTr("Add to Now Playing"); onTriggered: library.appendSelection() }
+        Menu {
+            id: addToMenu
+            title: qsTr("Add to playlist")
+            enabled: library.dj.allowed("edit-playlists")
+            MenuItem { text: qsTr("New playlist…"); onTriggered: pane.action("new-playlist-from-selection") }
+            MenuSeparator { }
+            Instantiator {
+                model: { void library.playlists.revision; return library.playlists.staticPlaylists() }
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.name
+                    onTriggered: library.playlists.addTracks(modelData.id, library.selectedTrackIds())
+                }
+                onObjectAdded: (index, object) => addToMenu.insertItem(index + 2, object)
+                onObjectRemoved: (index, object) => addToMenu.removeItem(object)
+            }
+        }
         MenuSeparator { }
         MenuItem { objectName: "menuEditTags"; text: qsTr("Edit tags…"); onTriggered: pane.action("edit-tags") }
         MenuItem { text: qsTr("Tag from file names…"); onTriggered: pane.action("tag-from-filename") }

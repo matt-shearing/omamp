@@ -11,7 +11,9 @@ A long line pans slowly inside a fixed width. The play glyph turns the
 theme's green while music plays. When Omamp closes, the widget disappears.
 
 Click it to open the panel. The panel has Omamp's green clock and title
-strip, the track, artist and album, a seek bar, previous, play or pause,
+strip, the cover beside the track, artist and album (Omamp sends it over
+MPRIS as `mpris:artUrl`; a music note stands in when there is none), a seek
+bar, previous, play or pause,
 stop and next, shuffle and repeat, Omamp's own volume, and a **Show Omamp**
 button that brings the window forward.
 
@@ -65,7 +67,7 @@ when that is on the bar, and in the right section otherwise.
 ## Scripting it
 
 ```sh
-omarchy-shell contra.omamp status        # JSON: state, track, position, volume, shuffle, repeat
+omarchy-shell contra.omamp status        # JSON: state, track, cover, position, volume, shuffle, repeat
 omarchy-shell contra.omamp playPause     # also stop, next, previous, shuffle, repeat, raise, launch
 omarchy-shell contra.omamp volume 40     # Omamp's volume, in percent
 omarchy-shell shell toggle contra.omamp  # open or close the panel

@@ -120,7 +120,9 @@ Rectangle {
         anchors { left: parent.left; right: parent.right; top: topBar.bottom; bottom: visualiser.top
                   leftMargin: view.margin; rightMargin: view.margin; topMargin: view.margin * 0.6; bottomMargin: view.margin * 0.6 }
 
-        readonly property bool lyricsShown: appearance.bigLyrics && view.inLibrary && view.wide && width > 980
+        // The lyrics column shows only when the track has words to show.
+        readonly property bool lyricsRoom: appearance.bigLyrics && view.inLibrary && view.wide && width > 980
+        readonly property bool lyricsShown: lyricsRoom && wideLyrics.hasLines
         readonly property real coverSize: view.wide ? Math.min(height, width * (lyricsShown ? 0.32 : 0.4))
                                                     : Math.min(width, height * 0.42)
 
@@ -141,7 +143,7 @@ Rectangle {
             spacing: Math.round(view.titleSize * 0.22)
             x: view.wide ? cover.width + view.margin * 1.4 : 0
             y: view.wide ? Math.max(0, (content.height - implicitHeight) / 2) : cover.height + view.margin * 0.8
-            width: view.wide ? (content.lyricsShown ? content.width * 0.36 : content.width - x) : content.width
+            width: view.wide ? (content.lyricsShown ? content.width * 0.36 : Math.min(760, content.width - x)) : content.width
             height: view.wide ? Math.min(implicitHeight, content.height) : content.height - y
             clip: true
 
@@ -354,7 +356,7 @@ Rectangle {
             id: wideLyrics
             objectName: "bigLyrics"
             visible: content.lyricsShown
-            active: view.visible && content.lyricsShown
+            active: view.visible && content.lyricsRoom
             skin: view.skin
             trackId: view.trackId
             anchors { right: parent.right; top: parent.top; bottom: parent.bottom }

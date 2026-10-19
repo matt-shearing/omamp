@@ -12,6 +12,7 @@
 #include "organise.h"
 #include "tagwriter.h"
 #include "watcher.h"
+#include "mounts.h"
 #include "autodj.h"
 #include "m3u.h"
 #include "mmimport.h"
@@ -436,9 +437,34 @@ int watch(const Options &o, const VolumeResolver &resolver, QTextStream &out, QT
         err << "omamp: the watch limit (" << limit << ") ran out after " << watched
             << " folders; the rest are rescanned every " << o.interval << " s" << Qt::endl;
     });
+    // Shares that go away and come back: the monitor marks their tracks
+    // offline and online, and the watcher quick-rescans a share that returns.
+    MountMonitor mounts(o.db, resolver);
+    watcher.followMounts(&mounts);
+    QObject::connect(&mounts, &MountMonitor::volumesWentOffline, [&](const QList<qint64> &ids) {
+        for (qint64 id : ids) {
+            if (o.json)
+                line({{"event", "offline"}, {"volume", id}});
+            else
+                out << "offline  volume " << id << Qt::endl;
+        }
+    });
+    QObject::connect(&mounts, &MountMonitor::volumesCameOnline, [&](const QList<qint64> &ids, const QStringList &roots) {
+        if (o.json)
+            line({{"event", "online"}, {"volumes", QJsonArray::fromVariantList([&] {
+                      QVariantList v;
+                      for (qint64 id : ids)
+                          v << id;
+                      return v;
+                  }())}, {"folders", QJsonArray::fromStringList(roots)}});
+        else
+            for (const QString &root : roots)
+                out << "online   " << root << Qt::endl;
+    });
     QString error;
     if (!watcher.start(&error) && !error.isEmpty())
         err << "omamp: " << error << Qt::endl;
+    mounts.start();
     if (o.json) {
         line({{"event", "watching"},
               {"folders", watcher.watchedFolders()},

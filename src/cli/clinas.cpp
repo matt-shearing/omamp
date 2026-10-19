@@ -202,8 +202,13 @@ int mountGuide(const NasOptions &o, QTextStream &out, QTextStream &err) {
 
     out << "# Mounting " << what << " at " << where << " with systemd automount\n"
         << "#\n"
-        << "# Omamp never runs sudo or mounts anything. Save the two units below (or rerun with\n"
-        << "# --write-to " << unitDir << " to have them written there), then run the commands at the end.\n"
+        << "# Omamp never runs sudo or mounts anything. "
+        << (o.writeTo.isEmpty() ? QString("Save the two units below in %1 (or rerun with\n"
+                                          "# --write-to %1 to have them written there), then run the commands at the end.\n")
+                                      .arg(unitDir)
+                                : QString("The two units below are written to %1;\n"
+                                          "# run the commands at the end to install them.\n")
+                                      .arg(unitDir))
         << "# The share mounts the first time anything looks at " << where << ", unmounts after\n"
         << "# " << o.idle << " s idle, and a NAS that is off never holds up boot (nofail, automount).\n\n"
         << "# ---- " << mountUnit << " ----\n"

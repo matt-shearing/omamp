@@ -18,7 +18,7 @@ HEADERS += ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../sr
            ../src/app/columnbrowser.h ../src/app/albumgridmodel.h \
            ../src/app/tageditor.h ../src/app/organisemodel.h ../src/app/tagfromname.h ../src/app/duplicatesmodel.h
 SOURCES += main.cpp omamp_tests.cpp library_tests.cpp query_tests.cpp palette_tests.cpp watcher_tests.cpp \
-           librarywindow_tests.cpp mask_tests.cpp tidy_tests.cpp \
+           librarywindow_tests.cpp mask_tests.cpp tidy_tests.cpp tidywindow_tests.cpp \
            ../src/app/artprovider.cpp \
            ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp \
            ../src/app/librarycontroller.cpp ../src/app/librarytree.cpp ../src/app/tracklistmodel.cpp \

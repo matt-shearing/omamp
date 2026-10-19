@@ -175,6 +175,9 @@ ApplicationWindow {
         if (ids.length === 0) { toast.show(qsTr("Choose some tracks in the list first")); return }
         run(ids)
     }
+    function backToList() {
+        if (advanced && advancedLoader.item && !sheetOpen) advancedLoader.item.focusList()
+    }
     function goToNode(keys) {
         setAdvanced(true)
         const row = library.tree.reveal(keys)
@@ -743,11 +746,12 @@ ApplicationWindow {
         }
 
         // Phase 2's sheets, over the library.
-        TagEditorSheet { id: tagSheet }
-        OrganiseSheet { id: organiseSheet }
-        TagFromNameSheet { id: tagFromNameSheet }
-        UndoHistorySheet { id: historySheet }
-        ConfirmSheet { id: confirmSheet }
+        // Closing one puts the keys back on the list.
+        TagEditorSheet { id: tagSheet; onClosed: win.backToList() }
+        OrganiseSheet { id: organiseSheet; onClosed: win.backToList() }
+        TagFromNameSheet { id: tagFromNameSheet; onClosed: win.backToList() }
+        UndoHistorySheet { id: historySheet; onClosed: win.backToList() }
+        ConfirmSheet { id: confirmSheet; onClosed: win.backToList() }
 
         Toast {
             id: toast
@@ -779,7 +783,7 @@ ApplicationWindow {
             model: commandPalette
             onAboutToShow: win.updateActions()
             // Back to where the keys were.
-            onClosed: if (win.advanced && advancedLoader.item && !advancedLoader.item.activeFocus) advancedLoader.item.focusList()
+            onClosed: if (win.advanced && !win.sheetOpen && advancedLoader.item && !advancedLoader.item.activeFocus) advancedLoader.item.focusList()
         }
 
         DropArea {

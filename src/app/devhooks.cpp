@@ -142,6 +142,12 @@ void DevHooks::runDemo() {
             tracks->selectAll();
         else if (verb == "audits")
             m_library->countAudits();
+        else if (verb == "party")
+            // party:<preset> turns party mode on, with the big display and no PIN.
+            m_library->dj()->enableParty(arg.isEmpty() ? QString("jukebox") : arg, {}, true);
+        else if (verb == "playlist")
+            // playlist:<id> shows a playlist (opening its folders).
+            m_library->playlists()->show(arg.toLongLong());
         else
             say("unknown demo step " + step);
     }

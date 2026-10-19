@@ -40,5 +40,17 @@
   "%n tracks will be taken out of the library. Their files stay on disk, and a rescan of their folders adds them back.": { "one": "%n track will be taken out of the library. Its file stays on disk, and a rescan of its folder adds it back.", "other": "%n tracks will be taken out of the library. Their files stay on disk, and a rescan of their folders adds them back." },
   "Remove %n tracks": { "one": "Remove %n track", "other": "Remove %n tracks" },
   "%n files will go to the desktop's trash and leave the library. You can restore them from the trash; nothing is deleted.": { "one": "%n file will go to the desktop's trash and leave the library. You can restore it from the trash; nothing is deleted.", "other": "%n files will go to the desktop's trash and leave the library. You can restore them from the trash; nothing is deleted." },
-  "Move %n files to the trash": { "one": "Move %n file to the trash", "other": "Move %n files to the trash" }
+  "Move %n files to the trash": { "one": "Move %n file to the trash", "other": "Move %n files to the trash" },
+  "%n entries": { "one": "%n entry", "other": "%n entries" },
+  "%Ln entries": { "one": "%Ln entry", "other": "%Ln entries" },
+  "%n repeated": { "one": "%n repeated", "other": "%n repeated" },
+  "%n not in the library": { "one": "%n not in the library", "other": "%n not in the library" },
+  "%n tracks match": { "one": "%n track matches", "other": "%n tracks match" },
+  "%n tracks in this collection": { "one": "%n track in this collection", "other": "%n tracks in this collection" },
+  "Preview: the first %n": { "one": "Preview: the only one", "other": "Preview: the first %n" },
+  "Auto-DJ on: keeping %n tracks queued": { "one": "Auto-DJ on: keeping %n track queued", "other": "Auto-DJ on: keeping %n tracks queued" },
+  "Imported %n playlists: %1 entries, %2 not in the library": { "one": "Imported %n playlist: %1 entries, %2 not in the library", "other": "Imported %n playlists: %1 entries, %2 not in the library" },
+  "Imported %n playlists: %1 entries": { "one": "Imported %n playlist: %1 entries", "other": "Imported %n playlists: %1 entries" },
+  "Exported %n entries to %1": { "one": "Exported %n entry to %1", "other": "Exported %n entries to %1" },
+  "Added %n tracks to %1": { "one": "Added %n track to %1", "other": "Added %n tracks to %1" }
 }

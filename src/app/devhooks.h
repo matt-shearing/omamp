@@ -21,7 +21,8 @@ class QQuickWindow;
 //       (organise), tagset:<field>=<value> (the tag editor), audits (count
 //       Files to Edit), browse:<pane>:<value> (browse+ adds with
 //       Ctrl), grid, info and browser (toggle them), album:<row> (choose a
-//       grid tile), current:<row> (move the cursor), palette:<text>.
+//       grid tile), current:<row> (move the cursor), palette:<text>,
+//       party:<preset> (party mode with the big display), playlist:<id>.
 //   OMAMP_SCREENSHOT=<file.png>   save the window there, then quit
 //   OMAMP_PROFILE=1               print the time to the first frame and, in
 //       advanced mode, how long a jump to the end, a sort and two searches

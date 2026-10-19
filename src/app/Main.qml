@@ -998,9 +998,12 @@ ApplicationWindow {
             color: Qt.alpha(theme.c.darker_background, 0.94)
             MouseArea { anchors.fill: parent; onClicked: win.helpVisible = false }
 
-            Row {
+            // Two groups a row in advanced mode, so all four fit.
+            Grid {
                 anchors.centerIn: parent
-                spacing: win.advanced ? 32 : 48
+                columns: win.advanced ? 2 : 1
+                columnSpacing: 48
+                rowSpacing: 22
 
                 Repeater {
                     // The player's keys, and in advanced mode the library's beside them.

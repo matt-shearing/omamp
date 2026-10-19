@@ -146,6 +146,19 @@ arguments.
 
 ## Organising files
 
+In the window, select tracks and press `Ctrl+Shift+O` (or right-click,
+**Organise files…**). The mask field completes field names after `<` and
+function names after `$` (`↑` `↓` and `Tab`), and says at which character a
+mask goes wrong. The preview lists every old and new place; double-click a
+new place to change it. Its default mask is MediaMonkey's example made
+tolerant of missing tags:
+
+```text
+<Album Artist>/<Album>$If(<Year>, (<Year>))/$If(<Disc#>,<Disc#>-)<Track#:2> <Title>
+```
+
+From the command line:
+
 ```sh
 omamp organise <query> --mask '<mask>' --dry-run      # show where each file would go
 omamp organise <query> --mask '<mask>' --apply        # move them

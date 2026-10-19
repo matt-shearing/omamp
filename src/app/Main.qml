@@ -806,7 +806,7 @@ ApplicationWindow {
 
             Row {
                 anchors.centerIn: parent
-                spacing: 48
+                spacing: win.advanced ? 32 : 48
 
                 Repeater {
                     // The player's keys, and in advanced mode the library's beside them.
@@ -831,10 +831,10 @@ ApplicationWindow {
                             ["Ctrl+Space", qsTr("Select or unselect a track")],
                             ["Ctrl+A", qsTr("Select every track in the list")],
                             ["Enter", qsTr("Play the list from this track")],
-                            ["Menu", qsTr("Play next, add to Now Playing, show in folder")],
+                            ["Menu", qsTr("Play next, edit tags, organise, show in folder")],
                             ["O", qsTr("Add a folder to the library")],
                             ["F5", qsTr("Rescan the library")],
-                            ["Ctrl+K", qsTr("Command palette: actions, artists, albums, tracks")],
+                            ["Ctrl+K", qsTr("Command palette")],
                             ["Ctrl+B", qsTr("Show or hide the column browser")],
                             ["G", qsTr("Album covers or the track list")],
                             ["I", qsTr("Show or hide the info panel")]
@@ -848,7 +848,7 @@ ApplicationWindow {
                             ["Ctrl+Shift+Z", qsTr("Redo")],
                             ["Ctrl+Enter", qsTr("Save, in an editor")],
                             ["Esc", qsTr("Close an editor")],
-                            ["Ctrl+K", qsTr("Undo history, duplicates, Files to Edit")]
+                            ["Ctrl+K", qsTr("Undo history, Files to Edit")]
                         ]]
                     ] : [
                         [qsTr("Keys"), [

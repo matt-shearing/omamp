@@ -326,9 +326,11 @@ FocusScope {
         property var trackId: 0
         visible: false
         z: 5
-        x: (pane.hidden[0] ? 0 : table.columnWidth(0)) - table.contentX
-        y: header.height + row * 24 - table.contentY
-        width: Math.max(160, table.columnWidth(1))
+        // Placed only while open: asking the table for column widths while a
+        // header edge is dragged would fight the resize.
+        x: visible ? (pane.hidden[0] ? 0 : table.columnWidth(0)) - table.contentX : 0
+        y: visible ? header.height + row * 24 - table.contentY : 0
+        width: visible ? Math.max(160, table.columnWidth(1)) : 0
         height: 24
         color: theme.c.darker_background
         border.width: 1

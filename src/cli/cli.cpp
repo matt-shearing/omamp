@@ -72,14 +72,14 @@ Options:
   --workers <n>  scan: threads reading tags (default 4 to 8)
   --quick        scan: skip folders whose modification time hasn't changed
   --interval <s> watch: seconds between rescans of network folders (default 900)
-  --dry-run      watch: print changes without rescanning
+  --dry-run      watch: print changes without rescanning; tag, tag-from-filename,
+                 organise: show the changes and write nothing
   --size <px>    art: 96, 256 or 600 (default 256)
   --set f=v      tag: set a field (repeat it); fields: title, artist, albumartist, album,
                  genre, composer, year, originalyear, track, tracktotal, disc, disctotal,
                  comment, bpm, compilation, lyrics, rating (stars), artwork (an image
                  file), custom1..custom5. An empty value clears the field.
   --set-mask f=m tag: set a field from a mask, per track: --set-mask 'album=<Folder:1>'
-  --dry-run      tag, tag-from-filename, organise: show the changes, write nothing
   --apply        organise: move the files
   --mask <mask>  organise: where files go (see docs/masks.md)
   --to <folder>  organise: under this folder instead of each track's library folder

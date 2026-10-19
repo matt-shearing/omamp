@@ -33,10 +33,17 @@ AudioEngine *chooseEngine(const QString &settingsPath) {
 } // namespace
 
 Player::Player(const QString &statePath, QObject *parent)
-    : Player(chooseEngine(settingsPathFor(statePath)), statePath, parent) {}
+    : Player(chooseEngine(settingsPathFor(statePath)), statePath, Resolver(), parent) {}
+
+Player::Player(const QString &statePath, Resolver resolver, QObject *parent)
+    : Player(chooseEngine(settingsPathFor(statePath)), statePath, std::move(resolver), parent) {}
 
 Player::Player(AudioEngine *engine, const QString &statePath, QObject *parent)
-    : QObject(parent), m_engine(engine), m_statePath(statePath), m_settingsPath(settingsPathFor(statePath)) {
+    : Player(engine, statePath, Resolver(), parent) {}
+
+Player::Player(AudioEngine *engine, const QString &statePath, Resolver resolver, QObject *parent)
+    : QObject(parent), m_engine(engine), m_resolver(std::move(resolver)), m_statePath(statePath),
+      m_settingsPath(settingsPathFor(statePath)) {
     m_engine->setParent(this);
     connectEngine();
 
@@ -122,8 +129,16 @@ void Player::connectEngine() {
         finishPlay(false);
         stop();
     });
-    connect(m_engine, &AudioEngine::trackFailed, this, [this](const QString &path, const QString &) {
-        setError(tr("Can't play %1").arg(QFileInfo(path).fileName()));
+    connect(m_engine, &AudioEngine::bufferingChanged, this, &Player::bufferingChanged);
+    connect(m_engine, &AudioEngine::trackFailed, this, [this](const QString &path, const QString &detail) {
+        // A stream says why (the server refused, the connection broke);
+        // a local file's FFmpeg error says nothing the name doesn't.
+        QString why = m_resolveErrors.value(path);
+        if (why.isEmpty() && Playlist::isReference(path))
+            why = detail;
+        why = AudioEngine::redact(why);
+        setError(why.isEmpty() ? tr("Can't play %1").arg(displayName(path))
+                               : tr("Can't play %1: %2").arg(displayName(path), why));
         if (!m_engine->skipsUnplayable() || !m_wantPlaying)
             return;
         // Skip to the next playable file, but give up after trying them all.
@@ -211,7 +226,7 @@ void Player::setRepeat(bool on) {
     saveSoon();
 }
 
-void Player::load(int row) {
+void Player::load(int row, bool skip) {
     if (row < 0 || row >= m_playlist.count())
         return;
     finishPlay(m_skipping);
@@ -221,17 +236,87 @@ void Player::load(int row) {
     m_album.clear();
     m_bitrate = 0;
     m_spectrum.reset();
-    m_engine->load(m_playlist.at(row).path);
+    const QString path = m_playlist.at(row).path;
+    const QUrl url = urlFor(row);
+    if (skip && m_engine->state() == AudioEngine::Playing) {
+        // The engine may fade from the old track into this one without
+        // stopping, so the new play is counted from here.
+        m_engine->skipTo(path, url);
+        requeue();
+        emit trackChanged();
+        saveSoon();
+        if (m_engine->state() == AudioEngine::Playing)
+            beginPlay();
+        return;
+    }
+    m_engine->load(path, url);
     requeue();
     emit trackChanged();
     saveSoon();
+}
+
+void Player::setResolver(Resolver resolver) {
+    m_resolver = std::move(resolver);
+    m_queuedPath.clear();
+    m_queuedUrl.clear();
+    m_resolveErrors.clear();
+    // A stream loaded before there was a resolver is loaded again with it.
+    if (m_current >= 0 && Playlist::isReference(m_playlist.at(m_current).path) &&
+        m_engine->state() != AudioEngine::Playing)
+        load(m_current);
+    else
+        requeue();
+}
+
+QUrl Player::urlFor(int row) {
+    if (row < 0 || row >= m_playlist.count())
+        return {};
+    const Playlist::Track &t = m_playlist.at(row);
+    if (!Playlist::isReference(t.path))
+        return {};
+    m_resolveErrors.remove(t.path);
+    QString error;
+    QUrl url;
+    if (m_resolver)
+        url = m_resolver(t.path, t.trackId, &error);
+    else if (AudioEngine::isNetworkUrl(QUrl(t.path)))
+        url = QUrl(t.path);
+    else
+        error = tr("no library to play it from");
+    if (!url.isValid() || url.isEmpty()) {
+        // The engine then fails on the bare reference, and the message
+        // gives this reason.
+        m_resolveErrors.insert(t.path, AudioEngine::redact(error.isEmpty() ? tr("not available") : error));
+        return {};
+    }
+    return url;
+}
+
+QString Player::displayName(const QString &path) const {
+    // A local file by its name, as always; a stream by its title, since
+    // its path is only a server's song id.
+    if (!Playlist::isReference(path))
+        return QFileInfo(path).fileName();
+    for (int i = 0; i < m_playlist.count(); ++i) {
+        const Playlist::Track &t = m_playlist.at(i);
+        if (t.path == path && !t.title.isEmpty())
+            return t.artist.isEmpty() ? t.title : t.artist + " - " + t.title;
+    }
+    return AudioEngine::redact(path);
 }
 
 // Tells the engine which file follows the current one, so it can open it
 // early and join the two without a gap.
 void Player::requeue() {
     m_queued = m_current >= 0 ? nextIndex() : -1;
-    m_engine->queueNext(m_queued >= 0 ? m_playlist.at(m_queued).path : QString());
+    const QString path = m_queued >= 0 ? m_playlist.at(m_queued).path : QString();
+    // Requeueing the same track (the list changed around it) reuses the
+    // URL rather than asking the resolver again.
+    if (path != m_queuedPath || path.isEmpty()) {
+        m_queuedPath = path;
+        m_queuedUrl = m_queued >= 0 ? urlFor(m_queued) : QUrl();
+    }
+    m_engine->queueNext(path, m_queuedUrl);
 }
 
 void Player::readMetaData() {
@@ -303,7 +388,7 @@ void Player::next() {
     const bool playing = m_engine->state() == AudioEngine::Playing;
     m_history << m_current;
     m_skipping = true;
-    load(after);
+    load(after, playing);
     m_skipping = false;
     if (playing)
         m_engine->play();
@@ -326,7 +411,7 @@ void Player::previous() {
         before = 0;
     const bool playing = m_engine->state() == AudioEngine::Playing;
     m_skipping = true;
-    load(before);
+    load(before, playing);
     m_skipping = false;
     if (playing)
         m_engine->play();
@@ -338,7 +423,7 @@ void Player::playIndex(int row) {
     if (m_current >= 0)
         m_history << m_current;
     m_skipping = true;
-    load(row);
+    load(row, m_engine->state() == AudioEngine::Playing);
     m_skipping = false;
     m_wantPlaying = true;
     m_engine->play();
@@ -486,7 +571,27 @@ void Player::save() {
     if (m_statePath.isEmpty())
         return;
     QDir().mkpath(QFileInfo(m_statePath).absolutePath());
-    QJsonObject root{{"tracks", QJsonArray::fromStringList(m_playlist.paths())},
+    // Local files by path, as always. A library reference (a track on a
+    // Subsonic server) is kept with its tags, since nothing on disk can
+    // give them back, and never with its stream URL, which carries the
+    // server's token: that is asked for again when the track plays.
+    QJsonArray tracks;
+    for (int i = 0; i < m_playlist.count(); ++i) {
+        const Playlist::Track &t = m_playlist.at(i);
+        if (!Playlist::isReference(t.path)) {
+            tracks.append(t.path);
+            continue;
+        }
+        // A URL someone queued with a secret in it isn't written down.
+        if (AudioEngine::redact(t.path) != t.path)
+            continue;
+        QJsonObject entry{{"path", t.path}, {"title", t.title}, {"artist", t.artist},
+                          {"durationMs", t.durationMs}};
+        if (t.trackId > 0)
+            entry.insert("trackId", t.trackId);
+        tracks.append(entry);
+    }
+    QJsonObject root{{"tracks", tracks},
                      {"current", m_current},
                      {"volume", m_volume},
                      {"shuffle", m_shuffle},
@@ -505,11 +610,33 @@ void Player::restore() {
     if (!file.open(QIODevice::ReadOnly))
         return;
     const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
-    QStringList tracks;
-    for (const auto &value : root.value("tracks").toArray())
-        if (QFileInfo::exists(value.toString()))
-            tracks << value.toString();
-    m_playlist.addPaths(tracks);
+    // In order: runs of local files that still exist, and references with
+    // the tags they were saved with.
+    QStringList files;
+    auto addFiles = [&] {
+        if (!files.isEmpty())
+            m_playlist.addPaths(files);
+        files.clear();
+    };
+    for (const auto &value : root.value("tracks").toArray()) {
+        if (value.isObject()) {
+            const QJsonObject o = value.toObject();
+            Playlist::Track t;
+            t.path = o.value("path").toString();
+            // A URL with a token in it is never restored as a reference.
+            if (!Playlist::isReference(t.path) || AudioEngine::redact(t.path) != t.path)
+                continue;
+            t.title = o.value("title").toString();
+            t.artist = o.value("artist").toString();
+            t.durationMs = qint64(o.value("durationMs").toDouble());
+            t.trackId = qint64(o.value("trackId").toDouble());
+            addFiles();
+            m_playlist.insertTracks(m_playlist.count(), {t});
+        } else if (QFileInfo::exists(value.toString())) {
+            files << value.toString();
+        }
+    }
+    addFiles();
     setVolume(root.value("volume").toInt(m_volume));
     setShuffle(root.value("shuffle").toBool());
     setRepeat(root.value("repeat").toBool());

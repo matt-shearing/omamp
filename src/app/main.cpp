@@ -21,6 +21,7 @@
 #include "player.h"
 #include "playrecorder.h"
 #include "portal.h"
+#include "streamresolver.h"
 #include "tageditor.h"
 #include "theme.h"
 #include "translator.h"
@@ -57,7 +58,11 @@ int main(int argc, char *argv[]) {
 
     Theme theme;
     FolderPicker picker;
-    Player player(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/state.json");
+    // Tracks on a Subsonic server play through their signed stream URL,
+    // asked for when they play and never saved.
+    StreamResolver streams({});
+    Player player(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/state.json",
+                  streams.function());
     QObject::connect(&player, &Player::folderRequested, &picker, &FolderPicker::pickFolders);
     QObject::connect(&picker, &FolderPicker::picked, &player, &Player::addPicked);
     QObject::connect(&picker, &FolderPicker::failed, &player, &Player::reportError);

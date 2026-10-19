@@ -18,7 +18,15 @@ public:
         QString title;
         QString artist;
         qint64 durationMs = 0;
+        // The library's id for the track, when known (0 otherwise). A
+        // track on a Subsonic server has path subsonic://<source>/<song>,
+        // which the Player's resolver turns into a stream URL.
+        qint64 trackId = 0;
     };
+
+    // Whether a path names something other than a local file: a library
+    // reference (subsonic://…) or a URL.
+    static bool isReference(const QString &path);
 
     explicit Playlist(QObject *parent = nullptr) : QAbstractListModel(parent) {}
 

@@ -4,6 +4,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <QVariantMap>
 
 // What the Player needs from whatever turns files into sound. Two engines
@@ -46,9 +47,25 @@ public:
     virtual bool skipsUnplayable() const = 0;
 
     // Replaces the current file and stops. An empty path unloads.
-    virtual void load(const QString &path) = 0;
+    //
+    // path is the track's name in the play queue: a local file, or a
+    // library reference such as subsonic://<source>/<song> that never holds
+    // a secret. url, when valid, is where the audio really is (a signed
+    // http(s) stream URL). The engine opens url but reports, logs and keeps
+    // only path, so a token in the URL never reaches the window, a log or
+    // the saved state.
+    virtual void load(const QString &path, const QUrl &url = {}) = 0;
     // The file to play when the current one ends. An empty path clears it.
-    virtual void queueNext(const QString &path) = 0;
+    virtual void queueNext(const QString &path, const QUrl &url = {}) = 0;
+    // A jump the listener asked for (next, previous, a picked track) while
+    // playing: the new track plays at once. The native engine crossfades
+    // into it when crossfade is on; otherwise, and on the Qt engine, it is
+    // load() and play().
+    virtual void skipTo(const QString &path, const QUrl &url = {}) {
+        load(path, url);
+        play();
+    }
+    // path, never the URL.
     virtual QString source() const = 0;
 
     virtual void play() = 0;
@@ -59,6 +76,9 @@ public:
     virtual qint64 position() const = 0;
     virtual qint64 duration() const = 0;
     virtual State state() const = 0;
+    // True while playing but waiting for audio to arrive: a stream still
+    // connecting, or a slow or stalled network.
+    virtual bool buffering() const { return false; }
 
     // Linear gain, 0..1. The Player converts its slider to this.
     virtual void setVolume(qreal linear) = 0;
@@ -70,10 +90,22 @@ public:
     virtual void setSettings(const Settings &settings) { m_settings = settings; }
     Settings settings() const { return m_settings; }
 
+    // Whether a location is a network stream rather than a local file.
+    static bool isNetworkUrl(const QUrl &url) {
+        const QString scheme = url.scheme().toLower();
+        return scheme == QLatin1String("http") || scheme == QLatin1String("https");
+    }
+    // The text with every secret a URL in it could carry blanked out: the
+    // Subsonic token, salt, password and API key, and user info. For error
+    // messages and logs, which may quote what FFmpeg or Qt were asked to
+    // open.
+    static QString redact(const QString &text);
+
 signals:
     void positionChanged(qint64 ms);
     void durationChanged(qint64 ms);
     void stateChanged();
+    void bufferingChanged();
     void metaDataChanged();
     // The decoded format of the current file: sample rate and channels.
     void formatChanged(int sampleRate, int channels);

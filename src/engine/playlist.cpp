@@ -39,6 +39,11 @@ QStringList Playlist::paths() const {
     return out;
 }
 
+bool Playlist::isReference(const QString &path) {
+    static const QRegularExpression scheme(QStringLiteral("^[A-Za-z][A-Za-z0-9+.-]+://"));
+    return scheme.match(path).hasMatch() && !path.startsWith(QLatin1String("file://"), Qt::CaseInsensitive);
+}
+
 bool Playlist::isAudio(const QString &path) {
     static const QStringList extensions{"mp3", "flac", "ogg", "oga", "opus", "m4a", "aac", "wav",
                                         "wma", "aiff", "aif", "ape", "wv", "mka", "alac"};

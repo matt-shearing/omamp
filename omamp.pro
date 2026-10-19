@@ -33,7 +33,8 @@ HEADERS += \
     src/app/rulebuilder.h \
     src/app/settingscontroller.h \
     src/app/webcontroller.h \
-    src/app/nascontroller.h
+    src/app/nascontroller.h \
+    src/app/streamresolver.h
 
 SOURCES += \
     src/app/albumgridmodel.cpp \
@@ -60,6 +61,7 @@ SOURCES += \
     src/app/rulebuilder.cpp \
     src/app/settingscontroller.cpp \
     src/app/webcontroller.cpp \
-    src/app/nascontroller.cpp
+    src/app/nascontroller.cpp \
+    src/app/streamresolver.cpp
 
 RESOURCES += src/app/resources.qrc

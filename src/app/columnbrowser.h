@@ -144,6 +144,7 @@ private:
     FacetModel m_panes[PaneCount];
     bool m_enabled = false;
     bool m_wasFiltering = false;
+    bool m_baseReady = false; // the temporary table holds the current base
     QString m_artistMode = "albumartist";
     double m_lastQueryMs = 0;
 };

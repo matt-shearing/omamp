@@ -94,7 +94,7 @@ Rectangle {
                     cache: true
                     fillMode: Image.PreserveAspectFit
                     sourceSize: Qt.size(256, 256)
-                    source: panel.hasTrack ? "image://omamp-art/track/" + panel.trackId + "/256?v=" + library.revision : ""
+                    source: panel.hasTrack && panel.info.artState !== 2 ? "image://omamp-art/track/" + panel.trackId + "/256?v=" + library.revision : ""
                 }
                 Text {
                     anchors.centerIn: parent

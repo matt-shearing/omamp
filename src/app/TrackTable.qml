@@ -81,8 +81,10 @@ FocusScope {
             if (keep) {
                 const row = pane.tracks.rowOfTrack(keep.id)
                 if (row >= 0) {
-                    table.positionViewAtRow(row, TableView.AlignTop)
-                    if (keep.offset > 0) table.contentY += keep.offset
+                    // Rows are all 24 pixels, so the place is a sum. (A
+                    // positionViewAtRow() here is lost in the rebuild that
+                    // follows the reset.)
+                    table.contentY = row * 24 + Math.max(0, keep.offset)
                     return
                 }
             }

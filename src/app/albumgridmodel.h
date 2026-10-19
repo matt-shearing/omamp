@@ -22,12 +22,21 @@ class AlbumGridModel : public QAbstractListModel {
     Q_PROPERTY(double lastQueryMs READ lastQueryMs NOTIFY countChanged)
 
 public:
-    enum Roles { AlbumIdRole = Qt::UserRole + 1, TitleRole, ArtistRole, YearRole, TrackCountRole };
+    enum Roles {
+        AlbumIdRole = Qt::UserRole + 1,
+        TitleRole,
+        ArtistRole,
+        YearRole,
+        TrackCountRole,
+        // 0 not looked for yet, 1 has a picture, 2 looked and found none (the
+        // view then shows its placeholder without asking the image provider).
+        ArtStateRole,
+    };
 
     struct Album {
         qint64 id = 0;
         QString title, artist;
-        int year = 0, tracks = 0;
+        int year = 0, tracks = 0, artState = 0;
     };
 
     explicit AlbumGridModel(QObject *parent = nullptr);

@@ -86,8 +86,15 @@ public:
     // shows).
     QString baseWhere() const { return QString("(%1) AND (%2)").arg(m_scopeWhere, m_filterWhere); }
     QVariantList baseParams() const { return m_scopeParams + m_filterParams; }
-    QString fullWhere() const { return QString("(%1) AND (%2)").arg(baseWhere(), m_browseWhere); }
-    QVariantList fullParams() const { return baseParams() + m_browseParams; }
+    QString fullWhere() const {
+        return QString("(%1) AND (%2)").arg(m_baseOverride.isEmpty() ? baseWhere() : m_baseOverride, m_browseWhere);
+    }
+    QVariantList fullParams() const { return (m_baseOverride.isEmpty() ? baseParams() : QVariantList()) + m_browseParams; }
+    // A condition, with no parameters, that selects exactly what baseWhere()
+    // does: the column browser's temporary table of the node's and search's
+    // tracks, so a slow search runs once rather than once more per query.
+    // Empty means use baseWhere(). Takes effect at the next reload.
+    void setBaseOverride(const QString &where) { m_baseOverride = where; }
     QString scopeWhere() const { return m_scopeWhere; }
     QVariantList scopeParams() const { return m_scopeParams; }
     void setFilter(const QString &text);
@@ -167,6 +174,7 @@ private:
     QString m_filterWhere = "1";
     QVariantList m_filterParams;
     QString m_browseWhere = "1";
+    QString m_baseOverride;
     QVariantList m_browseParams;
     int m_sortColumn = -1;
     bool m_sortDescending = false;

@@ -385,8 +385,11 @@ QVariantMap LibraryController::trackInfo(qint64 trackId) const {
               "t.bitrate, t.sample_rate, t.channels, t.duration_ms, t.size, t.rg_track_gain, t.rg_track_peak, "
               "t.rg_album_gain, t.rg_album_peak, t.rating, t.play_count, t.last_played, t.added, t.availability, "
               "t.has_lyrics, t.has_embedded_art, t.track_no, t.disc_no, t.composer, t.file_name, t.rel_path, "
-              "v.root_path, v.online, coalesce(v.label, ''), t.bpm, t.compilation "
-              "FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.id = ?");
+              "v.root_path, v.online, coalesce(v.label, ''), t.bpm, t.compilation, "
+              "CASE WHEN t.artwork_id IS NOT NULL OR al.artwork_id IS NOT NULL THEN 1 "
+              "WHEN al.art_checked IS NOT NULL AND NOT t.has_embedded_art THEN 2 ELSE 0 END "
+              "FROM tracks t JOIN volumes v ON v.id = t.volume_id LEFT JOIN albums al ON al.id = t.album_id "
+              "WHERE t.id = ?");
     q.addBindValue(trackId);
     if (!q.exec() || !q.next())
         return m;
@@ -429,6 +432,8 @@ QVariantMap LibraryController::trackInfo(qint64 trackId) const {
     m["online"] = online && q.value(22).toString() == "online";
     m["bpm"] = q.value(33).toInt();
     m["compilation"] = q.value(34).toBool();
+    // 2: the album was searched and has no picture, so the panel doesn't ask.
+    m["artState"] = q.value(35).toInt();
     return m;
 }
 
@@ -528,6 +533,7 @@ void LibraryController::prefetchArtwork() {
         m_prefetch = new ArtworkPrefetch(m_path, m_artCacheDir);
         connect(m_prefetch, &ArtworkPrefetch::finished, this, [this](int made) {
             emit artworkBusyChanged();
+            m_albumGrid.refresh();
             if (made > 0) {
                 // Tiles that found no picture before ask again.
                 ++m_revision;

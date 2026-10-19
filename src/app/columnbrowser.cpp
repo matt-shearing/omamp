@@ -191,6 +191,8 @@ void ColumnBrowser::setEnabled(bool on) {
         // Hidden panes must not hide tracks.
         for (FacetModel &p : m_panes)
             p.setSelectedKeys({});
+        if (m_tracks)
+            m_tracks->setBaseOverride({});
         applyCondition(true);
     }
 }
@@ -397,6 +399,30 @@ void ColumnBrowser::update(int from, bool reloadList) {
     // Each pane counts within the node, the search, and the panes to its left.
     QString where = m_tracks->baseWhere();
     QVariantList params = m_tracks->baseParams();
+    if (selectsEverything(where, params)) {
+        m_tracks->setBaseOverride({});
+    } else {
+        // The node and search once, into a temporary table (on this
+        // connection only, never in the library file): every pane and the
+        // track list then read it by id. A search that can't use the index
+        // (two letters) scans the library once instead of five times.
+        if (from == 0 || !m_baseReady) {
+            QSqlQuery q(m_db);
+            q.exec("CREATE TEMP TABLE IF NOT EXISTS omamp_browse_base (id INTEGER PRIMARY KEY)");
+            q.exec("DELETE FROM temp.omamp_browse_base");
+            q.prepare("INSERT INTO temp.omamp_browse_base SELECT t.id FROM tracks t WHERE " + where);
+            for (const QVariant &p : params)
+                q.addBindValue(p);
+            m_baseReady = q.exec();
+            if (!m_baseReady)
+                qWarning("Column browser: %s", qPrintable(q.lastError().text()));
+        }
+        if (m_baseReady) {
+            where = QStringLiteral("t.id IN (SELECT id FROM temp.omamp_browse_base)");
+            params.clear();
+            m_tracks->setBaseOverride(where);
+        }
+    }
     for (int p = 0; p < PaneCount; ++p) {
         if (p >= from)
             m_panes[p].setEntries(countPane(p, where, params));

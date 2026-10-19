@@ -24,7 +24,7 @@ int AlbumGridModel::rowCount(const QModelIndex &parent) const { return parent.is
 
 QHash<int, QByteArray> AlbumGridModel::roleNames() const {
     return {{AlbumIdRole, "albumId"}, {TitleRole, "title"}, {ArtistRole, "artist"}, {YearRole, "year"},
-            {TrackCountRole, "trackCount"}};
+            {TrackCountRole, "trackCount"}, {ArtStateRole, "artState"}};
 }
 
 QVariant AlbumGridModel::data(const QModelIndex &index, int role) const {
@@ -38,6 +38,7 @@ QVariant AlbumGridModel::data(const QModelIndex &index, int role) const {
     case ArtistRole: return a.artist;
     case YearRole: return a.year;
     case TrackCountRole: return a.tracks;
+    case ArtStateRole: return a.artState;
     }
     return {};
 }
@@ -88,7 +89,8 @@ void AlbumGridModel::reload(bool force) {
     q.setForwardOnly(true);
     // Library order: album artist, then title; the year breaks ties between
     // albums of the same name.
-    q.prepare("SELECT al.id, al.title, coalesce(nullif(al.album_artist, ''), min(t.sort_artist)), al.year, count(*) "
+    q.prepare("SELECT al.id, al.title, coalesce(nullif(al.album_artist, ''), min(t.sort_artist)), al.year, count(*), "
+              "CASE WHEN al.art_checked IS NULL THEN 0 WHEN al.artwork_id IS NULL THEN 2 ELSE 1 END "
               "FROM tracks t JOIN albums al ON al.id = t.album_id WHERE " +
               where +
               " GROUP BY t.album_id ORDER BY 3 COLLATE NOCASE, al.title COLLATE NOCASE, al.year");
@@ -98,13 +100,24 @@ void AlbumGridModel::reload(bool force) {
         albums.reserve(1024);
         while (q.next())
             albums.append({q.value(0).toLongLong(), q.value(1).toString(), q.value(2).toString(), q.value(3).toInt(),
-                           q.value(4).toInt()});
+                           q.value(4).toInt(), q.value(5).toInt()});
     } else {
         qWarning("Album grid: %s", qPrintable(q.lastError().text()));
     }
-    beginResetModel();
-    m_albums = std::move(albums);
-    endResetModel();
+    // The same albums (a refresh after covers were made, or a rescan that
+    // changed nothing here): update in place, so the view keeps its place.
+    bool same = albums.size() == m_albums.size();
+    for (int i = 0; same && i < albums.size(); ++i)
+        same = albums[i].id == m_albums[i].id;
+    if (same) {
+        m_albums = std::move(albums);
+        if (!m_albums.isEmpty())
+            emit dataChanged(index(0), index(int(m_albums.size()) - 1));
+    } else {
+        beginResetModel();
+        m_albums = std::move(albums);
+        endResetModel();
+    }
     m_lastQueryMs = timer.nsecsElapsed() / 1e6;
     emit countChanged();
     const int row = current ? rowOfAlbum(current) : -1;

@@ -17,6 +17,9 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 
+#include "albumgridmodel.h"
+#include "artprovider.h"
+#include "columnbrowser.h"
 #include "library.h"
 #include "librarycontroller.h"
 #include "librarytree.h"
@@ -408,6 +411,143 @@ private slots:
         QCOMPARE(choose("collection:1"), tracks); // type:music
     }
 
+    // ---- Column browser ------------------------------------------------------
+
+    void browserCountsValuesAndNarrowsTheList() {
+        TrackListModel model;
+        model.setDatabase(m_library->db());
+        ColumnBrowser browser;
+        browser.setDatabase(m_library->db());
+        browser.setTracks(&model);
+        // Off: no counts, no filtering.
+        QCOMPARE(browser.genres()->count(), 0);
+        browser.setEnabled(true);
+
+        FacetModel *genres = browser.genres(), *artists = browser.artists(), *albums = browser.albums();
+        QCOMPARE(genres->count(), 1 + 3); // All, Jazz, Pop, Rock (by name)
+        QCOMPARE(genres->label(0), QString("All (1,000)"));
+        QCOMPARE(genres->label(1), QString("Jazz"));
+        QCOMPARE(genres->data(genres->index(1), FacetModel::CountRole).toInt(), count(*m_library, "genre = 'Jazz'"));
+        QVERIFY(genres->isSelected(0));
+        QCOMPARE(artists->title(), QString("Album Artist"));
+        QCOMPARE(artists->count(), 1 + 5);
+        QCOMPARE(albums->count(), 1 + 100);
+
+        // Choosing a genre narrows the panes to its right and the list.
+        browser.select(ColumnBrowser::GenrePane, genres->rowOfKey("2")); // Jazz
+        const int jazz = count(*m_library, "genre = 'Jazz'");
+        QCOMPARE(model.count(), jazz);
+        QCOMPARE(artists->label(0), QString("All (%1)").arg(jazz));
+        qint64 sum = 0;
+        for (int i = 1; i < artists->count(); ++i)
+            sum += artists->data(artists->index(i), FacetModel::CountRole).toLongLong();
+        QCOMPARE(sum, qint64(jazz));
+        QVERIFY(browser.filtering());
+
+        // Ctrl adds a second genre.
+        browser.select(ColumnBrowser::GenrePane, genres->rowOfKey("3"), Qt::ControlModifier); // Pop
+        QCOMPARE(model.count(), count(*m_library, "genre IN ('Jazz', 'Pop')"));
+        QCOMPARE(genres->selectedCount(), 2);
+
+        // An album artist, then an album: every pane's choice applies.
+        browser.select(ColumnBrowser::ArtistPane, artists->rowOfKey("artist 1"));
+        QCOMPARE(model.count(), count(*m_library, "genre IN ('Jazz', 'Pop') AND sort_artist = 'Artist 1'"));
+        QSqlQuery distinct(m_library->db());
+        QVERIFY(distinct.exec("SELECT count(DISTINCT album_id) FROM tracks WHERE genre IN ('Jazz', 'Pop') AND sort_artist = 'Artist 1'") && distinct.next());
+        QCOMPARE(albums->count(), 1 + distinct.value(0).toInt());
+        const int albumRow = 1;
+        const QString albumKey = albums->key(albumRow);
+        browser.select(ColumnBrowser::AlbumPane, albumRow);
+        QCOMPARE(model.count(), count(*m_library, "genre IN ('Jazz', 'Pop') AND sort_artist = 'Artist 1' AND album_id = " + albumKey));
+
+        // A search recounts within it and keeps the choices still there.
+        model.setFilter("year:1991");
+        QVERIFY(genres->label(0).startsWith(QString("All (%1)").arg(count(*m_library, "year = 1991"))));
+        QCOMPARE(model.count(), count(*m_library, "year = 1991 AND genre IN ('Jazz', 'Pop') AND sort_artist = 'Artist 1' AND album_id = " + albumKey) );
+        model.setFilter("");
+
+        // All clears a pane; clear() clears every pane.
+        browser.select(ColumnBrowser::AlbumPane, 0);
+        QCOMPARE(albums->selectedCount(), 0);
+        browser.clear();
+        QVERIFY(!browser.filtering());
+        QCOMPARE(model.count(), tracks);
+
+        // Artists instead of album artists: the multi-value table.
+        browser.setArtistMode("artist");
+        QCOMPARE(artists->title(), QString("Artist"));
+        browser.select(ColumnBrowser::ArtistPane, artists->rowOfKey("3")); // Artist 2
+        QCOMPARE(model.count(), tracks / 5);
+
+        // Turning the browser off shows the whole node again.
+        browser.setEnabled(false);
+        QCOMPARE(model.count(), tracks);
+    }
+
+    void browserFollowsTheTreeNode() {
+        TrackListModel model;
+        model.setDatabase(m_library->db());
+        ColumnBrowser browser;
+        browser.setDatabase(m_library->db());
+        browser.setTracks(&model);
+        browser.setEnabled(true);
+        browser.select(ColumnBrowser::GenrePane, browser.genres()->rowOfKey("1")); // Rock
+        const int rock = model.count();
+        QSignalSpy reloads(&model, &TrackListModel::reloaded);
+        // A node: the panes count within it, the list reloads once, and the
+        // genre stays chosen.
+        model.setScope("t.year BETWEEN ? AND ?", {1990, 1994});
+        QCOMPARE(reloads.count(), 1);
+        QCOMPARE(browser.genres()->label(0), QString("All (%1)").arg(count(*m_library, "year BETWEEN 1990 AND 1994")));
+        QCOMPARE(model.count(), count(*m_library, "year BETWEEN 1990 AND 1994 AND genre = 'Rock'"));
+        QVERIFY(model.count() < rock);
+        QCOMPARE(browser.genres()->selectedCount(), 1);
+        // A node without that genre drops the choice rather than show nothing.
+        model.setScope("t.id = 2", {}); // track 1 is Jazz
+        QCOMPARE(browser.genres()->selectedCount(), 0);
+        QCOMPARE(model.count(), 1);
+    }
+
+    void browserStaysQuickAndUsesNoTableScanForEverything() {
+        // The "everything" fast path counts genres from track_genres alone.
+        TrackListModel model;
+        model.setDatabase(m_library->db());
+        ColumnBrowser browser;
+        browser.setDatabase(m_library->db());
+        browser.setTracks(&model);
+        browser.setEnabled(true);
+        QVERIFY(browser.lastQueryMs() < 200);
+        QCOMPARE(browser.genres()->count(), 4);
+    }
+
+    // ---- Album grid ----------------------------------------------------------
+
+    void albumGridListsTheAlbumsOfTheList() {
+        TrackListModel model;
+        model.setDatabase(m_library->db());
+        AlbumGridModel grid;
+        grid.setDatabase(m_library->db());
+        grid.setTracks(&model);
+        QCOMPARE(grid.count(), 0); // nothing until it shows
+        grid.setActive(true);
+        QCOMPARE(grid.count(), 100);
+        QCOMPARE(grid.data(grid.index(0), AlbumGridModel::ArtistRole).toString(), QString("Artist 0"));
+        QCOMPARE(grid.data(grid.index(0), AlbumGridModel::TrackCountRole).toInt(), 10);
+        // The album the list is narrowed to, and the chosen album kept through a refresh.
+        model.setFilter("year:1995");
+        QSqlQuery q(m_library->db());
+        QVERIFY(q.exec("SELECT count(DISTINCT album_id) FROM tracks WHERE year = 1995") && q.next());
+        QCOMPARE(grid.count(), q.value(0).toInt());
+        grid.setCurrentRow(2);
+        const qint64 album = grid.currentAlbum();
+        QSignalSpy resets(&grid, &QAbstractItemModel::modelReset);
+        model.sortBy(TrackListModel::Title); // a sort doesn't change the albums
+        QCOMPARE(resets.count(), 0);
+        grid.refresh();
+        QCOMPARE(grid.currentAlbum(), album);
+        model.setFilter("");
+    }
+
     // ---- Controller ----------------------------------------------------------
 
     void controllerFollowsTheChosenNode() {
@@ -428,6 +568,80 @@ private slots:
         tree->collapse(tree->rowOfKey("artists"));
         QCOMPARE(controller.currentNode(), tree->rowOfKey("artists"));
         QCOMPARE(controller.tracks()->count(), tracks);
+    }
+
+    void infoGoingToThingsAndRefreshing() {
+        LibraryController controller(m_dir.filePath("library.db"));
+        controller.setWatching(false);
+        QVERIFY(controller.activate());
+        TrackListModel *list = controller.tracks();
+
+        // What the info panel shows.
+        const QVariantMap info = controller.trackInfo(43); // i = 42
+        QCOMPARE(info.value("title").toString(), QString("Track 00042"));
+        QCOMPARE(info.value("artist").toString(), QString("Artist 2"));
+        QCOMPARE(info.value("album").toString(), QString("E Album 4"));
+        QCOMPARE(info.value("year").toInt(), 1992);
+        QCOMPARE(info.value("genre").toString(), QString("Rock"));
+        QCOMPARE(info.value("format").toString(), QString("FLAC"));
+        QCOMPARE(info.value("bitrate").toInt(), 900);
+        QCOMPARE(info.value("rating").toInt(), -1); // 42 % 6 == 0: unrated
+        QCOMPARE(info.value("plays").toInt(), 0);   // 42 % 7
+        QCOMPARE(info.value("durationMs").toLongLong(), qint64(102000));
+        QVERIFY(info.value("path").toString().endsWith("Artist 2/Album 4/Track 00042.flac"));
+        QVERIFY(info.value("online").toBool());
+        QVERIFY(controller.trackInfo(0).isEmpty());
+        QCOMPARE(controller.firstTrackOfAlbum(5), qint64(41)); // album 4: i = 40..49
+
+        // The playing track is found by its path.
+        list->setPlayingPath(info.value("path").toString());
+        QCOMPARE(controller.playingTrackId(), qint64(43));
+
+        // Going to an artist, an album and a track.
+        list->setFilter("year:1990");
+        int row = controller.showArtist(3);
+        QVERIFY(row > 0);
+        QCOMPARE(controller.currentKind(), QString("artist"));
+        QCOMPARE(controller.tree()->key(row), QString("artist:3"));
+        QCOMPARE(list->filter(), QString()); // the search is cleared
+        QCOMPARE(list->count(), tracks / 5);
+        row = controller.showAlbum(5);
+        QCOMPARE(controller.tree()->key(row), QString("letter:E/album:5"));
+        QCOMPARE(list->count(), 10);
+        QSignalSpy reveal(&controller, &LibraryController::revealRow);
+        // Track 7 (i = 6) isn't in album 5: the list widens to Entire Library.
+        row = controller.showTrack(7);
+        QVERIFY(row >= 0);
+        QCOMPARE(controller.currentNode(), 0);
+        QCOMPARE(list->trackId(row), qint64(7));
+        QCOMPARE(list->selectedRows(), QList<int>({row}));
+        QCOMPARE(reveal.count(), 1);
+
+        // A refresh after the library changed keeps the node, the selection
+        // and the cursor, and picks up the new track.
+        list->select(10);
+        list->select(12, Qt::ShiftModifier);
+        QSet<qint64> selected;
+        for (int r : list->selectedRows())
+            selected << list->trackId(r);
+        const qint64 cursor = list->trackId(list->currentRow());
+        QSqlQuery q(m_library->db());
+        QVERIFY(q.exec("INSERT INTO tracks (id, volume_id, rel_path, file_name, size, mtime_ns, title, sort_artist, "
+                       "album, added) VALUES (5000, 1, 'new.flac', 'new', 1, 1, 'New', 'Artist 0', 'A Album 0', 1)"));
+        QSignalSpy refreshed(list, &TrackListModel::aboutToRefresh);
+        const int revision = controller.revision();
+        controller.refreshAll();
+        QCOMPARE(refreshed.count(), 1);
+        QCOMPARE(list->count(), tracks + 1);
+        QCOMPARE(controller.currentNode(), 0);
+        QSet<qint64> after;
+        for (int r : list->selectedRows())
+            after << list->trackId(r);
+        QCOMPARE(after, selected);
+        QCOMPARE(list->trackId(list->currentRow()), cursor);
+        QVERIFY(controller.revision() > revision);
+        QVERIFY(q.exec("DELETE FROM tracks WHERE id = 5000"));
+        list->setPlayingPath({});
     }
 
     void playNowQueueAndAppendHandTracksToThePlayer() {
@@ -540,13 +754,16 @@ private slots:
         player.setMuted(true);
         LibraryController library(dir.filePath("library.db"));
         library.setPlayer(&player);
+        library.setArtCacheDir(dir.filePath("art"));
 
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("translator", &translator);
         engine.rootContext()->setContextProperty("theme", &theme);
         engine.rootContext()->setContextProperty("backend", &player);
         engine.rootContext()->setContextProperty("library", &library);
+        engine.rootContext()->setContextProperty("commandPalette", library.palette());
         engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(dir.filePath("window.conf")));
+        engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider(dir.filePath("library.db"), dir.filePath("art")));
         engine.load(QUrl("qrc:/Main.qml"));
         QCOMPARE(engine.rootObjects().size(), 1);
         auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
@@ -638,10 +855,234 @@ private slots:
     }
 };
 
+// The Phase 1D parts of the window: the palette, the column browser, the
+// album grid, the info panel and refreshing after the library changes.
+class AdvancedPartsTests : public QObject {
+    Q_OBJECT
+
+    struct Window {
+        QTemporaryDir &dir;
+        Translator translator;
+        Theme theme;
+        Player player;
+        LibraryController library;
+        QQmlApplicationEngine engine;
+        QQuickWindow *window = nullptr;
+
+        explicit Window(QTemporaryDir &d)
+            : dir(d), translator(d.filePath("language")), theme(d.filePath("theme"), nullptr, d.filePath("no-hyprctl")),
+              library(d.filePath("library.db")) {
+            player.setMuted(true);
+            library.setPlayer(&player);
+            library.setArtCacheDir(d.filePath("art"));
+            engine.rootContext()->setContextProperty("translator", &translator);
+            engine.rootContext()->setContextProperty("theme", &theme);
+            engine.rootContext()->setContextProperty("backend", &player);
+            engine.rootContext()->setContextProperty("library", &library);
+            engine.rootContext()->setContextProperty("commandPalette", library.palette());
+            engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(d.filePath("window.conf")));
+            engine.addImageProvider(ArtImageProvider::name,
+                                    new ArtImageProvider(d.filePath("library.db"), d.filePath("art")));
+        }
+        bool load() {
+            engine.load(QUrl("qrc:/Main.qml"));
+            if (engine.rootObjects().size() != 1)
+                return false;
+            window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+            return window && QTest::qWaitForWindowExposed(window);
+        }
+        // Items made by a Repeater have no QObject parent, so this also
+        // walks the visual tree.
+        static QObject *findItem(QQuickItem *item, const QString &name) {
+            if (item->objectName() == name)
+                return item;
+            for (QQuickItem *child : item->childItems())
+                if (QObject *o = findItem(child, name))
+                    return o;
+            return nullptr;
+        }
+        QObject *find(const char *name) const {
+            QObject *o = window->findChild<QObject *>(name);
+            if (!o)
+                o = findItem(window->contentItem(), QString::fromLatin1(name));
+            if (!o)
+                qWarning("No object named %s in the window", name);
+            return o;
+        }
+        QVariant saved(const QString &key) const {
+            return QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value(key);
+        }
+    };
+
+    static void startInAdvancedMode(QTemporaryDir &dir) {
+        QSettings conf(dir.filePath("window.conf"), QSettings::IniFormat);
+        conf.setValue("window/advanced", true);
+    }
+
+private slots:
+    void paletteBrowserGridAndInfoFromTheKeyboard() {
+        QTemporaryDir dir;
+        {
+            Library library(dir.filePath("library.db"));
+            QVERIFY(library.open());
+            fill(library, dir.path(), 300);
+        }
+        startInAdvancedMode(dir);
+        Window w(dir);
+        QVERIFY(w.load());
+        QQuickWindow *window = w.window;
+        LibraryController &library = w.library;
+        QTRY_VERIFY(library.ready());
+        QTRY_VERIFY(w.find("advancedView"));
+
+        // Ctrl+K opens the palette; an artist's name and Enter go to that
+        // artist in the tree.
+        QObject *palette = w.find("commandPalette");
+        QVERIFY(palette);
+        QTest::keyClick(window, Qt::Key_K, Qt::ControlModifier);
+        QTRY_VERIFY(palette->property("opened").toBool());
+        // The palette lists the window's actions before anything is typed.
+        QVERIFY(library.palette()->actionIds().contains("browser"));
+        typeText(window, "Artist 3");
+        QTRY_VERIFY(library.palette()->count() > 0);
+        QCOMPARE(library.palette()->get(0).value("kind").toString(), QString("artist"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!palette->property("opened").toBool());
+        QCOMPARE(library.tree()->key(library.currentNode()), QString("artist:4"));
+        QCOMPARE(library.tracks()->count(), 60);
+
+        // An action from the palette: "> browser" shows the column browser.
+        QTest::keyClick(window, Qt::Key_K, Qt::ControlModifier);
+        QTRY_VERIFY(palette->property("opened").toBool());
+        typeText(window, ">column browser");
+        QTRY_COMPARE(library.palette()->get(0).value("itemId").toString(), QString("browser"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(library.browser()->enabled());
+        QCOMPARE(library.browser()->genres()->label(0), QString("All (60)"));
+        QVERIFY(w.find("columnBrowser")->property("visible").toBool());
+
+        // In the browser: Down chooses the first genre, and the list narrows.
+        QTRY_VERIFY(window->activeFocusItem() && w.find("browserPane0")->property("activeFocus").toBool());
+        QTest::keyClick(window, Qt::Key_Down);
+        QCOMPARE(library.browser()->genres()->selectedCount(), 1);
+        const QString genre = library.browser()->genres()->label(1); // Jazz
+        int expected = 0;
+        for (int i = 0; i < 300; ++i)
+            expected += (i % 5 == 3 && genres[i % 3] == genre);
+        QCOMPARE(library.tracks()->count(), expected);
+        // Right moves to the next pane, Enter to the list; Down puts the cursor on the first track.
+        QTest::keyClick(window, Qt::Key_Right);
+        QVERIFY(w.find("browserPane1")->property("activeFocus").toBool());
+        QTest::keyClick(window, Qt::Key_Return);
+        QTest::keyClick(window, Qt::Key_Down);
+        QCOMPARE(library.tracks()->currentRow(), 0);
+
+        // I shows the info panel for the track under the cursor.
+        QTest::keyClick(window, Qt::Key_I);
+        QObject *info = w.find("infoPanel");
+        QTRY_VERIFY(info && info->property("visible").toBool());
+        const QString title = library.tracks()->data(library.tracks()->index(0, TrackListModel::Title), Qt::DisplayRole).toString();
+        QTRY_COMPARE(w.find("infoTitle")->property("text").toString(), title);
+        QVERIFY(w.find("infoPath")->property("text").toString().endsWith(".flac"));
+
+        // G shows the albums of the list as a grid; Enter plays the chosen one.
+        QTest::keyClick(window, Qt::Key_G);
+        QTRY_VERIFY(library.albumGrid()->active());
+        QVERIFY(w.find("albumGrid")->property("visible").toBool());
+        QVERIFY(library.albumGrid()->count() > 0);
+        QTest::keyClick(window, Qt::Key_Right); // the first album
+        QCOMPARE(library.albumGrid()->currentRow(), 0);
+        const qint64 album = library.albumGrid()->currentAlbum();
+        // The info panel follows the grid.
+        QTRY_COMPARE(w.find("infoTitle")->property("text").toString(),
+                     library.trackInfo(library.firstTrackOfAlbum(album)).value("title").toString());
+        QTest::keyClick(window, Qt::Key_Return);
+        QCOMPARE(w.player.playlist()->count(), 10); // the whole album, not just this genre
+        w.player.stop();
+        QTest::keyClick(window, Qt::Key_G);
+        QTRY_VERIFY(!library.albumGrid()->active());
+
+        // A refresh (as after the folder watcher wrote) keeps the scroll position.
+        QTest::keyClick(window, Qt::Key_B, Qt::ControlModifier); // browser off: all 60 tracks
+        QTRY_VERIFY(!library.browser()->enabled());
+        library.selectNode(0);
+        QCOMPARE(library.tracks()->count(), 300);
+        auto *table = qobject_cast<QQuickItem *>(w.find("trackTable"));
+        QVERIFY(table);
+        table->setProperty("contentY", 120 * 24.0 + 5); // rows are 24 pixels
+        QTRY_COMPARE(table->property("topRow").toInt(), 120);
+        library.refreshAll();
+        QTRY_COMPARE(table->property("topRow").toInt(), 120);
+        QCOMPARE(table->property("contentY").toDouble(), 120 * 24.0 + 5);
+
+        // The parts shown are remembered.
+        QTest::keyClick(window, Qt::Key_K, Qt::ControlModifier);
+        typeText(window, ">info panel");
+        QTRY_COMPARE(library.palette()->get(0).value("itemId").toString(), QString("info"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!info->property("visible").toBool());
+        QTest::keyClick(window, Qt::Key_B, Qt::ControlModifier);
+        w.window->close();
+        QTRY_COMPARE(w.saved("window/browserVisible").toBool(), true);
+        QCOMPARE(w.saved("window/infoVisible").toBool(), false);
+        QCOMPARE(w.saved("window/gridVisible").toBool(), false);
+    }
+
+    void watcherChangesRefreshTheWindowAndKeepTheSelection() {
+        if (QStandardPaths::findExecutable("ffmpeg").isEmpty())
+            QSKIP("needs ffmpeg for the fixtures");
+        QTemporaryDir dir;
+        QProcess make;
+        make.start(QString(OMAMP_TESTS_DIR) + "/make-fixtures", {dir.filePath("music")});
+        QVERIFY(make.waitForFinished(120000));
+        QCOMPARE(make.exitCode(), 0);
+        startInAdvancedMode(dir);
+
+        Window w(dir);
+        LibraryController &library = w.library;
+        QVERIFY(library.activate());
+        QSignalSpy scanned(&library, &LibraryController::scanFinished);
+        library.addFolders({dir.filePath("music")});
+        QVERIFY(scanned.wait(60000));
+        QVERIFY(w.load());
+        QTRY_VERIFY(w.find("advancedView"));
+        // The watcher watches the new folder (the scan reloads it).
+        QTRY_VERIFY(library.watcher() && library.watcher()->watchedFolders() > 0);
+        QObject *status = w.find("watchStatus");
+        QVERIFY(status);
+        QTRY_VERIFY(status->property("visible").toBool());
+
+        TrackListModel *list = library.tracks();
+        const int before = list->count();
+        QVERIFY(before >= 12);
+        list->select(1);
+        list->select(3, Qt::ShiftModifier);
+        QSet<qint64> selected;
+        for (int r : list->selectedRows())
+            selected << list->trackId(r);
+        const qint64 cursor = list->trackId(list->currentRow());
+
+        // A new file appears in a watched folder: the window refreshes on
+        // its own, with the new track and the same selection.
+        QSignalSpy changed(library.watcher(), &Watcher::libraryChanged);
+        QVERIFY(QFile::copy(dir.filePath("music/Loose/untagged track.mp3"), dir.filePath("music/Loose/a copy.mp3")));
+        QTRY_VERIFY_WITH_TIMEOUT(changed.count() > 0, 30000);
+        QTRY_COMPARE(list->count(), before + 1);
+        QSet<qint64> after;
+        for (int r : list->selectedRows())
+            after << list->trackId(r);
+        QCOMPARE(after, selected);
+        QCOMPARE(list->trackId(list->currentRow()), cursor);
+        QCOMPARE(library.tree()->node(0).count, qint64(before + 1));
+        w.window->close();
+    }
+};
+
 int runLibraryWindowTests(int argc, char **argv) {
     LibraryWindowTests tests;
     AdvancedWindowTests window;
-    return QTest::qExec(&tests, argc, argv) + QTest::qExec(&window, argc, argv);
+    AdvancedPartsTests parts;
+    return QTest::qExec(&tests, argc, argv) + QTest::qExec(&window, argc, argv) + QTest::qExec(&parts, argc, argv);
 }
 
 #include "librarywindow_tests.moc"

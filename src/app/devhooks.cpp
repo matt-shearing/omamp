@@ -64,7 +64,13 @@ void DevHooks::afterFirstFrame() {
         // Started on the deck: time the switch into advanced mode first.
         m_steps = {advanced ? "already in advanced mode" : "Tab into advanced mode", "jump to the last row", "sort by title", "sort by title, descending",
                    "search: coast", "search: go (two letters, no index)",
-                   "search: artist:\"neon coast\" year:1997..2001", "clear the search"};
+                   "search: artist:\"neon coast\" year:1997..2001", "clear the search",
+                   "sort by artist", "sort by album", "sort by genre", "library order",
+                   "show the column browser", "browser: choose a genre", "browser: choose an album artist",
+                   "browser: search coast", "browser: back to All", "hide the column browser",
+                   "show the album grid", "grid: search coast", "grid: clear the search", "hide the album grid",
+                   "show the info panel", "refresh (as after the watcher)",
+                   "show the column browser again", "browser: search go (two letters)", "browser: clear the search"};
         m_step = -1;
         QTimer::singleShot(200, this, &DevHooks::nextProfileStep);
         return;
@@ -158,8 +164,35 @@ void DevHooks::nextProfileStep() {
     case 5: tracks->setFilter("go"); break;
     case 6: tracks->setFilter("artist:\"neon coast\" year:1997..2001"); break;
     case 7: tracks->setFilter(""); break;
+    case 8: tracks->setSort(TrackListModel::Artist, false); break;
+    case 9: tracks->setSort(TrackListModel::Album, false); break;
+    case 10: tracks->setSort(TrackListModel::Genre, false); break;
+    case 11: tracks->setSort(-1, false); break;
+    case 12: QMetaObject::invokeMethod(m_window, "toggleBrowser"); break;
+    case 13: m_library->browser()->select(ColumnBrowser::GenrePane, 1); break;
+    case 14: m_library->browser()->select(ColumnBrowser::ArtistPane, 1); break;
+    case 15: tracks->setFilter("coast"); break;
+    case 16:
+        tracks->setFilter("");
+        m_library->browser()->clear();
+        break;
+    case 17: QMetaObject::invokeMethod(m_window, "toggleBrowser"); break;
+    case 18: QMetaObject::invokeMethod(m_window, "toggleGrid"); break;
+    case 19: tracks->setFilter("coast"); break;
+    case 20: tracks->setFilter(""); break;
+    case 21: QMetaObject::invokeMethod(m_window, "toggleGrid"); break;
+    case 22: QMetaObject::invokeMethod(m_window, "toggleInfo"); break;
+    case 23: m_library->refreshAll(); break;
+    case 24: QMetaObject::invokeMethod(m_window, "toggleBrowser"); break;
+    case 25: tracks->setFilter("go"); break;
+    case 26: tracks->setFilter(""); break;
     }
-    say(QString("  (%1: query %2 ms, %3 rows)").arg(m_steps[m_step]).arg(tracks->lastQueryMs(), 0, 'f', 1).arg(tracks->count()));
+    QString extra;
+    if ((m_step >= 12 && m_step <= 17) || m_step >= 24)
+        extra = QString(", browser %1 ms").arg(m_library->browser()->lastQueryMs(), 0, 'f', 1);
+    if (m_step >= 18 && m_step <= 21)
+        extra = QString(", grid %1 ms, %2 albums").arg(m_library->albumGrid()->lastQueryMs(), 0, 'f', 1).arg(m_library->albumGrid()->count());
+    say(QString("  (%1: query %2 ms, %3 rows%4)").arg(m_steps[m_step]).arg(tracks->lastQueryMs(), 0, 'f', 1).arg(tracks->count()).arg(extra));
     m_window->update();
 }
 

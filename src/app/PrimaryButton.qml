@@ -7,11 +7,12 @@ import QtQuick.Controls.Material
 Button {
     id: button
     font.pixelSize: 13
-    implicitHeight: 36
+    // The same height and insets as Material's own buttons, so a row of them lines up.
+    implicitHeight: 48
     leftPadding: 18
     rightPadding: 18
-    topInset: 0
-    bottomInset: 0
+    topInset: 6
+    bottomInset: 6
     contentItem: Text {
         text: button.text
         font: button.font

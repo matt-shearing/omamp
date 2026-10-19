@@ -77,6 +77,14 @@ public:
     Q_INVOKABLE void openFolder();
     Q_INVOKABLE void dismissError();
 
+    // From the library window: tracks whose tags are already known.
+    // playTracks replaces the list and plays from start ("play now"),
+    // queueNext puts them after the current track, appendTracks adds them
+    // at the end. Each returns how many tracks it took.
+    int playTracks(const QList<Playlist::Track> &tracks, int start);
+    int queueNext(const QList<Playlist::Track> &tracks);
+    int appendTracks(const QList<Playlist::Track> &tracks);
+
     // Adds folders the user picked, starting playback if the list was empty.
     void addPicked(const QStringList &paths);
     void reportError(const QString &message) { setError(message); }

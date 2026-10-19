@@ -263,6 +263,40 @@ int Player::addPaths(const QStringList &paths) {
     return added;
 }
 
+int Player::playTracks(const QList<Playlist::Track> &tracks, int start) {
+    if (tracks.isEmpty())
+        return 0;
+    stop();
+    m_player.setSource({});
+    m_history.clear();
+    m_current = -1;
+    m_playlist.replaceTracks(tracks);
+    playIndex(qBound(0, start, int(tracks.size()) - 1));
+    saveSoon();
+    return tracks.size();
+}
+
+int Player::queueNext(const QList<Playlist::Track> &tracks) {
+    const int at = m_current + 1;
+    const int added = m_playlist.insertTracks(at, tracks);
+    // Rows remembered for shuffle's "previous" move down with the insert.
+    for (int &row : m_history)
+        if (row >= at)
+            row += added;
+    if (added > 0 && m_current < 0)
+        load(0);
+    saveSoon();
+    return added;
+}
+
+int Player::appendTracks(const QList<Playlist::Track> &tracks) {
+    const int added = m_playlist.insertTracks(m_playlist.count(), tracks);
+    if (added > 0 && m_current < 0)
+        load(0);
+    saveSoon();
+    return added;
+}
+
 int Player::addUrls(const QVariantList &urls) {
     QStringList paths;
     for (const auto &url : urls)

@@ -13,6 +13,8 @@
 #include <QUrl>
 
 #include "cli.h"
+#include "devhooks.h"
+#include "librarycontroller.h"
 #include "mpris.h"
 #include "player.h"
 #include "portal.h"
@@ -22,6 +24,7 @@
 static const char *version = "0.1.0";
 
 int main(int argc, char *argv[]) {
+    DevHooks::markStart();
     // Commands run without a display: a QCoreApplication never touches the
     // GUI platform, so `omamp scan` works over SSH and in scripts.
     if (argc > 1 && Cli::isCommand(QString::fromLocal8Bit(argv[1]))) {
@@ -71,6 +74,21 @@ int main(int argc, char *argv[]) {
             player.addPaths({music});
     }
 
+    // The library window's controller. The library opens the first time
+    // advanced mode shows; "Add folder to library" has its own picker so its
+    // folders go to the library, not to Now Playing.
+    LibraryController library;
+    FolderPicker libraryPicker;
+    library.setPlayer(&player);
+    library.setPicker(&libraryPicker);
+    // The track list marks the track that is playing.
+    auto markPlaying = [&] {
+        const int row = player.currentIndex();
+        library.tracks()->setPlayingPath(row >= 0 ? player.playlist()->at(row).path : QString());
+    };
+    QObject::connect(&player, &Player::trackChanged, &library, markPlaying);
+    markPlaying();
+
     QObject mprisHost;
     registerMpris(&mprisHost, &player);
 
@@ -79,6 +97,11 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("translator", &translator);
     engine.rootContext()->setContextProperty("theme", &theme);
     engine.rootContext()->setContextProperty("backend", &player);
+    engine.rootContext()->setContextProperty("library", &library);
+    engine.rootContext()->setContextProperty(
+        "settingsUrl", QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) +
+                                           "/omamp/window.conf"));
+    DevHooks hooks(&engine, &library);
     engine.load(QUrl("qrc:/Main.qml"));
     if (engine.rootObjects().isEmpty())
         return 1;

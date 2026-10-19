@@ -94,6 +94,27 @@ int Playlist::addPaths(const QStringList &paths) {
     return files.size();
 }
 
+int Playlist::insertTracks(int row, const QList<Track> &tracks) {
+    if (tracks.isEmpty())
+        return 0;
+    row = qBound(0, row, int(m_tracks.size()));
+    beginInsertRows({}, row, row + tracks.size() - 1);
+    for (int i = 0; i < tracks.size(); ++i)
+        m_tracks.insert(row + i, tracks[i]);
+    endInsertRows();
+    if (row + tracks.size() < m_tracks.size())
+        emit dataChanged(index(row + tracks.size()), index(m_tracks.size() - 1), {NumberRole});
+    emit countChanged();
+    return tracks.size();
+}
+
+void Playlist::replaceTracks(const QList<Track> &tracks) {
+    beginResetModel();
+    m_tracks = tracks;
+    endResetModel();
+    emit countChanged();
+}
+
 void Playlist::remove(int row) {
     if (row < 0 || row >= m_tracks.size())
         return;

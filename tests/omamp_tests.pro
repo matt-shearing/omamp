@@ -1,4 +1,4 @@
-QT += core gui quick quickcontrols2 testlib dbus
+QT += core gui qml quick quickcontrols2 testlib dbus
 CONFIG += c++17 testcase
 TARGET = omamp_tests
 TEMPLATE = app
@@ -13,7 +13,13 @@ DEFINES += OMAMP_TESTS_DIR=\\\"$$PWD\\\"
 # Where the QML lives, so the palette test can load CommandPalette.qml.
 DEFINES += OMAMP_APP_DIR=\\\"$$PWD/../src/app\\\"
 
-HEADERS += ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h fixture_library.h
+HEADERS += ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h fixture_library.h \
+           ../src/app/librarycontroller.h ../src/app/librarytree.h ../src/app/tracklistmodel.h
 SOURCES += main.cpp omamp_tests.cpp library_tests.cpp query_tests.cpp palette_tests.cpp watcher_tests.cpp \
+           librarywindow_tests.cpp \
            ../src/app/artprovider.cpp \
-           ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp
+           ../src/app/portal.cpp ../src/app/theme.cpp ../src/app/translator.cpp \
+           ../src/app/librarycontroller.cpp ../src/app/librarytree.cpp ../src/app/tracklistmodel.cpp
+
+# The real window, for the keyboard test of advanced mode.
+RESOURCES += ../src/app/resources.qrc

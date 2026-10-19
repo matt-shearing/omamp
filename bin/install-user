@@ -1,0 +1,14 @@
+#!/bin/sh
+# Installs into ~/.local, for when there's no sudo to hand. bin/install is
+# the proper package.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+install -Dm755 "$ROOT/build/omamp" "$HOME/.local/bin/omamp"
+install -Dm644 "$ROOT/pkgbuild/omamp.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/omamp.svg"
+sed "s#^Exec=omamp#Exec=$HOME/.local/bin/omamp#" "$ROOT/pkgbuild/omamp.desktop" \
+    > "$HOME/.local/share/applications/omamp.desktop"
+update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+echo "Installed omamp for $(id -un)"

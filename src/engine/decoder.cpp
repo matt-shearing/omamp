@@ -2,7 +2,11 @@
 
 #include <QRegularExpression>
 #include <cmath>
+#include <cstdio>
 #include <mutex>
+
+#include "audioengine.h"
+#include "streaming.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -16,22 +20,44 @@ namespace {
 // FFmpeg prints every damaged frame to stderr. Quiet unless asked.
 // Decoders are opened on more than one thread (the next track opens in the
 // background), so this runs exactly once.
+// When asked for, FFmpeg's log goes to stderr through redact(): at verbose
+// levels FFmpeg quotes the URLs it opens, and a stream URL carries the
+// server's token.
+void redactingLog(void *avcl, int level, const char *fmt, va_list args) {
+    if (level > av_log_get_level())
+        return;
+    char line[2048];
+    static int prefix = 1;
+    av_log_format_line2(avcl, level, fmt, args, line, sizeof line, &prefix);
+    fputs(AudioEngine::redact(QString::fromUtf8(line)).toUtf8().constData(), stderr);
+}
+
 void quietFfmpegOnce() {
     static std::once_flag once;
     std::call_once(once, [] {
         if (!qEnvironmentVariableIsSet("OMAMP_FFMPEG_LOG"))
             av_log_set_level(AV_LOG_FATAL);
+        else
+            av_log_set_callback(redactingLog);
     });
 }
 
 QString averror(int code) {
     char text[AV_ERROR_MAX_STRING_SIZE] = {};
     av_strerror(code, text, sizeof text);
-    return QString::fromUtf8(text);
+    return AudioEngine::redact(QString::fromUtf8(text));
 }
 } // namespace
 
 Decoder::Decoder() { quietFfmpegOnce(); }
+
+int Decoder::interruptCallback(void *opaque) { return static_cast<Decoder *>(opaque)->interrupted() ? 1 : 0; }
+
+bool Decoder::seekable() const {
+    if (!m_format || !m_format->pb)
+        return false;
+    return (m_format->pb->seekable & AVIO_SEEKABLE_NORMAL) != 0;
+}
 
 Decoder::~Decoder() { close(); }
 
@@ -72,19 +98,56 @@ double Decoder::parseGain(const QString &text) {
     return ok ? value : qQNaN();
 }
 
-bool Decoder::open(const QString &path, QString *error) {
+bool Decoder::open(const QString &path, const QUrl &url, QString *error) {
     close();
     m_path = path;
+    m_url = url;
+    m_network = AudioEngine::isNetworkUrl(url);
+    m_readError.clear();
+    m_decodedTo = 0;
     auto failWith = [&](const QString &message) {
         if (error)
-            *error = message;
+            *error = AudioEngine::redact(message);
         close();
         return false;
     };
 
-    int r = avformat_open_input(&m_format, path.toUtf8().constData(), nullptr, nullptr);
-    if (r < 0)
-        return failWith(averror(r));
+    m_format = avformat_alloc_context();
+    if (!m_format)
+        return failWith(QStringLiteral("out of memory"));
+    // Lets a skip, a seek or quitting abandon a stream that is waiting on
+    // the network, instead of waiting out the timeout.
+    m_format->interrupt_callback.callback = &Decoder::interruptCallback;
+    m_format->interrupt_callback.opaque = this;
+
+    AVDictionary *options = nullptr;
+    if (m_network) {
+        const Streaming::Options o = Streaming::options();
+        const QByteArray timeout = QByteArray::number(qint64(o.rwTimeoutMs) * 1000);
+        // A read that waits this long fails (rw_timeout for any protocol,
+        // timeout for the TCP connect and reads), so a dead server ends the
+        // track rather than hanging the worker.
+        av_dict_set(&options, "rw_timeout", timeout.constData(), 0);
+        av_dict_set(&options, "timeout", timeout.constData(), 0);
+        // A dropped connection is opened again where it broke off (with a
+        // Range request) when the server allows it, a few times with
+        // growing waits, and then fails.
+        av_dict_set(&options, "reconnect", "1", 0);
+        av_dict_set(&options, "reconnect_streamed", "1", 0);
+        av_dict_set(&options, "reconnect_on_network_error", "1", 0);
+        av_dict_set(&options, "reconnect_delay_max", QByteArray::number(o.reconnectDelayMaxS).constData(), 0);
+        av_dict_set(&options, "reconnect_delay_total_max", QByteArray::number(o.reconnectDelayMaxS * 3).constData(),
+                    0);
+        av_dict_set(&options, "user_agent", Streaming::userAgent().toUtf8().constData(), 0);
+    }
+    const QByteArray location = Streaming::ffmpegLocation(path, url);
+    int r = avformat_open_input(&m_format, location.constData(), nullptr, &options);
+    av_dict_free(&options);
+    if (r < 0) {
+        // avformat_open_input frees the context when it fails.
+        m_format = nullptr;
+        return failWith(interrupted() ? QStringLiteral("cancelled") : averror(r));
+    }
     r = avformat_find_stream_info(m_format, nullptr);
     if (r < 0)
         return failWith(averror(r));
@@ -187,6 +250,11 @@ bool Decoder::decodeMore() {
         }
         r = av_read_frame(m_format, m_packet);
         if (r < 0) {
+            // A stream that broke off (FFmpeg's reconnects failed or timed
+            // out) is reported, unless a skip or seek abandoned the read.
+            // Local files keep treating any read error as the end.
+            if (m_network && r != AVERROR_EOF && !interrupted() && m_readError.isEmpty())
+                m_readError = averror(r);
             // The end of the file, or a read error: drain the decoder so the
             // last frames (and FFmpeg's end trimming) come out.
             avcodec_send_packet(m_codec, nullptr);
@@ -233,12 +301,19 @@ void Decoder::convert(AVFrame *frame) {
         return;
 
     int skip = 0;
+    const qint64 pts = frame->best_effort_timestamp;
+    qint64 first = 0;
+    const bool timed = pts != AV_NOPTS_VALUE;
+    if (timed) {
+        const AVStream *stream = m_format->streams[m_stream];
+        const qint64 start = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
+        first = av_rescale_q(pts - start, stream->time_base, {1, m_rate});
+        m_decodedTo = first + got;
+    } else {
+        m_decodedTo += got;
+    }
     if (m_discardBefore >= 0) {
-        const qint64 pts = frame->best_effort_timestamp;
-        if (pts != AV_NOPTS_VALUE) {
-            const AVStream *stream = m_format->streams[m_stream];
-            const qint64 start = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;
-            const qint64 first = av_rescale_q(pts - start, stream->time_base, {1, m_rate});
+        if (timed) {
             if (first + got <= m_discardBefore)
                 return;
             skip = int(qBound<qint64>(0, m_discardBefore - first, qint64(got)));
@@ -309,6 +384,23 @@ bool Decoder::seek(qint64 ms) {
     int r = av_seek_frame(m_format, m_stream, target, AVSEEK_FLAG_BACKWARD);
     if (r < 0)
         r = av_seek_frame(m_format, m_stream, target, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
+    if (r < 0 && m_network && !interrupted()) {
+        // The server won't serve byte ranges (a transcoded stream, say), so
+        // FFmpeg can't jump. Read on to the target when it lies ahead;
+        // otherwise start the stream again and read up to it.
+        const qint64 wanted = av_rescale(qMax<qint64>(0, ms), m_rate, 1000);
+        if (wanted < m_decodedTo || m_eof) {
+            QString why;
+            if (!open(m_path, m_url, &why)) {
+                m_readError = why;
+                return false;
+            }
+        }
+        m_fifo.clear();
+        m_head = 0;
+        m_discardBefore = wanted;
+        return true;
+    }
     if (r < 0)
         return false;
     avcodec_flush_buffers(m_codec);
@@ -317,6 +409,7 @@ bool Decoder::seek(qint64 ms) {
     m_head = 0;
     m_eof = m_drained = false;
     m_badPackets = 0;
+    m_readError.clear();
     m_discardBefore = av_rescale(qMax<qint64>(0, ms), m_rate, 1000);
     return true;
 }

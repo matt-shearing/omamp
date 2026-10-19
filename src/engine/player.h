@@ -1,8 +1,10 @@
 #pragma once
 
+#include <QHash>
 #include <QObject>
 #include <QStringList>
 #include <QTimer>
+#include <QUrl>
 #include <QVariantList>
 #include <functional>
 
@@ -31,6 +33,10 @@ class Player : public QObject {
     Q_PROPERTY(QList<qreal> levels READ levels NOTIFY levelsChanged)
     Q_PROPERTY(QList<qreal> peaks READ peaks NOTIFY levelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    // Playing, but waiting for a stream to arrive; statusText says so in
+    // words ("Buffering…"), empty otherwise.
+    Q_PROPERTY(bool buffering READ buffering NOTIFY bufferingChanged)
+    Q_PROPERTY(QString statusText READ statusText NOTIFY bufferingChanged)
     // Which engine plays ("qt" or "native") and whether it joins tracks
     // without a gap. Chosen at start: OMAMP_ENGINE, else playback/engine in
     // omamp.conf beside the state file, else "qt".
@@ -53,10 +59,20 @@ class Player : public QObject {
     Q_PROPERTY(QString preferredEngine READ preferredEngine WRITE setPreferredEngine NOTIFY playbackSettingsChanged)
 
 public:
+    // Turns a queue entry that isn't a local file (subsonic://<source>/<song>)
+    // into the URL to play, or an invalid URL with *error set. The URL may
+    // carry a token: the Player hands it to the engine and keeps it nowhere
+    // else, never in the saved state, a playlist or a message.
+    using Resolver = std::function<QUrl(const QString &path, qint64 trackId, QString *error)>;
+
     // An empty state path means nothing is remembered between runs (tests).
     explicit Player(const QString &statePath = {}, QObject *parent = nullptr);
+    // With a resolver from the start, so the restored queue's streams
+    // resolve when the track is first loaded.
+    Player(const QString &statePath, Resolver resolver, QObject *parent = nullptr);
     // With a given engine, which the Player takes (tests).
     Player(AudioEngine *engine, const QString &statePath, QObject *parent = nullptr);
+    Player(AudioEngine *engine, const QString &statePath, Resolver resolver, QObject *parent = nullptr);
     ~Player() override;
 
     Playlist *playlist() { return &m_playlist; }
@@ -76,6 +92,12 @@ public:
     QList<qreal> levels() const { return m_spectrum.levels(); }
     QList<qreal> peaks() const { return m_spectrum.peaks(); }
     QString error() const { return m_error; }
+    bool buffering() const { return m_engine->buffering(); }
+    QString statusText() const { return buffering() ? tr("Buffering…") : QString(); }
+
+    // Without a resolver, http(s) entries play as they are and other
+    // references fail with a message.
+    void setResolver(Resolver resolver);
 
     void setVolume(int volume);
     void setShuffle(bool on);
@@ -156,6 +178,7 @@ signals:
     void modesChanged();
     void levelsChanged();
     void errorChanged();
+    void bufferingChanged();
     void playbackSettingsChanged();
     void seeked(qint64 position);
     // Play statistics. A play starts when a track begins playing and ends
@@ -174,8 +197,14 @@ private:
     void connectEngine();
     void beginPlay();
     void countHeard(qint64 position);
-    void load(int row);
+    // skip: the listener jumped while playing, so the engine may crossfade.
+    void load(int row, bool skip = false);
     void requeue();
+    // Where row's audio is: an invalid URL for a local file; for a
+    // reference, the resolver's URL (or invalid, with the reason noted).
+    QUrl urlFor(int row);
+    // A row's name for messages: "Artist - Title", or the file name.
+    QString displayName(const QString &path) const;
     void readMetaData();
     void changeSettings(const std::function<void(AudioEngine::Settings &)> &change);
     void saveSettings();
@@ -186,6 +215,14 @@ private:
     void restore();
 
     AudioEngine *m_engine;
+    Resolver m_resolver;
+    // The last URL handed over for the queued row, so requeueing the same
+    // track doesn't ask the resolver again. Memory only.
+    QString m_queuedPath;
+    QUrl m_queuedUrl;
+    // Why a reference couldn't be resolved, by path, for the message when
+    // the engine then fails on it. Memory only, and free of secrets.
+    QHash<QString, QString> m_resolveErrors;
     Playlist m_playlist;
     Spectrum m_spectrum;
     QTimer m_spectrumTimer, m_saveTimer;

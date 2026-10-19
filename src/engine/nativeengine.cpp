@@ -6,6 +6,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <future>
 #include <mutex>
 #include <thread>
@@ -291,10 +292,13 @@ private:
 // One track in the worker: its decoder, the resampler to the output rate,
 // and what has been decoded but not yet mixed.
 struct Source {
-    QString path;
+    QString path; // the queue's name for the track; never the URL
     Decoder dec;
     bool ok = false;
     QString error;
+    // Set when the open is abandoned (the track was dequeued, or the
+    // engine is closing), so a server that hangs can't hold anything up.
+    std::shared_ptr<std::atomic<bool>> cancel;
     int outRate = 48000;
     std::unique_ptr<Resampler> rs;
     std::vector<float> fifo;
@@ -307,11 +311,18 @@ struct Source {
     // filter runs straight across the join.
     Source *handoff = nullptr;
 
-    static std::unique_ptr<Source> open(const QString &path, int outRate) {
+    // interrupt is asked, while the decoder waits on the network, whether
+    // to give up (see Worker::interruptFor).
+    static std::unique_ptr<Source> open(const QString &path, const QUrl &url, int outRate,
+                                        std::shared_ptr<std::atomic<bool>> cancel,
+                                        std::function<bool(const Source *)> interrupt) {
         auto s = std::make_unique<Source>();
         s->path = path;
         s->outRate = outRate;
-        s->ok = s->dec.open(path, &s->error);
+        s->cancel = cancel ? std::move(cancel) : std::make_shared<std::atomic<bool>>(false);
+        Source *raw = s.get();
+        s->dec.setInterrupt([raw, interrupt] { return raw->cancel->load() || (interrupt && interrupt(raw)); });
+        s->ok = s->dec.open(path, url, &s->error);
         if (s->ok) {
             if (s->dec.sampleRate() != outRate)
                 s->rs = std::make_unique<Resampler>(s->dec.sampleRate(), outRate);
@@ -379,15 +390,22 @@ struct Source {
     }
 };
 
-enum CommandType { Load, Queue, Seek, Stop, Configure, Quit };
+enum CommandType { Load, Queue, Seek, Stop, Configure, SkipFade, Quit };
 
 struct Command {
     CommandType type = Quit;
     QString path;
+    QUrl url;
+    // SkipFade: the track the listener is on, and how far in.
+    QString fromPath;
     qint64 ms = 0;
     quint64 gen = 0;
     AudioEngine::Settings settings;
 };
+
+// Whether a command abandons what the worker is doing (and so may cut a
+// network wait short).
+bool jumps(CommandType type) { return type == Load || type == Seek || type == Stop || type == SkipFade; }
 
 // Decodes, joins, crossfades, levels and equalises, a chunk at a time,
 // into the ring. Everything it owns is touched only on its own thread;
@@ -399,6 +417,8 @@ public:
         m_thread = std::thread([this] { run(); });
     }
     ~Worker() {
+        // Every open or read still waiting on a server gives up now.
+        m_quitting = true;
         Command quit;
         quit.type = Quit;
         post(quit);
@@ -407,6 +427,8 @@ public:
     }
 
     void post(const Command &command) {
+        if (jumps(command.type))
+            m_wanted = command.gen;
         {
             std::lock_guard l(m_mutex);
             m_commands.push_back(command);
@@ -418,7 +440,38 @@ public:
 private:
     static constexpr int kChunk = 1024;
 
+    // Asked by a decoder while it waits on the network. On the worker's own
+    // thread a waiting jump (a skip, seek or stop the listener asked for)
+    // abandons the wait; an open running in the background gives up only
+    // when it is dequeued (its cancel flag) or the engine closes.
+    bool interruptFor(const Source *) const {
+        if (m_quitting)
+            return true;
+        if (std::this_thread::get_id() != m_threadId.load())
+            return false;
+        return m_wanted.load() != m_active.load();
+    }
+    std::function<bool(const Source *)> interrupter() {
+        return [this](const Source *s) { return interruptFor(s); };
+    }
+    void setGen(quint64 gen) {
+        m_gen = gen;
+        m_active = gen;
+    }
+
+    std::unique_ptr<Source> openNow(const QString &path, const QUrl &url) {
+        return Source::open(path, url, m_rate, nullptr, interrupter());
+    }
+    // Opened on another thread: a slow disk, NAS or server must not stall
+    // the audio that is playing now.
+    void openPending(const QString &path, const QUrl &url) {
+        m_pendingCancel = std::make_shared<std::atomic<bool>>(false);
+        m_pendingPath = path;
+        m_pending = std::async(std::launch::async, &Source::open, path, url, m_rate, m_pendingCancel, interrupter());
+    }
+
     void run() {
+        m_threadId = std::this_thread::get_id();
         std::vector<float> chunk(kChunk * 2);
         while (true) {
             if (!process())
@@ -476,9 +529,10 @@ private:
             switch (c.type) {
             case Quit: return false;
             case Load: load(c); break;
-            case Queue: queue(c.path); break;
+            case Queue: queue(c.path, c.url); break;
             case Seek:
             case Stop: seek(c); break;
+            case SkipFade: skipFade(c); break;
             case Configure:
                 m_settings = c.settings;
                 m_eq.configure(m_settings.eqEnabled, m_settings.eqPreampDb, m_settings.eqBandsDb);
@@ -492,18 +546,20 @@ private:
     }
 
     void load(const Command &c) {
-        m_gen = c.gen;
+        setGen(c.gen);
         m_next.reset();
         m_prev.reset();
         dropPending();
         m_fading = false;
+        m_skipFade = false;
+        m_deferred.reset();
         m_ended = false;
         m_fadeIn = NativeEngine::kJumpFadeFrames;
         m_eq.reset();
         m_cur.reset();
         if (c.path.isEmpty())
             return;
-        m_cur = Source::open(c.path, m_rate);
+        m_cur = openNow(c.path, c.url);
         const qint64 start = m_ring->startFor(m_gen);
         Marker m = m_cur->ok ? started(*m_cur, false) : failed(*m_cur, false);
         m.frame = std::max<qint64>(start, 0);
@@ -514,28 +570,38 @@ private:
         m_ring->addMarker(m, m_gen);
     }
 
-    void queue(const QString &path) {
-        // A crossfade under way has already committed to its track.
-        if (m_fading)
+    void queue(const QString &path, const QUrl &url) {
+        // A crossfade under way has already committed to its track; what
+        // follows that track is queued once the fade is done.
+        if (m_fading || m_skipFade) {
+            m_deferred = std::make_unique<std::pair<QString, QUrl>>(path, url);
             return;
+        }
         if (path.isEmpty()) {
             m_next.reset();
             dropPending();
         } else if ((m_next && m_next->path == path) || m_pendingPath == path) {
+            // The same track again (its URL may differ by a fresh salt).
             return;
         } else {
             m_next.reset();
             dropPending();
-            // Opened on another thread: a slow disk or NAS must not stall
-            // the audio that is playing now.
-            m_pendingPath = path;
-            m_pending = std::async(std::launch::async, &Source::open, path, m_rate);
+            openPending(path, url);
         }
     }
 
+    void applyDeferred() {
+        if (!m_deferred || m_fading || m_skipFade)
+            return;
+        const auto next = std::move(m_deferred);
+        queue(next->first, next->second);
+    }
+
     void seek(const Command &c) {
-        m_gen = c.gen;
-        resolveNext(true);
+        setGen(c.gen);
+        // Never waits for the next track's open: a pending track has made
+        // no sound, so the listener can't be on it.
+        resolveNext(false);
         if (m_cur && m_cur->path != c.path) {
             if (m_prev && m_prev->path == c.path) {
                 // The listener is still on the previous track: the join was
@@ -551,6 +617,12 @@ private:
         } else if (m_fading && m_next) {
             m_next->seek(0);
         }
+        if (m_skipFade) {
+            // A skip that was still connecting is abandoned by the seek.
+            m_skipFade = false;
+            dropPending();
+            m_next.reset();
+        }
         m_fading = false;
         if (m_cur && m_cur->ok) {
             m_cur->seek(c.type == Stop ? 0 : c.ms);
@@ -558,6 +630,28 @@ private:
             m_ended = false;
         }
         m_fadeIn = NativeEngine::kJumpFadeFrames;
+        applyDeferred();
+    }
+
+    // A skip while playing with crossfade on: the track the listener is on
+    // carries on from where they are and fades out under the new one,
+    // which opens in the background (a stream may take a moment).
+    void skipFade(const Command &c) {
+        Command at = c;
+        at.type = Seek;
+        at.path = c.fromPath;
+        seek(at);
+        if (!m_cur || !m_cur->ok || m_ended || m_cur->path != c.fromPath) {
+            Command load = c;
+            load.type = Load;
+            this->load(load);
+            return;
+        }
+        m_next.reset();
+        dropPending();
+        m_deferred.reset();
+        openPending(c.path, c.url);
+        m_skipFade = true;
     }
 
     void resolveNext(bool block) {
@@ -567,11 +661,16 @@ private:
             return;
         m_next = m_pending.get();
         m_pendingPath.clear();
+        // The source now owns its flag; dropping it is resetting m_next.
+        m_pendingCancel.reset();
         if (m_next->ok)
             m_next->gain = gainFor(*m_next);
     }
 
     void dropPending() {
+        if (m_pendingCancel)
+            *m_pendingCancel = true;
+        m_pendingCancel.reset();
         if (m_pending.valid())
             m_graveyard.push_back(std::move(m_pending));
         m_pendingPath.clear();
@@ -622,13 +721,21 @@ private:
         m.channels = s.dec.sourceChannels();
         return m;
     }
-    static Marker failed(const Source &s, bool advance) {
+    static Marker failed(const Source &s, bool advance, const QString &detail = {}) {
         Marker m;
         m.type = Marker::Failed;
         m.advance = advance;
         m.path = s.path;
-        m.detail = s.error;
+        m.detail = detail.isEmpty() ? s.error : detail;
         return m;
+    }
+
+    // How long a skip's crossfade lasts: the crossfade setting, at most
+    // half the new track.
+    qint64 skipFadeFrames(const Source &next) const {
+        const qint64 cf = qint64(m_settings.crossfadeMs) * m_rate / 1000;
+        const qint64 total = next.estimatedTotal();
+        return std::max<qint64>(1, total > 0 ? std::min(cf, total / 2) : cf);
     }
 
     int render(float *out, int frames, std::vector<Marker> &markers) {
@@ -638,10 +745,30 @@ private:
             markers.push_back(std::move(m));
         };
         while (produced < frames && m_cur && !m_ended) {
-            resolveNext(false);
-            const bool fadeWanted = !m_fading && m_settings.crossfadeMs > 0 && m_next && m_next->ok &&
-                                    !sameAlbum(*m_cur, *m_next);
-            m_cur->handoff = (m_next && m_next->ok && !fadeWanted && !m_fading) ? m_next.get() : nullptr;
+            if (m_skipFade) {
+                // The skip's track is ready: fade over to it from here.
+                resolveNext(false);
+                if (m_next) {
+                    m_skipFade = false;
+                    if (!m_next->ok) {
+                        mark(failed(*m_next, false));
+                        m_prev = std::move(m_cur);
+                        m_cur = std::move(m_next);
+                        m_ended = true;
+                        break;
+                    }
+                    m_fading = true;
+                    m_fadeTotal = skipFadeFrames(*m_next);
+                    m_fadePos = 0;
+                    mark(started(*m_next, false));
+                }
+            } else {
+                resolveNext(false);
+            }
+            const bool fadeWanted = !m_fading && !m_skipFade && m_settings.crossfadeMs > 0 && m_next &&
+                                    m_next->ok && !sameAlbum(*m_cur, *m_next);
+            m_cur->handoff =
+                (m_next && m_next->ok && !fadeWanted && !m_fading && !m_skipFade) ? m_next.get() : nullptr;
 
             if (fadeWanted) {
                 const qint64 cf = qint64(m_settings.crossfadeMs) * m_rate / 1000;
@@ -667,9 +794,11 @@ private:
             }
 
             if (m_fading) {
-                const int n = int(std::min<qint64>(frames - produced, m_cur->available()));
+                const int n = int(std::min<qint64>(frames - produced, m_fadeTotal - m_fadePos));
                 if (n > 0) {
-                    m_a.resize(size_t(n) * 2);
+                    // The outgoing track may run out first (a skip's fade
+                    // near its end); it is silent from there.
+                    m_a.assign(size_t(n) * 2, 0.f);
                     m_b.assign(size_t(n) * 2, 0.f);
                     m_cur->read(m_a.data(), n);
                     m_next->read(m_b.data(), n);
@@ -684,16 +813,24 @@ private:
                     m_fadePos += n;
                     produced += n;
                 }
-                if (m_cur->finished()) {
+                if (m_fadePos >= m_fadeTotal) {
                     m_prev = std::move(m_cur);
                     m_cur = std::move(m_next);
                     m_fading = false;
+                    applyDeferred();
                 }
                 continue;
             }
 
             produced += m_cur->read(out + produced * 2, frames - produced);
             if (m_cur->finished()) {
+                // A stream that broke off is reported where its audio ends;
+                // the Player then moves on to the next track.
+                if (!m_cur->dec.readError().isEmpty()) {
+                    mark(failed(*m_cur, false, m_cur->dec.readError()));
+                    m_ended = true;
+                    break;
+                }
                 resolveNext(true);
                 if (!m_next) {
                     Marker end;
@@ -702,16 +839,21 @@ private:
                     m_ended = true;
                     break;
                 }
+                // A skip still opening when the old track ran out has
+                // already been announced by the Player: no advance.
+                const bool advance = !m_skipFade;
+                m_skipFade = false;
                 if (!m_next->ok) {
-                    mark(failed(*m_next, true));
+                    mark(failed(*m_next, advance));
                     m_prev = std::move(m_cur);
                     m_cur = std::move(m_next);
                     m_ended = true;
                     break;
                 }
-                mark(started(*m_next, true));
+                mark(started(*m_next, advance));
                 m_prev = std::move(m_cur);
                 m_cur = std::move(m_next);
+                applyDeferred();
             }
         }
         return produced;
@@ -720,18 +862,28 @@ private:
     Ring *m_ring;
     const int m_rate;
     std::thread m_thread;
+    std::atomic<std::thread::id> m_threadId{};
     std::mutex m_mutex;
     std::condition_variable m_cv;
     std::deque<Command> m_commands;
+    // The generation the main thread has jumped to, and the one this
+    // thread is working on; while they differ, network waits give up.
+    std::atomic<quint64> m_wanted{1}, m_active{1};
+    std::atomic<bool> m_quitting{false};
 
     quint64 m_gen = 1;
     AudioEngine::Settings m_settings;
     Equalizer m_eq;
     std::unique_ptr<Source> m_cur, m_next, m_prev;
     std::future<std::unique_ptr<Source>> m_pending;
+    std::shared_ptr<std::atomic<bool>> m_pendingCancel;
     std::vector<std::future<std::unique_ptr<Source>>> m_graveyard;
     QString m_pendingPath;
+    // A track queued while a fade was under way, for after it.
+    std::unique_ptr<std::pair<QString, QUrl>> m_deferred;
     bool m_ended = false, m_fading = false;
+    // A skip is waiting for its track to open before fading over to it.
+    bool m_skipFade = false;
     qint64 m_fadeTotal = 0, m_fadePos = 0;
     int m_fadeIn = 0;
     std::vector<float> m_a, m_b;
@@ -759,6 +911,7 @@ NativeEngine::NativeEngine(PcmSink *sink, QObject *parent) : AudioEngine(parent)
     m_reader = std::make_unique<Reader>(m_ring.get(), m_rate);
     m_worker = std::make_unique<Worker>(m_ring.get(), m_rate);
     connect(&m_timer, &QTimer::timeout, this, &NativeEngine::poll);
+    m_stall.start();
     updateTimer();
 }
 
@@ -768,10 +921,12 @@ NativeEngine::~NativeEngine() {
     m_worker.reset();
 }
 
-void NativeEngine::post(int type, const QString &path, qint64 ms) {
+void NativeEngine::post(int type, const QString &path, qint64 ms, const QUrl &url, const QString &fromPath) {
     Command c;
     c.type = CommandType(type);
     c.path = path;
+    c.url = url;
+    c.fromPath = fromPath;
     c.ms = ms;
     c.gen = m_gen;
     c.settings = m_settings;
@@ -785,6 +940,8 @@ void NativeEngine::flush(bool deliverFirst) {
         poll();
     ++m_gen;
     m_baseFrame = m_ring->flush(m_gen);
+    m_lastConsumed = m_baseFrame;
+    m_stall.restart();
 }
 
 void NativeEngine::setState(State state) {
@@ -792,14 +949,24 @@ void NativeEngine::setState(State state) {
         return;
     m_state = state;
     updateTimer();
+    if (state != Playing)
+        setBuffering(false);
+    m_stall.restart();
     emit stateChanged();
+}
+
+void NativeEngine::setBuffering(bool on) {
+    if (on == m_buffering)
+        return;
+    m_buffering = on;
+    emit bufferingChanged();
 }
 
 void NativeEngine::updateTimer() {
     m_timer.start(m_state == Playing ? 20 : 100);
 }
 
-void NativeEngine::load(const QString &path) {
+void NativeEngine::load(const QString &path, const QUrl &url) {
     m_reader->target = 0;
     setState(Stopped);
     m_source = path;
@@ -807,14 +974,40 @@ void NativeEngine::load(const QString &path) {
     m_durationMs = 0;
     flush(false);
     m_posBaseMs = 0;
-    post(Load, path);
+    post(Load, path, 0, url);
     if (m_lastEmitted != 0) {
         m_lastEmitted = 0;
         emit positionChanged(0);
     }
 }
 
-void NativeEngine::queueNext(const QString &path) { post(Queue, path); }
+void NativeEngine::queueNext(const QString &path, const QUrl &url) { post(Queue, path, 0, url); }
+
+void NativeEngine::skipTo(const QString &path, const QUrl &url) {
+    if (m_state != Playing || m_settings.crossfadeMs <= 0 || m_source.isEmpty() || path.isEmpty()) {
+        load(path, url);
+        play();
+        return;
+    }
+    // Deliver what has been heard, so m_source is the track the listener
+    // is on, then restart it from what the device has been given (not what
+    // was heard: the device still plays its buffer) and fade out from
+    // there under the new track.
+    poll();
+    const QString from = m_source;
+    const qint64 played = qMax<qint64>(0, m_ring->consumed() - m_baseFrame);
+    qint64 at = m_posBaseMs + played * 1000 / m_rate;
+    if (m_durationMs > 0)
+        at = qMin(at, m_durationMs);
+    m_source = path;
+    m_meta.clear();
+    m_durationMs = 0;
+    flush(false);
+    m_posBaseMs = 0;
+    post(SkipFade, path, at, url, from);
+    m_lastEmitted = 0;
+    emit positionChanged(0);
+}
 
 void NativeEngine::play() {
     if (m_source.isEmpty())
@@ -860,8 +1053,12 @@ void NativeEngine::seek(qint64 ms) {
     emit positionChanged(ms);
 }
 
+qint64 NativeEngine::heardFrames() const { return m_ring->consumed() - m_sink->queuedFrames(); }
+
 qint64 NativeEngine::position() const {
-    const qint64 played = qMax<qint64>(0, m_ring->consumed() - m_baseFrame);
+    // What the listener hears: the device's buffer is taken off, so after a
+    // jump the clock waits until the new audio reaches the speakers.
+    const qint64 played = qMax<qint64>(0, heardFrames() - m_baseFrame);
     const qint64 ms = m_posBaseMs + played * 1000 / m_rate;
     return m_durationMs > 0 ? qMin(ms, m_durationMs) : ms;
 }
@@ -882,7 +1079,9 @@ void NativeEngine::setSettings(const Settings &settings) {
 
 void NativeEngine::poll() {
     const qint64 consumed = m_ring->consumed();
-    for (Marker &m : m_ring->takeReached(consumed)) {
+    // Markers are acted on when their frame is heard, not when the device
+    // takes it.
+    for (Marker &m : m_ring->takeReached(consumed - m_sink->queuedFrames())) {
         switch (m.type) {
         case Marker::TrackStarted:
             m_source = m.path;
@@ -907,7 +1106,7 @@ void NativeEngine::poll() {
             }
             m_reader->target = 0;
             setState(Stopped);
-            emit trackFailed(m.path, m.detail);
+            emit trackFailed(m.path, AudioEngine::redact(m.detail));
             break;
         case Marker::EndOfQueue:
             m_reader->target = 0;
@@ -924,6 +1123,18 @@ void NativeEngine::poll() {
     }
 
     if (m_state == Playing) {
+        // Playing with nothing to play for a moment: the decoder is waiting
+        // on a stream (connecting, or a slow network). The sink pads with
+        // silence meanwhile, and the window says "Buffering".
+        const qint64 now_consumed = m_ring->consumed();
+        if (now_consumed != m_lastConsumed || m_ring->available() > 0) {
+            if (now_consumed != m_lastConsumed)
+                m_lastConsumed = now_consumed;
+            m_stall.restart();
+            setBuffering(false);
+        } else if (m_stall.isValid() && m_stall.elapsed() >= kBufferingAfterMs) {
+            setBuffering(true);
+        }
         const qint64 now = position();
         if (now != m_lastEmitted) {
             m_lastEmitted = now;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QTimer>
 #include <memory>
 
@@ -33,9 +34,11 @@ public:
     bool gapless() const override { return true; }
     bool skipsUnplayable() const override { return true; }
 
-    void load(const QString &path) override;
-    void queueNext(const QString &path) override;
+    void load(const QString &path, const QUrl &url = {}) override;
+    void queueNext(const QString &path, const QUrl &url = {}) override;
+    void skipTo(const QString &path, const QUrl &url = {}) override;
     QString source() const override { return m_source; }
+    bool buffering() const override { return m_buffering; }
 
     void play() override;
     void pause() override;
@@ -66,12 +69,19 @@ public:
     // new audio in over the same.
     int pauseRampFrames() const { return m_rate / 100; }
     static constexpr int kJumpFadeFrames = 256;
+    // Playing with no audio arriving for this long reads as buffering.
+    static constexpr int kBufferingAfterMs = 250;
 
 private:
     void setState(State state);
+    void setBuffering(bool on);
     void flush(bool keepReached);
-    void post(int type, const QString &path = {}, qint64 ms = 0);
+    void post(int type, const QString &path = {}, qint64 ms = 0, const QUrl &url = {},
+              const QString &fromPath = {});
     void updateTimer();
+    // Frames the listener has heard: taken by the sink, less what is still
+    // in the device's buffer.
+    qint64 heardFrames() const;
 
     std::unique_ptr<PcmSink> m_sink;
     int m_rate;
@@ -86,4 +96,8 @@ private:
     qint64 m_posBaseMs = 0, m_baseFrame = 0, m_lastEmitted = -1;
     quint64 m_gen = 1;
     qint64 m_tapSeen = 0;
+    // For buffering: when the sink last took audio.
+    qint64 m_lastConsumed = 0;
+    QElapsedTimer m_stall;
+    bool m_buffering = false;
 };

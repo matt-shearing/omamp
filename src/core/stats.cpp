@@ -84,6 +84,26 @@ PlayResult recordPlay(Library &library, qint64 trackId, qint64 playedMs, qint64 
     return r;
 }
 
+qint64 trackIdForPath(Library &library, const QString &absolutePath) {
+    // The longest volume root that holds the path, then the track by its
+    // place on that volume; the unique (volume_id, rel_path) index answers it.
+    QSqlQuery q(library.db());
+    q.prepare("SELECT t.id FROM volumes v JOIN tracks t ON t.volume_id = v.id "
+              "AND t.rel_path = substr(?, length(v.root_path) + 2) "
+              "WHERE v.root_path != '/' AND substr(?, 1, length(v.root_path) + 1) = v.root_path || '/' "
+              "ORDER BY length(v.root_path) DESC LIMIT 1");
+    q.addBindValue(absolutePath);
+    q.addBindValue(absolutePath);
+    if (q.exec() && q.next())
+        return q.value(0).toLongLong();
+    // A volume mounted at / stores paths without the leading slash.
+    QSqlQuery root(library.db());
+    root.prepare("SELECT t.id FROM volumes v JOIN tracks t ON t.volume_id = v.id AND t.rel_path = substr(?, 2) "
+                 "WHERE v.root_path = '/' LIMIT 1");
+    root.addBindValue(absolutePath);
+    return root.exec() && root.next() ? root.value(0).toLongLong() : 0;
+}
+
 bool parseBy(const QString &text, By *out) {
     const QString t = text.toLower();
     if (t == "tracks" || t == "track" || t == "songs")

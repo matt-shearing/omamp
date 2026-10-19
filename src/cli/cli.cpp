@@ -123,7 +123,7 @@ Options:
   --separation <n>  autodj: no artist twice within n tracks
   --days <n>     autodj: leave out tracks played in the last n days
   --map w=l      import mediamonkey: a Windows path prefix and the Linux folder it is now
-  --overwrite    import mediamonkey: replace Omamp's ratings and custom fields too
+  --overwrite    import mediamonkey: take MediaMonkey's values instead of merging
 
 Tag and organise examples:
   omamp tag 'album:"night drive"' --set genre=Synthwave --set year=1997

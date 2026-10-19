@@ -40,6 +40,9 @@ struct PlayResult {
 // Skipped: skip_count + 1, a play_history row with skipped = 1.
 PlayResult recordPlay(Library &library, qint64 trackId, qint64 playedMs, qint64 durationMs = 0,
                       bool userSkipped = false, qint64 at = 0, const Rules &rules = {});
+// The library track for an absolute file path (the player knows paths, not
+// ids), or 0 when the file is not in the library.
+qint64 trackIdForPath(Library &library, const QString &absolutePath);
 // The rule alone, for the player to show or test.
 Outcome classify(qint64 playedMs, qint64 durationMs, bool userSkipped, const Rules &rules = {});
 

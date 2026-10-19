@@ -543,6 +543,9 @@ private slots:
         Library &lib = *l.library;
         const qint64 go = l.track("Go West"); // 290 s, never played
         const qint64 now = Fixture::now.toSecsSinceEpoch();
+        QCOMPARE(Stats::trackIdForPath(lib, l.path("Go West")), go);
+        QCOMPARE(Stats::trackIdForPath(lib, l.root + "/Go/nothing.flac"), 0);
+        QCOMPARE(Stats::trackIdForPath(lib, l.root + "x/Go/01 Go West.flac"), 0);
         // Counted: heard 3 minutes of 4:50.
         Stats::PlayResult r = Stats::recordPlay(lib, go, 180000, 0, false, now - 60);
         QCOMPARE(r.outcomeName(), QString("counted"));

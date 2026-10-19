@@ -323,6 +323,27 @@ QString quoteValue(const QString &v) {
     return '"' + e + '"';
 }
 
+// True when a translated term holds a space outside quotes and brackets,
+// so it is several terms and needs brackets beside an OR.
+bool hasTopLevelSpace(const QString &s) {
+    int depth = 0;
+    bool quoted = false;
+    for (int i = 0; i < s.size(); ++i) {
+        const QChar c = s[i];
+        if (quoted && c == '\\')
+            ++i;
+        else if (c == '"')
+            quoted = !quoted;
+        else if (!quoted && c == '(')
+            ++depth;
+        else if (!quoted && c == ')')
+            --depth;
+        else if (!quoted && depth == 0 && c == ' ')
+            return true;
+    }
+    return false;
+}
+
 class CriteriaParser {
 public:
     CriteriaParser(const QList<Token> &tokens) : t(tokens) {}
@@ -345,7 +366,7 @@ public:
         // group inside an OR gets brackets.
         if (sawOr) {
             for (QString &part : parts)
-                if (part.contains(' ') && !(part.startsWith('(') && part.endsWith(')')))
+                if (hasTopLevelSpace(part))
                     part = '(' + part + ')';
             return parts.join(" OR ");
         }
@@ -1326,6 +1347,16 @@ Report run(Library &library, const QString &mmDatabase, const Options &options, 
             }
             if (!record("playlist", id, "created", {}, pr.name))
                 return rollback(journal.lastError().text());
+        }
+    }
+    // A batch that changed nothing leaves no journal and needs no undo.
+    {
+        QSqlQuery written(db);
+        written.prepare("SELECT count(*) FROM import_journal WHERE batch = ?");
+        written.addBindValue(r.batch);
+        if (written.exec() && written.next() && written.value(0).toInt() == 0) {
+            r.batch.clear();
+            r.notes << "Nothing needed changing";
         }
     }
     if (!db.commit())

@@ -341,12 +341,17 @@ static int files(const QString &folder, const QString &templateFile, int count, 
         err << first.error << Qt::endl;
         return 1;
     }
+    const qint64 firstPeak = peakRssMb();
     out << "| What | ms | Files |\n|---|---:|---:|\n"
         << "| First scan (TagLib on " << Scanner::defaultWorkers() << " threads) | " << first.elapsedMs << " | "
         << first.files << " |\n";
     ScanResult again = scanner.scan({folder});
-    out << "| Rescan, nothing changed (stat only) | " << again.elapsedMs << " | " << again.unchanged << " |\n"
-        << "\nPeak memory: " << peakRssMb() << " MB\n"
+    out << "| Rescan, nothing changed (stat only) | " << again.elapsedMs << " | " << again.unchanged << " |\n";
+    ScanResult quick = scanner.scan({folder}, Scanner::Mode::ChangedFolders);
+    out << "| Quick rescan by folder time (" << quick.foldersSkipped << " folders skipped) | " << quick.elapsedMs
+        << " | " << quick.unchanged << " |\n"
+        << "\nPeak memory after the first scan: " << firstPeak << " MB\n"
+        << "Peak memory: " << peakRssMb() << " MB\n"
         << Qt::flush;
     return 0;
 }

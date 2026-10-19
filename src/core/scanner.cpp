@@ -190,7 +190,7 @@ struct Existing {
     qint64 size;
     qint64 mtimeNs;
     int tagVersion;
-    QString availability;
+    bool online, missing; // availability, kept small: a rescan holds one per track
 };
 
 struct Pending {
@@ -915,7 +915,7 @@ bool Scanner::walkScope(const Scope &scope, Mode mode, Run &run, ScanResult &res
         QSqlQuery q(db);
         q.setForwardOnly(true);
         const QString prefix = scope.rel.isEmpty() ? QString("") : scope.rel + '/';
-        q.prepare(QString("SELECT id, rel_path, size, mtime_ns, availability, tag_version FROM tracks "
+        q.prepare(QString("SELECT id, rel_path, size, mtime_ns, availability = 'online', tag_version, availability = 'missing' FROM tracks "
                           "WHERE volume_id = ? AND substr(rel_path, 1, ?) = ? %1")
                       .arg(recursive ? "" : "AND instr(substr(rel_path, ? + 1), '/') = 0"));
         q.addBindValue(scope.volumeId);
@@ -927,7 +927,7 @@ bool Scanner::walkScope(const Scope &scope, Mode mode, Run &run, ScanResult &res
         while (q.next())
             existing.insert(q.value(1).toString(), {q.value(0).toLongLong(), q.value(2).toLongLong(),
                                                      q.value(3).toLongLong(), q.value(5).toInt(),
-                                                     q.value(4).toString()});
+                                                     q.value(4).toBool(), q.value(6).toBool()});
     }
 
     QList<qint64> cameBack;
@@ -940,7 +940,7 @@ bool Scanner::walkScope(const Scope &scope, Mode mode, Run &run, ScanResult &res
         // Rows an older reader filled are read again once for the new fields.
         if (it->size == f.size && it->mtimeNs == f.mtimeNs && it->tagVersion >= TagReader::version) {
             ++result.unchanged;
-            if (it->availability != "online")
+            if (!it->online)
                 cameBack << it->id;
         } else {
             run.toRead.append({f, scope.volumeId, it->id});
@@ -956,7 +956,7 @@ bool Scanner::walkScope(const Scope &scope, Mode mode, Run &run, ScanResult &res
             ++result.unchanged;
             continue;
         }
-        if (it->availability == "missing" || underAny(it.key(), w.unreadable))
+        if (it->missing || underAny(it.key(), w.unreadable))
             continue;
         gone << it->id;
     }

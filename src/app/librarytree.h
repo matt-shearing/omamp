@@ -36,7 +36,9 @@ public:
     struct Node {
         QString key;   // unique and stable across reloads: "artist:12", "folder:3:Rock/Album"
         QString kind;  // entire, group, collection, artist, albumartist, album, letter, genre, decade,
-                       // year, rating, composer, volume, folder, nowplaying, playlist, audit, duplicates
+                       // year, rating, composer, volume, folder, nowplaying, playlist (static),
+                       // autoplaylist, plfolder, cgroup and cvalue (a collection's own nodes),
+                       // audit, duplicates
         QString label;
         int depth = 0;
         bool expandable = false, expanded = false, dim = false;
@@ -65,6 +67,9 @@ public:
     Q_INVOKABLE int rowOfKey(const QString &key) const;
     Q_INVOKABLE QString kind(int row) const;
     Q_INVOKABLE QString key(int row) const;
+    // What the node stands for: a playlist's or collection's id, an
+    // artist's id, and so on.
+    Q_INVOKABLE QVariant value(int row) const;
     Q_INVOKABLE bool isExpanded(int row) const;
     Q_INVOKABLE bool isExpandable(int row) const;
     // Opens each key in turn (each must show once the one before is open)

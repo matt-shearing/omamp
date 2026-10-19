@@ -74,6 +74,7 @@ void Player::connectEngine() {
         // Playing again means the run of broken files is over.
         if (ms > 0)
             m_badRun = 0;
+        countHeard(ms);
         emit positionChanged();
     });
     connect(m_engine, &AudioEngine::durationChanged, this, [this] {
@@ -82,11 +83,23 @@ void Player::connectEngine() {
         emit trackChanged();
     });
     connect(m_engine, &AudioEngine::metaDataChanged, this, &Player::readMetaData);
-    connect(m_engine, &AudioEngine::stateChanged, this, &Player::stateChanged);
+    connect(m_engine, &AudioEngine::stateChanged, this, [this] {
+        if (m_engine->state() == AudioEngine::Playing)
+            beginPlay();
+        emit stateChanged();
+    });
     connect(m_engine, &AudioEngine::advanced, this, [this] {
         // The engine moved on to the queued row by itself.
         if (m_queued < 0 || m_queued >= m_playlist.count())
             return;
+        // The track played to its end: what was left after the last
+        // position report was heard too.
+        if (!m_playPath.isEmpty() && m_current >= 0) {
+            const qint64 length = m_playlist.at(m_current).durationMs;
+            if (length > m_lastPos)
+                m_heardMs += length - m_lastPos;
+        }
+        finishPlay(false);
         m_history << m_current;
         m_current = m_queued;
         m_title.clear();
@@ -97,8 +110,18 @@ void Player::connectEngine() {
         emit trackChanged();
         saveSoon();
         requeue();
+        if (m_engine->state() == AudioEngine::Playing)
+            beginPlay();
     });
-    connect(m_engine, &AudioEngine::endOfQueue, this, &Player::stop);
+    connect(m_engine, &AudioEngine::endOfQueue, this, [this] {
+        if (!m_playPath.isEmpty()) {
+            const qint64 length = duration();
+            if (length > m_lastPos)
+                m_heardMs += length - m_lastPos;
+        }
+        finishPlay(false);
+        stop();
+    });
     connect(m_engine, &AudioEngine::trackFailed, this, [this](const QString &path, const QString &) {
         setError(tr("Can't play %1").arg(QFileInfo(path).fileName()));
         if (!m_engine->skipsUnplayable() || !m_wantPlaying)
@@ -191,6 +214,7 @@ void Player::setRepeat(bool on) {
 void Player::load(int row) {
     if (row < 0 || row >= m_playlist.count())
         return;
+    finishPlay(m_skipping);
     m_current = row;
     m_title.clear();
     m_artist.clear();
@@ -245,6 +269,7 @@ void Player::toggle() {
 }
 
 void Player::stop() {
+    finishPlay(false);
     m_wantPlaying = false;
     m_engine->stop();
     m_spectrum.reset();
@@ -277,7 +302,9 @@ void Player::next() {
         return;
     const bool playing = m_engine->state() == AudioEngine::Playing;
     m_history << m_current;
+    m_skipping = true;
     load(after);
+    m_skipping = false;
     if (playing)
         m_engine->play();
 }
@@ -298,7 +325,9 @@ void Player::previous() {
     if (before < 0 || before >= m_playlist.count())
         before = 0;
     const bool playing = m_engine->state() == AudioEngine::Playing;
+    m_skipping = true;
     load(before);
+    m_skipping = false;
     if (playing)
         m_engine->play();
 }
@@ -308,13 +337,18 @@ void Player::playIndex(int row) {
         return;
     if (m_current >= 0)
         m_history << m_current;
+    m_skipping = true;
     load(row);
+    m_skipping = false;
     m_wantPlaying = true;
     m_engine->play();
 }
 
 void Player::seek(qint64 ms) {
-    m_engine->seek(qBound<qint64>(0, ms, qMax<qint64>(0, duration())));
+    const qint64 target = qBound<qint64>(0, ms, qMax<qint64>(0, duration()));
+    // A seek is not listening: count from where it lands.
+    m_lastPos = target;
+    m_engine->seek(target);
     emit seeked(m_engine->position());
 }
 
@@ -330,6 +364,8 @@ int Player::addPaths(const QStringList &paths) {
 int Player::playTracks(const QList<Playlist::Track> &tracks, int start) {
     if (tracks.isEmpty())
         return 0;
+    // Playing something else is a skip of what was playing.
+    finishPlay(true);
     stop();
     m_engine->load({});
     m_history.clear();
@@ -577,6 +613,7 @@ void Player::saveSettings() {
     conf.setValue("crossfadeMs", s.crossfadeMs);
     conf.setValue("replayGain", replayGainMode());
     conf.setValue("replayGainPreampDb", s.replayGainPreampDb);
+    conf.setValue("clipPrevention", s.clipPrevention);
     conf.setValue("eqEnabled", s.eqEnabled);
     conf.setValue("eqPreampDb", s.eqPreampDb);
     QStringList bands;
@@ -598,6 +635,7 @@ void Player::restoreSettings() {
                    : mode == "album" ? AudioEngine::ReplayGainMode::Album
                                      : AudioEngine::ReplayGainMode::Off;
     s.replayGainPreampDb = conf.value("replayGainPreampDb", s.replayGainPreampDb).toDouble();
+    s.clipPrevention = conf.value("clipPrevention", s.clipPrevention).toBool();
     s.eqEnabled = conf.value("eqEnabled", s.eqEnabled).toBool();
     s.eqPreampDb = conf.value("eqPreampDb", s.eqPreampDb).toDouble();
     const QStringList bands = conf.value("eqBandsDb").toString().split(',', Qt::SkipEmptyParts);
@@ -606,4 +644,74 @@ void Player::restoreSettings() {
             s.eqBandsDb[i] = bands[i].toDouble();
     conf.endGroup();
     m_engine->setSettings(s);
+}
+
+// ---- Play statistics ---------------------------------------------------------
+
+void Player::beginPlay() {
+    if (m_current < 0 || m_current >= m_playlist.count() || !m_playPath.isEmpty())
+        return;
+    m_playPath = m_playlist.at(m_current).path;
+    m_heardMs = 0;
+    m_lastPos = m_engine->position();
+    m_nextProgress = 15000;
+    emit playStarted(m_playPath);
+}
+
+void Player::countHeard(qint64 position) {
+    if (!m_playPath.isEmpty() && m_engine->state() == AudioEngine::Playing) {
+        // Forward moves while playing are listening; a jump back (a new
+        // track, a restart) is not, and seeks reset m_lastPos themselves.
+        const qint64 delta = position - m_lastPos;
+        if (delta > 0)
+            m_heardMs += delta;
+        if (m_heardMs >= m_nextProgress) {
+            m_nextProgress = (m_heardMs / 15000 + 1) * 15000;
+            emit playProgress(m_playPath, m_heardMs);
+        }
+    }
+    m_lastPos = position;
+}
+
+void Player::finishPlay(bool userSkipped) {
+    if (m_playPath.isEmpty())
+        return;
+    const QString path = m_playPath;
+    const qint64 heard = m_heardMs;
+    qint64 length = 0;
+    // The playing row still holds the length (load() finishes first).
+    if (m_current >= 0 && m_current < m_playlist.count() && m_playlist.at(m_current).path == path)
+        length = m_playlist.at(m_current).durationMs;
+    if (length <= 0 && m_engine->source() == path)
+        length = m_engine->duration();
+    m_playPath.clear();
+    m_heardMs = 0;
+    emit playFinished(path, heard, length, userSkipped);
+}
+
+void Player::setClipPrevention(bool on) {
+    changeSettings([&](AudioEngine::Settings &s) { s.clipPrevention = on; });
+}
+
+QString Player::preferredEngine() const {
+    if (m_settingsPath.isEmpty())
+        return m_preferredEngine.isEmpty() ? engineName() : m_preferredEngine;
+    const QString chosen =
+        QSettings(m_settingsPath, QSettings::IniFormat).value("playback/engine").toString().trimmed().toLower();
+    return chosen == "native" ? "native" : chosen == "qt" ? "qt" : engineName();
+}
+
+void Player::setPreferredEngine(const QString &name) {
+    const QString n = name.trimmed().toLower() == "native" ? "native" : "qt";
+    if (m_settingsPath.isEmpty()) {
+        if (n == m_preferredEngine)
+            return;
+        m_preferredEngine = n;
+    } else {
+        QSettings conf(m_settingsPath, QSettings::IniFormat);
+        if (conf.value("playback/engine").toString() == n)
+            return;
+        conf.setValue("playback/engine", n);
+    }
+    emit playbackSettingsChanged();
 }

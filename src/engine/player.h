@@ -46,6 +46,11 @@ class Player : public QObject {
     Q_PROPERTY(QList<qreal> eqBands READ eqBands WRITE setEqBands NOTIFY playbackSettingsChanged)
     Q_PROPERTY(QList<qreal> eqFrequencies READ eqFrequencies CONSTANT)
     Q_PROPERTY(QStringList eqPresets READ eqPresets CONSTANT)
+    // Limit ReplayGain so a file's tagged peak stays below full scale.
+    Q_PROPERTY(bool clipPrevention READ clipPrevention WRITE setClipPrevention NOTIFY playbackSettingsChanged)
+    // The engine chosen in the settings ("qt" or "native"), which takes
+    // effect at the next start; engineName is the one playing now.
+    Q_PROPERTY(QString preferredEngine READ preferredEngine WRITE setPreferredEngine NOTIFY playbackSettingsChanged)
 
 public:
     // An empty state path means nothing is remembered between runs (tests).
@@ -88,6 +93,10 @@ public:
     QList<qreal> eqBands() const { return m_engine->settings().eqBandsDb; }
     QList<qreal> eqFrequencies() const;
     QStringList eqPresets() const;
+    bool clipPrevention() const { return m_engine->settings().clipPrevention; }
+    void setClipPrevention(bool on);
+    QString preferredEngine() const;
+    void setPreferredEngine(const QString &name);
     void setCrossfadeSeconds(qreal seconds);
     void setReplayGainMode(const QString &mode);
     void setReplayGainPreamp(qreal db);
@@ -130,6 +139,12 @@ public:
     // Which row comes after the current one, or -1 at the end of the list.
     int nextIndex();
 
+    // Ends the play being counted now (as on quitting), so playFinished()
+    // reports it. Nothing happens when nothing is being counted.
+    void finishPlay(bool userSkipped = false);
+    // How much of the current play has been heard so far, in ms.
+    qint64 heardMs() const { return m_heardMs; }
+
 signals:
     void trackChanged();
     void stateChanged();
@@ -141,12 +156,22 @@ signals:
     void errorChanged();
     void playbackSettingsChanged();
     void seeked(qint64 position);
+    // Play statistics. A play starts when a track begins playing and ends
+    // when it finishes, is skipped, another track starts or playback stops.
+    // heardMs is the time actually heard: position moves while playing,
+    // never a seek. userSkipped is true for Next, Previous or picking
+    // another track. playProgress comes every 15 seconds heard.
+    void playStarted(const QString &path);
+    void playProgress(const QString &path, qint64 heardMs);
+    void playFinished(const QString &path, qint64 heardMs, qint64 durationMs, bool userSkipped);
     // The window asked for a folder. The app connects this to the desktop's
     // folder picker, so the engine needs no D-Bus or portal code.
     void folderRequested();
 
 private:
     void connectEngine();
+    void beginPlay();
+    void countHeard(qint64 position);
     void load(int row);
     void requeue();
     void readMetaData();
@@ -174,5 +199,13 @@ private:
     bool m_shuffle = false, m_repeat = false;
     bool m_stopped = true;
     QString m_title, m_artist, m_album, m_error;
+    // The play being counted: its file, the time heard, the last position
+    // seen while playing, and the next progress report.
+    QString m_playPath;
+    qint64 m_heardMs = 0, m_lastPos = 0, m_nextProgress = 15000;
+    // Set while next(), previous() or playIndex() change the track.
+    bool m_skipping = false;
+    // The engine choice when there is no settings file (tests).
+    QString m_preferredEngine;
     int m_bitrate = 0, m_sampleRate = 0, m_channels = 0;
 };

@@ -2,7 +2,7 @@
 // Totals line; the exit code is non-zero if any of them failed.
 //
 // OMAMP_TESTS=query,palette runs only the named classes (player, library,
-// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow), for a quick loop or a machine that must stay silent.
+// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, p3window), for a quick loop or a machine that must stay silent.
 #include <QGuiApplication>
 #include <QtTest>
 
@@ -18,6 +18,7 @@ int runPlaylistTests(int argc, char **argv);
 int runEngineTests(int argc, char **argv);
 int runWebTests(int argc, char **argv);
 int runTidyWindowTests(int argc, char **argv);
+int runP3WindowTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
@@ -54,5 +55,7 @@ int main(int argc, char **argv) {
         failures += runWebTests(argc, argv);
     if (wanted("tidywindow"))
         failures += runTidyWindowTests(argc, argv);
+    if (wanted("p3window"))
+        failures += runP3WindowTests(argc, argv);
     return failures ? 1 : 0;
 }

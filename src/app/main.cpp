@@ -19,6 +19,7 @@
 #include "mpris.h"
 #include "organisemodel.h"
 #include "player.h"
+#include "playrecorder.h"
 #include "portal.h"
 #include "tageditor.h"
 #include "theme.h"
@@ -95,6 +96,12 @@ int main(int argc, char *argv[]) {
     };
     QObject::connect(&player, &Player::trackChanged, &library, markPlaying);
     markPlaying();
+    // Party mode holds across a restart; scrobbles queued while offline go
+    // out at start (only when a service has credentials).
+    library.dj()->loadSaved(library.databasePath());
+    library.recorder()->flushIfConfigured();
+    // Quitting part-way through a track still counts what was heard.
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &player, [&player] { player.finishPlay(false); });
 
     QObject mprisHost;
     registerMpris(&mprisHost, &player);

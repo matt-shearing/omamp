@@ -21,6 +21,10 @@
 #include "tageditor.h"
 #include "tagfromname.h"
 class ArtworkPrefetch;
+#include "djcontroller.h"
+#include "playlistscontroller.h"
+class PlayRecorder;
+#include "settingscontroller.h"
 class Job;
 class Library;
 #include "watcher.h"
@@ -69,13 +73,28 @@ class LibraryController : public QObject {
     Q_PROPERTY(QString redoText READ redoText NOTIFY undoChanged)
     // The kind of the running job: scan, tag, organise, undo, duplicates, trash.
     Q_PROPERTY(QString jobKind READ jobKind NOTIFY jobChanged)
+    // Phase 3: playlists and collections, Auto-DJ and party mode, and the
+    // Settings page's library settings.
+    Q_PROPERTY(PlaylistsController *playlists READ playlists CONSTANT)
+    Q_PROPERTY(DjController *dj READ dj CONSTANT)
+    Q_PROPERTY(SettingsController *appSettings READ appSettings CONSTANT)
 
 public:
     // An empty path means the default library (~/.local/share/omamp/library.db).
     explicit LibraryController(const QString &databasePath = {}, QObject *parent = nullptr);
     ~LibraryController() override;
 
-    void setPlayer(Player *player) { m_player = player; }
+    // Also starts counting plays (play counts, skips, scrobbles).
+    void setPlayer(Player *player);
+    Player *player() const { return m_player; }
+    PlaylistsController *playlists() const { return m_playlists; }
+    DjController *dj() const { return m_dj; }
+    SettingsController *appSettings() const { return m_settings; }
+    PlayRecorder *recorder() const { return m_recorder; }
+    // Reads the tree again (after a playlist change), keeping the chosen node.
+    void reloadTree();
+    // Starts, stops or re-times the folder watcher from the settings.
+    void applyWatchSettings();
     // Where album pictures are cached; empty means ~/.cache/omamp/art.
     void setArtCacheDir(const QString &dir) { m_artCacheDir = dir; }
     // false: don't start the folder watcher (benchmarks).
@@ -295,4 +314,10 @@ private:
     DuplicatesModel *m_duplicates = nullptr;
     QThread *m_auditThread = nullptr;
     bool m_auditAgain = false;
+    PlaylistsController *m_playlists = nullptr;
+    DjController *m_dj = nullptr;
+    SettingsController *m_settings = nullptr;
+    PlayRecorder *m_recorder = nullptr;
+    // The tree node a collection's columns belong to, while one is chosen.
+    qint64 m_collection = 0;
 };

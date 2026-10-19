@@ -2,7 +2,12 @@
 //
 //   omamp_bench generate <library.db> [--tracks N]   a synthetic library (rows only, no files)
 //   omamp_bench run <library.db> [--runs N]          time opening, search and queries
-//   omamp_bench files <folder> <template-file> [--files N] [--db path]
+//   omamp_bench files <folder> <template-file> [--files N] [--db path] [--latency-us U] [--walk-workers W]
+//                                                     scan and rescan N hard links of one file; with
+//                                                     --latency-us the rescans pay U microseconds a round trip
+//   omamp_bench nas [--files N] [--latency-us U] [--workers 1,4,8,16]
+//                                                     the network rescan cost model: walk a tree of N files
+//                                                     held in memory, with U microseconds per listing and stat
 //                                                     scan and rescan N hard links of one file
 //
 // The generator streams: rows go in through prepared statements and are
@@ -28,6 +33,7 @@
 #include "query.h"
 #include "scanner.h"
 #include "volumes.h"
+#include "walker.h"
 
 static QTextStream out(stdout), err(stderr);
 
@@ -354,7 +360,8 @@ static int runBench(const QString &path, int runs) {
 
 // A stat-only rescan needs real files. Hard links of one small tagged file
 // give as many as wanted without the disk space.
-static int files(const QString &folder, const QString &templateFile, int count, const QString &dbPath) {
+static int files(const QString &folder, const QString &templateFile, int count, const QString &dbPath,
+                 int latencyUs, int walkWorkers) {
     QDir().mkpath(folder);
     QDir().mkpath(folder + "-templates");
     const QString suffix = QFileInfo(templateFile).suffix();
@@ -394,14 +401,80 @@ static int files(const QString &folder, const QString &templateFile, int count, 
     out << "| What | ms | Files |\n|---|---:|---:|\n"
         << "| First scan (TagLib on " << Scanner::defaultWorkers() << " threads) | " << first.elapsedMs << " | "
         << first.files << " |\n";
+    std::shared_ptr<LatencyFileSystem> slow;
+    if (walkWorkers > 0)
+        scanner.setWalkWorkers(walkWorkers);
+    if (latencyUs > 0) {
+        // The rescans go through a share that costs latencyUs a round trip.
+        slow = std::make_shared<LatencyFileSystem>(FileSystem::posix(), latencyUs);
+        scanner.setFileSystem(slow);
+        out << "| Rescans below: " << latencyUs << " µs per listing and stat, "
+            << (walkWorkers > 0 ? walkWorkers : Volumes::defaultLocalWorkers) << " walkers | | |\n";
+    }
     ScanResult again = scanner.scan({folder});
     out << "| Rescan, nothing changed (stat only) | " << again.elapsedMs << " | " << again.unchanged << " |\n";
     ScanResult quick = scanner.scan({folder}, Scanner::Mode::ChangedFolders);
     out << "| Quick rescan by folder time (" << quick.foldersSkipped << " folders skipped) | " << quick.elapsedMs
         << " | " << quick.unchanged << " |\n"
+        << (slow ? QString("\nRound trips over both rescans: %1 listings, %2 stats\n").arg(slow->listings()).arg(slow->stats())
+                 : QString())
         << "\nPeak memory after the first scan: " << firstPeak << " MB\n"
         << "Peak memory: " << peakRssMb() << " MB\n"
         << Qt::flush;
+    return 0;
+}
+
+// What a rescan of a big library costs over a network, measured with real
+// waits: a tree of artist/album/track folders held in memory, every listing
+// and every stat paying the round trip. Full = every file stat'ed (the
+// ordinary rescan); quick = folders whose modification time is unchanged
+// are not stat'ed inside (Scanner::Mode::ChangedFolders).
+static int nas(int count, int latencyUs, const QList<int> &workers) {
+    auto memory = std::make_shared<MemoryFileSystem>();
+    const int perAlbum = 10, perArtist = 10;
+    int folders = 1;
+    for (int i = 0; i < count; ++i) {
+        const int album = i / perAlbum, artist = album / perArtist;
+        if (i % perAlbum == 0)
+            folders += album % perArtist == 0 ? 2 : 1;
+        memory->addFile(QString("/nas/music/artist%1/album%2/%3.flac").arg(artist).arg(album).arg(i % perAlbum + 1).toUtf8(),
+                        30000000 + i, 1700000000000000000LL);
+    }
+    WalkOptions base;
+    base.isAudio = [](const QString &name) { return name.endsWith(".flac"); };
+    // Folder times as a scan would have stored them, for the quick walks.
+    WalkOutput reference;
+    {
+        WalkOptions o = base;
+        o.fs = memory;
+        o.workers = 8;
+        reference = Walker::walk("/nas/music", "", 1, true, o);
+    }
+    out << "Tree: " << reference.files.size() << " files in " << folders << " folders; " << latencyUs
+        << " µs per round trip\n\n"
+        << "| Walk | Walkers | Listings | Stats | Measured s | Model s |\n|---|---:|---:|---:|---:|---:|\n";
+    for (const bool quick : {false, true}) {
+        for (int w : workers) {
+            auto slow = std::make_shared<LatencyFileSystem>(memory, latencyUs);
+            WalkOptions o = base;
+            o.fs = slow;
+            o.workers = w;
+            if (quick)
+                o.known = &reference.folders;
+            QElapsedTimer timer;
+            timer.start();
+            const WalkOutput result = Walker::walk("/nas/music", "", 1, true, o);
+            const double seconds = timer.elapsed() / 1000.0;
+            // The model: every round trip waits once, spread over the walkers.
+            const double model = double(slow->listings() + slow->stats()) * latencyUs / 1e6 / w;
+            out << "| " << (quick ? "quick (folder times)" : "full (stat every file)") << " | " << w << " | "
+                << slow->listings() << " | " << slow->stats() << " | " << QString::number(seconds, 'f', 2) << " | "
+                << QString::number(model, 'f', 2) << " |\n"
+                << Qt::flush;
+            if (!quick && result.files.size() != reference.files.size())
+                return 1;
+        }
+    }
     return 0;
 }
 
@@ -424,14 +497,27 @@ int main(int argc, char **argv) {
     const int tracks = option("--tracks", 200000);
     const int runs = option("--runs", 7);
     const int fileCount = option("--files", 100000);
+    const int latencyUs = option("--latency-us", 0);
+    const int walkWorkers = option("--walk-workers", 0);
+    QList<int> workerList{1, 4, 8, 16};
+    if (const int at = args.indexOf("--workers"); at >= 0 && at + 1 < args.size()) {
+        workerList.clear();
+        for (const QString &w : args[at + 1].split(','))
+            workerList << qMax(1, w.toInt());
+        args.remove(at, 2);
+    }
+    if (args.value(0) == "nas" && args.size() == 1)
+        return nas(fileCount, latencyUs > 0 ? latencyUs : 500, workerList);
     if (args.value(0) == "generate" && args.size() == 2)
         return generate(args[1], tracks);
     if (args.value(0) == "run" && args.size() == 2)
         return runBench(args[1], runs);
     if (args.value(0) == "files" && args.size() == 3)
-        return files(args[1], args[2], fileCount, dbOption.isEmpty() ? args[1] + "/../files-library.db" : dbOption);
+        return files(args[1], args[2], fileCount, dbOption.isEmpty() ? args[1] + "/../files-library.db" : dbOption,
+                     latencyUs, walkWorkers);
     err << "usage: omamp_bench generate <db> [--tracks N] | run <db> [--runs N] | "
-           "files <folder> <template> [--files N] [--db path]"
+           "files <folder> <template> [--files N] [--db path] [--latency-us U] [--walk-workers W] | "
+           "nas [--files N] [--latency-us U] [--workers 1,4,8,16]"
         << Qt::endl;
     return 1;
 }

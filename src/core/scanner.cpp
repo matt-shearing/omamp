@@ -2,8 +2,10 @@
 
 #include "job.h"
 #include "library.h"
+#include "mounts.h"
 #include "tagreader.h"
 #include "volumes.h"
+#include "walker.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -69,6 +71,19 @@ Scanner::Scanner(Library &library, const VolumeResolver &resolver, Job *job)
 
 int Scanner::defaultWorkers() { return qBound(4, QThread::idealThreadCount() / 2, 8); }
 
+int Scanner::walkWorkers(qint64 volumeId) const {
+    if (m_walkWorkers > 0)
+        return m_walkWorkers;
+    QSqlQuery q(m_library.db());
+    q.prepare("SELECT kind, coalesce(scan_workers, 0) FROM volumes WHERE id = ?");
+    q.addBindValue(volumeId);
+    if (!q.exec() || !q.next())
+        return Volumes::defaultLocalWorkers;
+    if (q.value(1).toInt() > 0)
+        return q.value(1).toInt();
+    return q.value(0).toString() == "network" ? Volumes::defaultNetworkWorkers : Volumes::defaultLocalWorkers;
+}
+
 namespace {
 
 struct FileOnDisk {
@@ -87,6 +102,8 @@ struct Walk {
     qint64 skippedMounts = 0, listed = 0;
     const QHash<QString, qint64> *known = nullptr; // stored folder times, in ChangedFolders mode
     Job *job = nullptr;
+    std::shared_ptr<FileSystem> fs; // null: POSIX
+    int workers = 1;                // folders listed at once
 };
 
 qint64 mtimeNs(const struct stat &st) { return qint64(st.st_mtim.tv_sec) * 1000000000LL + st.st_mtim.tv_nsec; }
@@ -104,85 +121,31 @@ QString folderOf(const QString &rel) {
     return slash < 0 ? QString("") : rel.left(slash);
 }
 
-// POSIX directory reading: one fstatat per audio file and nanosecond times,
-// which QDirIterator and QFileInfo don't give. Entries are filtered by name
-// and d_type before any stat, so a folder of scans and booklets costs
-// nothing, and a folder skipped by its modification time only has its
-// subfolders looked at.
+// Directory reading goes through Walker (walker.h): POSIX opendir and
+// fstatat by default, one stat per audio file with nanosecond times, which
+// QDirIterator and QFileInfo don't give. Entries are filtered by name and
+// d_type before any stat, so a folder of scans and booklets costs nothing,
+// and a folder skipped by its modification time only has its subfolders
+// looked at. Several folders are listed at once (w.workers), which on a
+// network share hides the round trips.
 void walk(const QByteArray &abs, const QString &rel, dev_t rootDevice, bool recursive, Walk &w) {
-    if (w.job && w.job->isCancelled())
-        return;
-    DIR *dir = opendir(abs.constData());
-    if (!dir) {
-        if (errno == ENOENT || errno == ENOTDIR)
-            w.vanished << rel;
-        else
-            w.unreadable << rel;
-        return;
-    }
-    const int fd = dirfd(dir);
-    struct stat self {};
-    fstat(fd, &self);
-    const qint64 folderTime = mtimeNs(self);
-    bool skipFiles = false;
-    if (w.known) {
-        const auto it = w.known->constFind(rel);
-        skipFiles = it != w.known->constEnd() && it.value() == folderTime;
-    }
-    if (skipFiles)
-        w.skipped.insert(rel);
-    else
-        ++w.listed;
-
-    bool hasAudio = false;
-    QList<QPair<QByteArray, QString>> subdirs;
-    while (dirent *entry = readdir(dir)) {
-        const char *name = entry->d_name;
-        // Hidden entries are skipped: dot folders, the volume marker, and the
-        // ._ files macOS leaves on shares.
-        if (name[0] == '.')
-            continue;
-        const unsigned char type = entry->d_type;
-        const bool maybeDir = recursive && (type == DT_DIR || type == DT_UNKNOWN);
-        const bool maybeFile = !skipFiles && (type == DT_REG || type == DT_LNK || type == DT_UNKNOWN);
-        QString fileName;
-        bool audioName = false;
-        if (maybeFile) {
-            fileName = QFile::decodeName(name);
-            audioName = TagReader::isAudio(fileName);
-        }
-        if (!maybeDir && !audioName)
-            continue;
-        struct stat st {};
-        if (fstatat(fd, name, &st, AT_SYMLINK_NOFOLLOW) != 0)
-            continue;
-        if (S_ISLNK(st.st_mode)) {
-            // Linked files are followed; linked folders are not, so a link
-            // back up the tree can't loop the walk.
-            if (!audioName || fstatat(fd, name, &st, 0) != 0 || !S_ISREG(st.st_mode))
-                continue;
-        }
-        if (S_ISDIR(st.st_mode)) {
-            if (!recursive)
-                continue;
-            if (st.st_dev != rootDevice) {
-                ++w.skippedMounts;
-                continue;
-            }
-            subdirs.append({abs + '/' + name, join(rel, QFile::decodeName(name))});
-        } else if (S_ISREG(st.st_mode) && audioName) {
-            w.files.append({join(rel, fileName), rel, qint64(st.st_size), mtimeNs(st)});
-            hasAudio = true;
-        }
-    }
-    closedir(dir);
-
-    if (hasAudio)
-        w.folders.insert(rel, folderTime);
-    if (w.job && (w.listed + w.skipped.size()) % 64 == 0)
-        w.job->setProgress("Looking for music", w.files.size(), 0);
-    for (const auto &sub : subdirs)
-        walk(sub.first, sub.second, rootDevice, true, w);
+    WalkOptions o;
+    o.fs = w.fs;
+    o.workers = w.workers;
+    o.known = w.known;
+    o.job = w.job;
+    o.isAudio = [](const QString &name) { return TagReader::isAudio(name); };
+    WalkOutput out = Walker::walk(abs, rel, quint64(rootDevice), recursive, o);
+    w.files.reserve(out.files.size());
+    for (const WalkedFile &f : std::as_const(out.files))
+        w.files.append({f.rel, f.folder, f.size, f.mtimeNs});
+    out.files.clear();
+    w.folders = std::move(out.folders);
+    w.skipped = std::move(out.skipped);
+    w.unreadable = std::move(out.unreadable);
+    w.vanished = std::move(out.vanished);
+    w.skippedMounts = out.skippedMounts;
+    w.listed = out.listed;
 }
 
 struct Existing {
@@ -353,6 +316,7 @@ public:
     }
 
     QString lastError;
+    qint64 lastId = 0; // the row the last write() wrote
 
     // movedFrom is set when the file takes over a missing track's row.
     bool write(const ReadResult &r, qint64 trackId, bool moved, ScanResult &result) {
@@ -438,6 +402,7 @@ public:
             id = q.lastInsertId().toLongLong();
             ++result.added;
         }
+        lastId = id;
         // The album's picture may have changed with it; look again.
         if (album && !m_artChecked.contains(album)) {
             m_artChecked.insert(album);
@@ -618,6 +583,33 @@ bool Scanner::updateTrackRow(Library &library, qint64 trackId, const TrackTags &
     return true;
 }
 
+bool Scanner::writeTrackRows(Library &library, qint64 volumeId, QList<TrackRow> &rows, QString *error) {
+    QSqlDatabase db = library.db();
+    Writer writer(db, volumeId);
+    QSqlQuery names(db);
+    names.prepare("UPDATE tracks SET file_name = ?, format = ? WHERE id = ?");
+    ScanResult ignored;
+    for (TrackRow &row : rows) {
+        ReadResult r{{{row.relPath, folderOf(row.relPath), row.size, row.mtimeNs}, volumeId, row.trackId}, QString(),
+                     row.tags};
+        if (!writer.write(r, row.trackId, false, ignored)) {
+            if (error)
+                *error = writer.lastError;
+            return false;
+        }
+        row.trackId = writer.lastId;
+        if (!row.fileName.isEmpty()) {
+            names.addBindValue(row.fileName);
+            names.addBindValue(orNull(row.format));
+            names.addBindValue(row.trackId);
+            names.exec();
+        }
+    }
+    return true;
+}
+
+void Scanner::tidyLibrary(Library &library) { tidy(library.db()); }
+
 QStringList Scanner::roots(Library &library) {
     QStringList out;
     for (const LibraryRoot &root : libraryRoots(library))
@@ -723,6 +715,17 @@ ScanResult Scanner::scan(const QStringList &roots, Mode mode) {
     Run run;
     QSet<QString> seen;
     for (const QString &rootArg : roots) {
+        // Look before touching: on a hung share even canonicalFilePath()
+        // would block this thread for minutes. A share that doesn't answer,
+        // or answers ESTALE or EIO, is offline, which fails this root
+        // without marking anything missing.
+        const ProbeResult probe = PathProbe::probe(rootArg);
+        if (!probe.online() && probe.state != ProbeState::Absent) {
+            result.ok = false;
+            result.error = QString("%1 is offline: %2").arg(rootArg, probe.describe());
+            result.unreadable << rootArg;
+            break;
+        }
         const QFileInfo rootInfo(rootArg);
         const QString root = rootInfo.canonicalFilePath();
         if (!root.isEmpty() && seen.contains(root))
@@ -856,6 +859,10 @@ ScanResult Scanner::rescanFolders(const QList<FolderScan> &folders) {
             continue;
         // The root itself must be there: an unmounted share must never turn
         // into missing tracks.
+        if (!PathProbe::probe(owner->path).online()) {
+            result.unreadable << owner->path;
+            continue;
+        }
         struct stat rootStat {};
         if (stat(QFile::encodeName(owner->path).constData(), &rootStat) != 0 || !S_ISDIR(rootStat.st_mode)) {
             result.unreadable << owner->path;
@@ -912,6 +919,8 @@ bool Scanner::walkScope(const Scope &scope, Mode mode, Run &run, ScanResult &res
     // 1. Walk.
     Walk w;
     w.job = m_job;
+    w.fs = m_fs;
+    w.workers = walkWorkers(scope.volumeId);
     if (mode == Mode::ChangedFolders)
         w.known = &known;
     walk(QFile::encodeName(absoluteOf(scope.volumeRoot, scope.rel)), scope.rel, scope.device, scope.recursive, w);
@@ -1182,6 +1191,8 @@ LocateResult Scanner::locate(const QString &folderArg) {
     stat(QFile::encodeName(folder).constData(), &rootStat);
     Walk w;
     w.job = m_job;
+    w.fs = m_fs;
+    w.workers = walkWorkers(volumeId);
     const QString rel = folder == volume.rootPath ? QString("")
                                                   : folder.mid(volume.rootPath == "/" ? 1 : volume.rootPath.size() + 1);
     walk(QFile::encodeName(folder), rel, rootStat.st_dev, true, w);

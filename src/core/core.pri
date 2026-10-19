@@ -52,3 +52,10 @@ SOURCES += \
     $$PWD/tagwriter.cpp \
     $$PWD/volumes.cpp \
     $$PWD/watcher.cpp
+
+# Phase 5: the NAS. Network volumes (probes that never hang, the mount
+# monitor, the folder walker with its filesystem seam), the waveform cache,
+# and the OpenSubsonic client that mirrors a Navidrome library.
+QT += network
+HEADERS += $$PWD/mounts.h $$PWD/peaks.h $$PWD/remote.h $$PWD/subsonic.h $$PWD/walker.h
+SOURCES += $$PWD/mounts.cpp $$PWD/peaks.cpp $$PWD/remote.cpp $$PWD/subsonic.cpp $$PWD/walker.cpp

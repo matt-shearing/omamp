@@ -4,12 +4,15 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <memory>
 
+#include "tagreader.h"
 #include "volumes.h"
+
+class FileSystem;
 
 class Job;
 class Library;
-struct TrackTags;
 
 struct ScanResult {
     bool ok = true;
@@ -98,6 +101,14 @@ public:
     // How many files may be waiting to be read or written at once. Bounds
     // the scan's memory; tests set it small to exercise the feeding.
     void setInFlightLimit(int count) { m_inFlight = qMax(1, count); }
+    // How many folders are listed at once. 0 (the default) asks each
+    // volume: its scan_workers, else 8 on a network share and 4 on a local
+    // disk (Volumes::default*Workers).
+    void setWalkWorkers(int count) { m_walkWorkers = qMax(0, count); }
+    int walkWorkers(qint64 volumeId) const;
+    // Where folders are listed and files stat'ed; null (the default) is
+    // POSIX. Tests put a LatencyFileSystem here to stand in for a share.
+    void setFileSystem(std::shared_ptr<FileSystem> fs) { m_fs = std::move(fs); }
 
     // Adds each folder as a library root (when it isn't one yet) and scans it.
     ScanResult scan(const QStringList &roots, Mode mode = Mode::Full);
@@ -126,6 +137,22 @@ public:
     static bool updateTrackRow(Library &library, qint64 trackId, const TrackTags &tags, qint64 size,
                                qint64 mtimeNs, QString *error = nullptr);
 
+    // Writes rows that come from somewhere other than a file on disk (a
+    // Subsonic server), exactly as a scan writes them: artists, genres,
+    // album, search index. trackId 0 inserts and is filled in. fileName and
+    // format, when set, replace what would be taken from relPath (which for
+    // a remote track is the server's id). Runs inside the caller's
+    // transaction, if any; call tidyLibrary() once afterwards.
+    struct TrackRow {
+        qint64 trackId = 0;
+        QString relPath, fileName, format;
+        TrackTags tags;
+        qint64 size = 0, mtimeNs = 0;
+    };
+    static bool writeTrackRows(Library &library, qint64 volumeId, QList<TrackRow> &rows, QString *error = nullptr);
+    // Drops albums, artists and genres no track uses any more.
+    static void tidyLibrary(Library &library);
+
 private:
     struct Scope;
     struct Run;
@@ -139,4 +166,6 @@ private:
     Job *m_job;
     int m_workers;
     int m_inFlight = 2000;
+    int m_walkWorkers = 0;
+    std::shared_ptr<FileSystem> m_fs;
 };

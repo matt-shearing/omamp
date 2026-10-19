@@ -399,6 +399,84 @@ static const QStringList version7 = {
     "CREATE INDEX import_journal_batch ON import_journal(batch)",
 };
 
+// Phase 5: the NAS.
+//
+// - volumes is rebuilt because SQLite can't change a CHECK constraint in
+//   place: kind gains 'subsonic' (a remote library mirrored into this one,
+//   whose tracks' rel_path is the server's song id), and two columns join
+//   it. scan_workers is how many threads list and stat that volume's
+//   folders (NULL means the default: 8 on a network share, 4 on a local
+//   disk). remote_source_id links a subsonic volume to its server. The
+//   rebuild runs with foreign keys off (the Migration flag), or dropping the
+//   old table would cascade into folders, and foreign_key_check runs before
+//   it commits.
+// - remote_sources holds each OpenSubsonic or Subsonic server. The password
+//   or API key is never stored here: secret_ref names it in the system
+//   keyring (secret_store 'libsecret') or in a private file
+//   (secret_store 'file', ~/.config/omamp/credentials.json, mode 0600).
+// - remote_albums remembers what each server's albums looked like at the
+//   last sync, so the next sync fetches only the albums that changed.
+// - remote_tracks links a mirrored track to its album and cover on the
+//   server (a track's rel_path is already its song id).
+//
+// Numbered 9 because Phase 4 takes 8; the two steps don't depend on each other.
+static const QStringList version9 = {
+    R"(CREATE TABLE volumes_new (
+        id INTEGER PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL CHECK (kind IN ('local', 'network', 'subsonic')),
+        label TEXT,
+        fs_type TEXT,
+        source TEXT,
+        mount_subpath TEXT NOT NULL DEFAULT '',
+        root_path TEXT NOT NULL,
+        online INTEGER NOT NULL DEFAULT 1,
+        last_seen INTEGER,
+        added INTEGER NOT NULL,
+        scan_workers INTEGER CHECK (scan_workers IS NULL OR scan_workers BETWEEN 1 AND 64),
+        remote_source_id INTEGER
+    ))",
+    "INSERT INTO volumes_new (id, key, kind, label, fs_type, source, mount_subpath, root_path, online, last_seen, added) "
+    "SELECT id, key, kind, label, fs_type, source, mount_subpath, root_path, online, last_seen, added FROM volumes",
+    "DROP TABLE volumes",
+    "ALTER TABLE volumes_new RENAME TO volumes",
+    R"(CREATE TABLE remote_sources (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('subsonic')),
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
+        auth TEXT NOT NULL CHECK (auth IN ('token', 'apikey')),
+        secret_store TEXT NOT NULL CHECK (secret_store IN ('libsecret', 'file')),
+        secret_ref TEXT NOT NULL,
+        server_type TEXT,
+        server_version TEXT,
+        api_version TEXT,
+        open_subsonic INTEGER NOT NULL DEFAULT 0,
+        max_bitrate INTEGER NOT NULL DEFAULT 0,
+        stream_format TEXT,
+        volume_id INTEGER REFERENCES volumes(id) ON DELETE SET NULL,
+        last_sync INTEGER,
+        last_error TEXT,
+        added INTEGER NOT NULL,
+        UNIQUE (url, username)
+    ))",
+    R"(CREATE TABLE remote_albums (
+        source_id INTEGER NOT NULL REFERENCES remote_sources(id) ON DELETE CASCADE,
+        album_id TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        synced INTEGER NOT NULL,
+        PRIMARY KEY (source_id, album_id)
+    ))",
+    R"(CREATE TABLE remote_tracks (
+        track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+        source_id INTEGER NOT NULL REFERENCES remote_sources(id) ON DELETE CASCADE,
+        album_id TEXT,
+        cover_art TEXT
+    ))",
+    "CREATE INDEX remote_tracks_album ON remote_tracks(source_id, album_id)",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
@@ -408,6 +486,7 @@ const QList<Migration> &migrations() {
         {5, "text sort indexes", version5},
         {6, "fingerprints for the duplicate finder", version6},
         {7, "playlists, play statistics, import journal", version7},
+        {9, "network volumes, remote sources", version9, true},
     };
     return all;
 }

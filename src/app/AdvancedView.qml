@@ -19,7 +19,7 @@ FocusScope {
     property bool browserVisible: false
     property bool infoVisible: false
     property bool gridVisible: false
-    property int browserHeight: 190
+    property int browserHeight: 214
     property int infoWidth: 290
     signal clockClicked()
     signal layoutEdited()
@@ -311,6 +311,7 @@ FocusScope {
                 SplitView.preferredWidth: view.infoWidth
                 SplitView.minimumWidth: 220
                 onWidthChanged: view.layoutEdited()
+                chosenHeading: view.showingGrid ? qsTr("Chosen album, first track") : ""
                 // The track under the cursor, or the album chosen in the grid;
                 // 0 shows the track that is playing.
                 chosenTrack: view.nowPlaying ? 0

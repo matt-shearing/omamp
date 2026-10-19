@@ -97,6 +97,24 @@ QVariantMap Theme::readColors(const QString &path, bool *light) {
     return colors;
 }
 
+QString Theme::listSelection() const {
+    const QColor selection(m_colors.value("selection").toString());
+    const QColor background(m_colors.value("background").toString());
+    const QColor lighter(m_colors.value("lighter_background").toString());
+    auto distance = [](const QColor &a, const QColor &b) {
+        return std::sqrt(std::pow(a.red() - b.red(), 2) + std::pow(a.green() - b.green(), 2) +
+                         std::pow(a.blue() - b.blue(), 2));
+    };
+    if (distance(selection, lighter) >= 28 && distance(selection, background) >= 28)
+        return selection.name();
+    const QColor accent(this->accent());
+    const double t = 0.3;
+    return QColor::fromRgbF(background.redF() * (1 - t) + accent.redF() * t,
+                            background.greenF() * (1 - t) + accent.greenF() * t,
+                            background.blueF() * (1 - t) + accent.blueF() * t)
+        .name();
+}
+
 // Black or white, whichever reads on the accent (WCAG relative luminance).
 QString Theme::accentForeground() const {
     const QColor c(accent());

@@ -42,7 +42,7 @@ ApplicationWindow {
         // Advanced mode's optional parts.
         property bool browserVisible: false
         property string browserArtistMode: "albumartist"
-        property int browserHeight: 190
+        property int browserHeight: 214
         property bool infoVisible: false
         property int infoWidth: 290
         property bool gridVisible: false

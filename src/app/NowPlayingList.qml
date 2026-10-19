@@ -78,7 +78,7 @@ FocusScope {
             readonly property bool playing: index === backend.currentIndex
             width: ListView.view.width
             height: 24
-            color: index === list.currentIndex ? (list.activeFocus ? theme.c.selection : Qt.alpha(theme.c.selection, 0.6))
+            color: index === list.currentIndex ? (list.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
                  : index % 2 ? Qt.alpha(theme.c.lighter_background, 0.35) : "transparent"
             Row {
                 anchors.fill: parent

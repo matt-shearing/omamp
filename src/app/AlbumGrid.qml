@@ -95,8 +95,8 @@ FocusScope {
                 anchors.rightMargin: 8
                 anchors.bottomMargin: 8
                 radius: Math.min(4, theme.radius)
-                color: tile.chosen ? (grid.activeFocus ? theme.c.selection : Qt.alpha(theme.c.selection, 0.6))
-                     : hover.hovered ? Qt.alpha(theme.c.selection, 0.25) : "transparent"
+                color: tile.chosen ? (grid.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
+                     : hover.hovered ? Qt.alpha(theme.listSelection, 0.25) : "transparent"
             }
             HoverHandler { id: hover }
 

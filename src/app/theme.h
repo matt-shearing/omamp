@@ -15,6 +15,11 @@ class Theme : public QObject {
     Q_PROPERTY(QVariantMap c READ colors NOTIFY changed)
     Q_PROPERTY(bool light READ light NOTIFY changed)
     Q_PROPERTY(int radius READ radius NOTIFY changed)
+    // The colour for chosen rows in the library's lists: the theme's
+    // selection, unless that is hard to tell from the row backgrounds (some
+    // themes make it the same as lighter_background), then the accent mixed
+    // into the background.
+    Q_PROPERTY(QString listSelection READ listSelection NOTIFY changed)
 
 public:
     explicit Theme(const QString &currentDirectory = {}, QObject *parent = nullptr, const QString &hyprctl = {});
@@ -22,6 +27,7 @@ public:
 
     QString accent() const { return m_colors.value("accent").toString(); }
     QString accentForeground() const;
+    QString listSelection() const;
     QVariantMap colors() const { return m_colors; }
     bool light() const { return m_light; }
     int radius() const { return m_radius; }

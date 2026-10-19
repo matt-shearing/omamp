@@ -177,7 +177,7 @@ Popup {
                 width: ListView.view.width
                 height: root.rowHeight
                 radius: Math.min(4, theme.radius)
-                color: current ? theme.c.selection : hover.hovered ? Qt.alpha(theme.c.selection, 0.4) : "transparent"
+                color: current ? theme.listSelection : hover.hovered ? Qt.alpha(theme.listSelection, 0.4) : "transparent"
                 opacity: actionEnabled ? 1 : 0.5
 
                 HoverHandler { id: hover }

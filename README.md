@@ -9,10 +9,11 @@ libraries of the 2000s, MediaMonkey-style, with modern tools on top: tagging
 from MusicBrainz, smart playlists, file organising with a preview, and
 libraries that live on a NAS.
 
-> **Status:** early. The player works today. The first part of the library
-> manager (advanced mode: the tree, the track list, search and scanning)
-> works too; the rest is planned in [docs/plan/](docs/plan/). Expect breaking
-> changes.
+> **Status:** early. The player works today. So does the library window
+> (advanced mode): the tree, the track list, search, the column browser, the
+> album grid, the info panel, the command palette, and folders that keep
+> themselves up to date. Tagging and the rest are planned in
+> [docs/plan/](docs/plan/). Expect breaking changes.
 
 ## Why Omarchy first
 
@@ -46,7 +47,7 @@ window: a tree on the left, the tracks on the right, a search box above them,
 and a status line below. Omamp remembers which mode you left it in and the
 window size for each.
 
-![Advanced mode with a small made-up library](docs/advanced-mode.png)
+![Advanced mode with the column browser and the info panel, in the Night Ride theme, with a small made-up library](docs/advanced-mode.png)
 
 - **Add folder…** adds a music folder to the library and scans it. **Rescan**
   (or `F5`) checks every library folder again. Scans run in the background,
@@ -64,9 +65,37 @@ window size for each.
   A query with a mistake in it says what is wrong and leaves the list as it was.
 - Double-click a track or press `Enter` to play the list from that track.
   Right-click for Play next, Add to Now Playing and Show in folder.
+- **The column browser** (`Ctrl+B`, or **Browser**) puts three lists above
+  the tracks: Genre, Album Artist and Album, as in foobar2000 and
+  MediaMonkey. Each lists its values with their number of tracks, within the
+  tree node and the search. Choosing a genre narrows the artists, the albums
+  and the tracks; `Ctrl`+click picks several, and **All** goes back. The
+  middle list can show every artist instead of album artists.
+- **The album grid** (`G`, or **Albums**) shows the albums of the list as
+  covers. Double-click or `Enter` plays an album; right-click or
+  `Ctrl+Enter` for **Show tracks**. Covers come from `cover.jpg`, `folder.jpg`
+  or `front.jpg` beside the music, or from the files' own tags, and fill in
+  while you look.
+- **The info panel** (`I`, or **Info**) shows the cover and everything the
+  library knows about the chosen track, or the one playing: tags, format,
+  ReplayGain, rating, plays, when it last played, whether it has lyrics, and
+  where the file is.
+- **The command palette** (`Ctrl+K`) finds actions, artists, albums and
+  tracks as you type. `Enter` runs the action or goes to the artist, album or
+  track. Start with `>` for actions only.
+- **Folders keep themselves up to date.** Omamp watches the library folders
+  on local disks and rescans only the folders that change; the list keeps
+  your selection and your place. Shares on the network are checked every 15
+  minutes. The status line says what is watched.
+
+![The album grid with the info panel](docs/album-grid.png)
+
+![The command palette](docs/command-palette-live.png)
 
 It stays quick with big libraries. With 200,000 tracks, advanced mode opens
-in about a third of a second and a search reaches the screen in under 100 ms.
+in about a third of a second. A search, a sort, a choice in the column
+browser and the album grid all reach the screen in under 150 ms, most in
+under 100 ms.
 
 ![Advanced mode with 200,000 synthetic tracks](docs/advanced-mode-200k.png)
 
@@ -102,6 +131,7 @@ instead of the playlist, and these keys work too:
 
 | Key | Does |
 | --- | --- |
+| `Ctrl+K` | The command palette (on the deck too) |
 | `/` or `Ctrl+F` | Search. `Esc` clears the search; `Enter` or `↓` goes to the list |
 | `↑` `↓` `Page Up` `Page Down` `Home` `End` | Move through the tree or the list |
 | `→` `←` in the tree | Open or close a node, or step into it or out to its parent |
@@ -113,6 +143,12 @@ instead of the playlist, and these keys work too:
 | `Menu` | Play next, add to Now Playing or show in folder |
 | `O` | Add a folder to the library |
 | `F5` | Rescan the library |
+| `Ctrl+B` | Show or hide the column browser (`B` stays Winamp's next track) |
+| `↑` `↓` in the browser | Choose a value; `Shift` for a range, `Ctrl+Space` for one more |
+| `←` `→` in the browser | Move between its lists and to the tree; `Enter` goes to the tracks |
+| `G` | Album covers instead of the track list, and back |
+| `Enter`, `Ctrl+Enter` in the grid | Play the album; show its tracks |
+| `I` | Show or hide the info panel |
 
 ## Build and install
 
@@ -131,7 +167,6 @@ Omarchy's own apps are built.
 
 The full plan is in [docs/plan/](docs/plan/). In short:
 
-- **Advanced mode:** a column browser, an album-art grid, an info panel and a command palette.
 - **Tagging:** batch editing, MusicBrainz and AcoustID lookups, artwork and lyrics.
 - **Organising:** rename and move files by a pattern, with a preview before anything moves.
 - **NAS libraries:** SMB, NFS or a Navidrome/Subsonic server, with offline tracks kept in the library.

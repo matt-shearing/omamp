@@ -97,7 +97,10 @@ FocusScope {
                     function choose(row, mods) {
                         row = Math.max(0, Math.min(count - 1, row))
                         currentIndex = row
-                        browser.model.select(pane.index, row, mods)
+                        // Ctrl moves the cursor only, as in the track list, so
+                        // Ctrl+Space can pick values that are far apart.
+                        if (!((mods & Qt.ControlModifier) && !(mods & Qt.ShiftModifier)))
+                            browser.model.select(pane.index, row, mods)
                         positionViewAtIndex(row, ListView.Contain)
                     }
 
@@ -131,7 +134,16 @@ FocusScope {
                     // A new list of values starts at the first chosen one.
                     Connections {
                         target: pane.facet
-                        function onModelReset() { list.currentIndex = pane.facet.firstSelectedRow() }
+                        function onModelReset() {
+                            list.currentIndex = pane.facet.firstSelectedRow()
+                            list.positionViewAtIndex(list.currentIndex, ListView.Contain)
+                        }
+                        // Chosen from elsewhere (the palette, a refresh): show it.
+                        function onSelectionChanged() {
+                            if (list.activeFocus) return
+                            list.currentIndex = pane.facet.firstSelectedRow()
+                            list.positionViewAtIndex(list.currentIndex, ListView.Contain)
+                        }
                     }
 
                     delegate: Rectangle {
@@ -146,8 +158,8 @@ FocusScope {
 
                         width: ListView.view.width
                         height: 22
-                        color: valueSelected ? (list.activeFocus ? theme.c.selection : Qt.alpha(theme.c.selection, 0.6))
-                             : hover.hovered ? Qt.alpha(theme.c.selection, 0.25) : "transparent"
+                        color: valueSelected ? (list.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
+                             : hover.hovered ? Qt.alpha(theme.listSelection, 0.25) : "transparent"
                         border.width: cursor && !valueSelected ? 1 : 0
                         border.color: theme.accent
 

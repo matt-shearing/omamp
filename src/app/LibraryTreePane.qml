@@ -104,9 +104,9 @@ FocusScope {
             width: ListView.view.width
             height: 24
             radius: Math.min(3, theme.radius)
-            color: chosen ? (pane.activeFocus ? theme.c.selection : Qt.alpha(theme.c.selection, 0.6))
-                 : cursor && pane.activeFocus ? Qt.alpha(theme.c.selection, 0.35)
-                 : hover.hovered ? Qt.alpha(theme.c.selection, 0.25) : "transparent"
+            color: chosen ? (pane.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
+                 : cursor && pane.activeFocus ? Qt.alpha(theme.listSelection, 0.35)
+                 : hover.hovered ? Qt.alpha(theme.listSelection, 0.25) : "transparent"
             border.width: cursor && pane.activeFocus && !chosen ? 1 : 0
             border.color: theme.accent
 

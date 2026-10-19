@@ -216,7 +216,7 @@ FocusScope {
             readonly property int ratingValue: rating !== undefined ? rating : -1
 
             implicitHeight: 24
-            color: rowSelected ? (table.activeFocus ? theme.c.selection : Qt.alpha(theme.c.selection, 0.6))
+            color: rowSelected ? (table.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
                  : row % 2 ? Qt.alpha(theme.c.lighter_background, 0.35) : "transparent"
 
             // The keyboard cursor: a line above and below the row.

@@ -277,6 +277,7 @@ private slots:
         QVariantMap theme{{"c", Theme::defaults()},
                           {"accent", Theme::defaults().value("accent")},
                           {"accentForeground", "black"},
+                          {"listSelection", Theme::defaults().value("selection")},
                           {"light", false},
                           {"radius", 0}};
         engine.rootContext()->setContextProperty("theme", theme);

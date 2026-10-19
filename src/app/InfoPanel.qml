@@ -14,6 +14,8 @@ Rectangle {
 
     // Set by the view: the track to show, or 0 for the one playing.
     property var chosenTrack: 0
+    // What the chosen track stands for, when it isn't simply a track.
+    property string chosenHeading: ""
     readonly property var trackId: chosenTrack > 0 ? chosenTrack : library.playingTrackId
     readonly property bool showingPlaying: !(chosenTrack > 0) && library.playingTrackId > 0
     // Reads again whenever the library changes (library.revision).
@@ -68,7 +70,8 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: panel.showingPlaying ? qsTr("Now playing") : panel.hasTrack ? qsTr("Selected track") : ""
+                text: panel.showingPlaying ? qsTr("Now playing")
+                      : panel.hasTrack ? (panel.chosenHeading !== "" ? panel.chosenHeading : qsTr("Selected track")) : ""
                 visible: text !== ""
                 font.pixelSize: 11
                 font.bold: true
@@ -163,7 +166,7 @@ Rectangle {
                         [qsTr("Plays"), panel.info.plays > 0 ? Number(panel.info.plays).toLocaleString(Qt.locale(), 'f', 0) : qsTr("Never played")],
                         [qsTr("Last played"), panel.day(panel.info.lastPlayed)],
                         [qsTr("Added"), panel.day(panel.info.added)],
-                        [qsTr("Lyrics"), panel.info.hasLyrics ? qsTr("In the file (the lyrics view comes later)") : qsTr("None")],
+                        [qsTr("Lyrics"), panel.info.hasLyrics ? qsTr("Yes, in the file") : qsTr("None")],
                         [qsTr("BPM"), panel.info.bpm > 0 ? String(panel.info.bpm) : ""]
                     ].filter(r => r[1] !== undefined && r[1] !== "") : []
 

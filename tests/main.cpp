@@ -10,6 +10,7 @@ int runPlayerTests(int argc, char **argv);
 int runLibraryTests(int argc, char **argv);
 int runQueryTests(int argc, char **argv);
 int runPaletteTests(int argc, char **argv);
+int runWatcherTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
@@ -27,5 +28,7 @@ int main(int argc, char **argv) {
         failures += runQueryTests(argc, argv);
     if (wanted("palette"))
         failures += runPaletteTests(argc, argv);
+    if (wanted("watcher"))
+        failures += runWatcherTests(argc, argv);
     return failures ? 1 : 0;
 }

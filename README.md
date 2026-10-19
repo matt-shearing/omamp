@@ -96,7 +96,17 @@ omamp scan                               # rescan every library folder; unchange
 omamp query 'artist:"neon coast" year:1997..2001'
 omamp query 'rating:4.. -genre:christmas' --json
 omamp stats
+omamp scan --quick                       # rescan, skipping folders whose modification time is unchanged
+omamp watch                              # watch the library folders and rescan what changes (Ctrl+C stops)
+omamp locate /mnt/usb/Music              # find missing tracks that were moved there
+omamp art album 12 --size 256            # print the path of an album's picture, made if needed
 ```
+
+A file moved or renamed inside the library keeps its rating, play count,
+history and playlists: a scan recognises it by its size, length and tags, or
+by its contents. Folders on network shares are never watched (a share's
+changes made by other machines can't be seen); `omamp watch` rescans them
+every 15 minutes instead, by folder modification time.
 
 Every command takes `--json` and `--db <path>`, and exits 0 or 1. The library
 is `~/.local/share/omamp/library.db`. Run `omamp help` for the query syntax.

@@ -575,3 +575,278 @@ Check that the app's `Translator` serves `tr()` in C++ as well as `qsTr()`.
   use it.
 - **The first palette search costs about 60 ms** on 200,000 tracks while it
   loads the names.
+
+## Phase 1C: watching, moved files, tag extras and artwork (20 October 2026)
+
+Phase 1C is built, backend only. Local library folders are watched with
+inotify and only the folders that change are rescanned. Network folders are
+rescanned on a schedule, skipping folders whose modification time hasn't
+changed. A moved or renamed file keeps its track. Scans read ratings, play
+counts, ReplayGain, lyrics and artwork flags, MusicBrainz IDs, BPM and the
+compilation flag. Album and track pictures are cached as small JPEGs, and
+QML can show them through an image provider. All tests pass (11 player, 16
+library, 16 Phase 1C). Nothing is pushed.
+
+### What was built
+
+**Schema 3** (`src/core/migrations.cpp`). Step 3 adds, to `tracks`:
+`tag_version`, `has_embedded_art`, `has_lyrics`, `mb_release_group_id`,
+`mb_album_artist_id`, `tag_rating`, `tag_play_count` and `quick_hash`, with
+indexes on `size` and `quick_hash`; to `albums`: `mb_release_group_id` and
+`art_checked`; to `artwork`: `added`. Phase 0 databases (schema 2) upgrade
+with the usual `VACUUM INTO` backup first. Rows keep their ratings and play
+counts; `tag_version` 0 marks them as read by the Phase 0 reader, so the next
+full scan reads each file once more to fill the new fields, and rescans are
+stat-only again after that.
+
+**Tag extras** (`src/core/tagreader.*`). Ratings come from `FMPS_RATING`
+(0.0 to 1.0), a plain `RATING` (0 to 5 stars, 0 to 100, or a POPM byte), and
+ID3v2 `POPM` frames (Windows Media Player's and MediaMonkey's steps,
+including MediaMonkey's half stars). Play counts come from `FMPS_PLAYCOUNT`,
+`PLAYCOUNT`, the POPM counter and `PCNT`. Lyrics are present when any
+`LYRICS*` property has text (USLT, Vorbis `LYRICS`/`UNSYNCEDLYRICS`, MP4
+`©lyr`). Embedded artwork is present when TagLib lists a `PICTURE`. Tags are
+now read through a read-only `FileStream`: TagLib's `FileRef` opened files
+for writing when it could, so every scan "wrote" every file it read, which
+the watcher saw as a change and a NAS saw as a write.
+
+**Library stats win over tags.** A file's rating fills the library's only
+while the library has none and the file's rating is new (different from the
+stored `tag_rating`), so a rating the user cleared in Omamp stays cleared.
+The play count fills only while the library's count is 0. Both file values
+are kept in `tag_rating` and `tag_play_count`.
+
+**Scanner** (`src/core/scanner.*`):
+
+- It walks every root (or folder) first and marks vanished files missing,
+  then reads and writes. A file moved between two folders of one scan is
+  therefore already missing at its old place when its new place is read.
+- **Moved files keep their tracks.** A new file that matches a missing track
+  takes over that track's row (its path, volume and folder change), so its
+  rating, play count, history and playlist entries follow it. A match is the
+  same content hash and length, or the same size, length (within a second),
+  title, artist and album, plus the same file name when the file has no
+  tags. When several missing tracks match, the one with the same file name
+  wins; if that still leaves several, the file is added as new rather than
+  given the wrong history. `ScanResult` reports `moved` and the first 100
+  `old -> new` paths.
+- `quick_hash` is SHA-1 over the size and 64 KiB from the middle of the
+  file, 16 hex digits. The middle avoids the tags at either end.
+- **Locate** (`Scanner::locate`, `omamp locate <folder>`) is MediaMonkey's
+  "Locate Moved/Missing Files": it searches any folder, inside the library
+  or not, opens only files whose size matches a missing track, and repoints
+  the tracks it finds. Nothing else is added.
+- **Quick rescans** (`Scanner::Mode::ChangedFolders`, `omamp scan --quick`)
+  skip listing a folder whose modification time matches the database.
+  Subfolders are still visited (one `readdir` each, using `d_type`), so a
+  quick rescan costs one stat per folder rather than per file. Folder times
+  are stored only after a scan's files are written, so a cancelled scan
+  never makes a later quick rescan skip a folder.
+- **Incremental rescans** (`Scanner::rescanFolders`) take folders inside
+  library roots, each recursive or not. A folder that no longer exists has
+  its tracks marked missing, but only while its library root is still there.
+- The walk now filters by name and `d_type` before any stat, so non-audio
+  files cost nothing.
+- **The tag pool is fed at most 2,000 files ahead of the writer**
+  (`setInFlightLimit`), so neither the pool's queue nor the waiting results
+  grow with the library.
+
+**Watcher** (`src/core/watcher.*`). Raw inotify, one watch per folder, on
+library roots whose volume is local. Measured on a 10,000-folder temporary
+tree: adding the watches takes 15 ms and 0.6 MB with inotify, 240 ms and
+2.4 MB with `QFileSystemWatcher`. Both would scale; inotify was chosen
+because it also says which kind of change happened (close after writing,
+moves, overflow) and reports the watch limit with `ENOSPC`.
+
+- Events: a file counts once closed after writing, moved, deleted or
+  touched, and only if it has an audio extension. A new or moved-in folder
+  gets watches and a recursive rescan; a deleted or moved-out folder loses
+  its watches and gets a recursive rescan (its tracks go missing, and are
+  found again if it reappears inside the library). A queue overflow rescans
+  every watched root in full.
+- Changes are collected for 1.5 s after the last event, and never held back
+  more than 10 s. Rescans run one at a time on a low-priority worker thread
+  with its own `Library`; changes arriving meanwhile merge into the next one.
+- Network roots (volume kind `network`, or a network mount now) are never
+  watched. They are rescanned every 15 minutes in quick mode; every fourth
+  scheduled run lists every folder, to catch files changed in place (which
+  leave the folder's time alone).
+- The watcher uses at most half of `fs.inotify.max_user_watches` (524,288 on
+  this machine), leaving the rest for other programs. If that, or the
+  kernel, runs out, the roots not fully watched join the scheduled rescans,
+  `degraded` becomes true and `watchLimitReached` fires.
+- `omamp watch` runs it in the foreground and prints each change and rescan
+  (`--json` prints one JSON object per line, `--dry-run` only reports,
+  `--interval <s>` sets the schedule). Ctrl+C or SIGTERM stops it cleanly.
+
+**Artwork** (`src/core/artwork.*`, `src/app/artprovider.*`). A picture comes
+from a file beside the album's tracks named `cover`, `folder` or `front` (in
+that order, any case, as `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp` or `.gif`),
+also one folder up from a `CD1`/`Disc 2` folder; failing that, from the first
+track's embedded front cover. It is decoded once (JPEGs are decoded already
+scaled down), flattened onto white if it has transparency, and saved on the
+CPU at 96, 256 and 600 pixels as `~/.cache/omamp/art/<hash>-<size>.jpg`,
+where the hash is of the original bytes. An album whose every track embeds
+the same cover shares one set of files. `artwork` records each picture and
+its source, `albums.artwork_id` and `tracks.artwork_id` point at it, and
+`albums.art_checked` records the search, so an album without a picture isn't
+searched again until the scanner changes one of its tracks. A cleared cache
+is rebuilt from the recorded source. Nothing is made until asked for;
+`ArtworkPrefetch` makes the rest on a lowest-priority thread, and
+`omamp art all` does the same in the foreground.
+
+### Test results
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 112ms    (player)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 472ms    (library)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 2566ms   (Phase 1C)
+```
+
+The Phase 1C tests (`tests/watcher_tests.cpp`) make their own files with
+`ffmpeg` and TagLib: FLACs with FMPS, ReplayGain, MusicBrainz, lyrics, BPM
+and compilation tags; an MP3 with a POPM rating and counter and USLT lyrics
+written by TagLib; an MP3 with an embedded 500×300 PNG cover; and 800×800
+and 500×300 images. They cover: the schema 2 to 3 upgrade with its backup;
+rows from the old reader read once more, then stat-only; rating conventions;
+every tag extra; library stats winning over tags, including a cleared rating
+staying cleared; moved and renamed files (tagged, and untagged by hash)
+keeping rating, play count, history and playlist entries with the pool fed
+one file at a time; identical copies not guessed; `locate` outside the
+library; quick rescans skipping unchanged folders; the watcher seeing
+create, modify, move, a folder moved in from outside, a file in that new
+folder, file and folder deletion, ignoring a JPEG, and not waking itself by
+reading a file; the watch limit falling back to the schedule; a CIFS root
+(fake mountinfo) never watched; artwork from an upper-case `Cover.JPG`, from
+an embedded cover, none, track pictures, a cleared cache, and the image
+provider; and the background prefetch plus the scanner clearing
+`art_checked`.
+
+### Benchmark
+
+`omamp_bench files` on tetelestai with another heavy job running: 100,000
+hard links of one small tagged MP3 in 8,334 folders, on btrfs, warm cache,
+8 reader threads. Phase 0 was rebuilt from `afddb5b` and run alternately
+with Phase 1C.
+
+| What | Phase 0 | Phase 1C |
+|---|---:|---:|
+| First scan | 5,666–6,147 ms | 7,142–7,745 ms |
+| Rescan, nothing changed (stat only) | 396–473 ms | 395–449 ms |
+| Quick rescan by folder time | — | 195–233 ms |
+| Peak memory, first scan | 235–264 MB | 104–108 MB |
+| Peak memory, whole run | 235–264 MB | 135–140 MB |
+
+Phase 1C at other sizes: 10,000 files take 791 ms with a 43 MB peak, and
+30,000 files take 1,985 ms with a 77 MB peak. Memory now grows far slower
+than the library; most of what remains is SQLite's 32 MB page cache and the
+walk's file list.
+
+The first scan is about 1.3 s slower. Each file now also gets a content
+hash (one more open and a 64 KiB read) and more tag work, and the writer,
+which is the bottleneck, now shares the CPU with the readers for the whole
+scan. With a 20,000-file limit instead of 2,000 the first scan took
+6,397–6,462 ms but peaked at 189–194 MB; the smaller limit was kept.
+
+### Decisions
+
+- **Raw inotify, not QFileSystemWatcher**, for the reasons and numbers above.
+- **Watch at most half the system's inotify limit**, so Omamp can't starve
+  editors, Syncthing or file managers.
+- **Debounce 1.5 s, at most 10 s.** A long copy keeps triggering
+  close-after-write per file; the cap stops a busy folder holding a rescan
+  back for ever.
+- **Picture files before embedded pictures.** Folder images are usually the
+  larger scan and cost no tag parsing. This matches foobar2000's default.
+- **Every standard size is made at the first request** for a picture, since
+  decoding the original is most of the cost.
+- **A rescan rereads Phase 0 rows once** to fill the new fields. On a
+  100,000-track NAS library this is one slow scan; the alternative was
+  leaving every Phase 0 row without ratings, art flags or IDs until edited.
+- **A file's rating fills an empty library rating only when the file's
+  rating is new.** Without that, clearing a rating in Omamp would be undone
+  by the next rescan.
+- **Ambiguous moves are not guessed.** Handing one track's history to
+  another is worse than adding a new row; `omamp locate` and later a
+  "Locate Moved/Missing Files" window can resolve the rest.
+- **Core now links Qt GUI** for `QImage` (CPU only). The benchmark and CLI
+  still need no display.
+- **TagLib reads are read-only** (see above).
+
+### Known gaps
+
+- **A move from outside the scanned folders.** If a file's old place isn't
+  rescanned in the same run as its new place (for example, the old folder is
+  on a different root that the watcher didn't see change), the new file is
+  added as a new track and the old one goes missing later. `omamp locate`
+  fixes it by hand only before that rescan adds the new file; merging two
+  existing rows is not built.
+- **Quick rescans miss files changed in place** on a share, because the
+  folder's time doesn't change. Every fourth scheduled rescan is a full one
+  to catch them. They also don't reread Phase 0 rows.
+- **A share that comes back** isn't rescanned at once; the next scheduled
+  run does it, or `Watcher::rescanScheduledNow()`.
+- **Picture files changing** (a new `cover.jpg`) don't wake the watcher, and
+  the artwork cache has no eviction or orphan cleanup.
+- **Cancel:** `Watcher::stop()` cancels a running rescan; nothing else does.
+- **`omamp watch` was tested by hand only.** The `Watcher` class has tests.
+- **The image provider is not registered** in the window yet; that is 1A's
+  `main.cpp` (one line, below).
+
+### What the window needs to know
+
+**Watcher.**
+
+```cpp
+#include "watcher.h"
+Watcher watcher;                        // default library; Watcher(dbPath, resolver) in tests
+watcher.start();                        // after the library opens; reload() after adding a root
+QObject::connect(&watcher, &Watcher::libraryChanged, ...);   // reload the visible page
+QObject::connect(&watcher, &Watcher::rescanStarted, ...);    // (kind, folders) for the jobs strip
+QObject::connect(&watcher, &Watcher::rescanFinished, ...);   // ScanResult::toJson() + "kind"
+QObject::connect(&watcher, &Watcher::watchLimitReached, ...); // (watched, limit): say so in the window
+engine.rootContext()->setContextProperty("watcher", &watcher);
+```
+
+QML properties: `running`, `busy`, `degraded`, `watchedFolders`,
+`localRoots`, `networkRoots`, `scheduledRoots`. Invokables: `reload()`,
+`rescanScheduledNow()`, `rescanFolders(folders, recursive)`. Signals also
+include `foldersChanged(folders)` (a debounced batch, before its rescan) and
+`busyChanged()`. `rescanStarted`'s kind is `changes`, `scheduled` or
+`overflow`. Settings: `setDebounce(ms)`, `setMaxDelay(ms)`,
+`setNetworkInterval(seconds)` (0 is off), `setMaxWatches(n)`,
+`setAutoRescan(bool)`.
+
+**Pictures in QML.**
+
+```cpp
+#include "artprovider.h"
+engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider);   // "omamp-art"
+```
+
+```qml
+Image { source: "image://omamp-art/album/" + albumId + "/256"; asynchronous: true }
+Image { source: "image://omamp-art/track/" + trackId + "/96" }
+Image { source: "image://omamp-art/album/" + albumId; sourceSize.width: 600 }
+```
+
+Sizes snap to 96, 256 or 600. A missing picture sets `status` to
+`Image.Error`; show a placeholder. Text after `?` is ignored, so
+`…/256?v=2` reloads a picture that changed. Pictures are made on two
+low-priority threads, each with its own library connection.
+
+From C++: `ArtworkCache(library).albumArtwork(albumId, 256)` or
+`.trackArtwork(trackId, 96)` gives a file path (empty when there is none).
+`ArtworkPrefetch prefetch; prefetch.start(256);` makes the rest in the
+background and emits `finished(made)`.
+
+**Scanner additions.** `Scanner::scan(roots, Scanner::Mode::ChangedFolders)`,
+`rescanAll(mode)`, `rescanFolders({{path, recursive}})`, `locate(folder)`,
+`libraryRoots(library)` (path, kind, fs type, volume, online). `ScanResult`
+adds `moved`, `movedPaths`, `foldersListed`, `foldersSkipped` and
+`changedLibrary()`.
+
+**New columns for the query language** (1B): `tracks.has_embedded_art`,
+`has_lyrics`, `tag_rating`, `tag_play_count`, `mb_release_group_id`,
+`mb_album_artist_id`; `bpm` and `compilation` are now filled. Fields such
+as `art:none` or `lyrics:yes` for Files to Edit can read these.

@@ -5,6 +5,12 @@
 #include "query.h"
 #include "scanner.h"
 #include "volumes.h"
+#include "artwork.h"
+#include "watcher.h"
+
+#include <QSocketNotifier>
+#include <csignal>
+#include <sys/socket.h>
 
 #include <QCoreApplication>
 #include <QJsonArray>
@@ -17,7 +23,8 @@ namespace Cli {
 
 namespace {
 
-const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", "version", "--version"};
+const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", "version", "--version",
+                               "watch", "locate", "art"};
 
 const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp open [files or folders...]  the same, for names that look like commands
@@ -25,6 +32,11 @@ const char *usage = R"(Usage: omamp [files or folders...]      open the player
                                          with no folder, rescan every library folder
        omamp query <text...>             search the library
        omamp stats                       count what is in the library
+       omamp watch                       watch the library folders and rescan what changes
+                                         (in the foreground; Ctrl+C stops)
+       omamp locate <folder>             find missing tracks that moved into a folder
+       omamp art album|track <id>        print the path of a picture (made if needed)
+       omamp art all                     make pictures for every album not done yet
 
 Options:
   --json         print JSON on stdout
@@ -35,6 +47,10 @@ Options:
   --seed <n>     query: the seed for sort:random (default: a new one each run)
   --explain      query: print the parsed query and its SQL instead of running it
   --workers <n>  scan: threads reading tags (default 4 to 8)
+  --quick        scan: skip folders whose modification time hasn't changed
+  --interval <s> watch: seconds between rescans of network folders (default 900)
+  --dry-run      watch: print changes without rescanning
+  --size <px>    art: 96, 256 or 600 (default 256)
 
 Query examples:
   omamp query neon coast
@@ -55,6 +71,10 @@ struct Options {
     bool count = false;
     bool explain = false;
     qint64 seed = -1;
+    int interval = 900;
+    int size = 256;
+    bool quick = false;
+    bool dryRun = false;
     QStringList rest;
 };
 
@@ -90,7 +110,8 @@ int scan(Library &library, const Options &o, const VolumeResolver &resolver, QTe
     Scanner scanner(library, resolver, &job);
     if (o.workers > 0)
         scanner.setWorkers(o.workers);
-    const ScanResult r = o.rest.isEmpty() ? scanner.rescanAll() : scanner.scan(o.rest);
+    const Scanner::Mode mode = o.quick ? Scanner::Mode::ChangedFolders : Scanner::Mode::Full;
+    const ScanResult r = o.rest.isEmpty() ? scanner.rescanAll(mode) : scanner.scan(o.rest, mode);
     if (progress)
         err << "\r" << QString(60, ' ') << "\r" << Qt::flush;
     if (!r.ok)
@@ -106,6 +127,10 @@ int scan(Library &library, const Options &o, const VolumeResolver &resolver, QTe
                    .arg(r.unchanged)
                    .arg(r.missing)
             << Qt::endl;
+        if (r.moved)
+            out << QString("%1 moved files kept their tracks.").arg(r.moved) << Qt::endl;
+        if (r.foldersSkipped)
+            out << QString("%1 unchanged folders were not listed.").arg(r.foldersSkipped) << Qt::endl;
         if (r.failed)
             out << (r.failed == 1 ? QString("1 file could not be read; it was added by its file name.")
                                   : QString("%1 files could not be read; they were added by their file names.")
@@ -255,6 +280,147 @@ int stats(Library &library, const Options &o, const VolumeResolver &resolver, QT
     return 0;
 }
 
+// Ctrl+C and SIGTERM end `omamp watch` through the event loop, so the
+// watcher stops cleanly and the library closes.
+int signalPipe[2] = {-1, -1};
+
+void onSignal(int) {
+    const char c = 1;
+    [[maybe_unused]] auto n = ::write(signalPipe[1], &c, 1);
+}
+
+QString summary(const QJsonObject &r) {
+    QStringList parts;
+    for (const char *key : {"added", "updated", "moved", "missing", "failed"})
+        if (r.value(key).toInt())
+            parts << QString("%1 %2").arg(r.value(key).toInt()).arg(key);
+    if (parts.isEmpty())
+        parts << "nothing changed";
+    return parts.join(", ");
+}
+
+int watch(const Options &o, const VolumeResolver &resolver, QTextStream &out, QTextStream &err) {
+    if (!QCoreApplication::instance())
+        return failWith(o, out, err, "watch needs an event loop");
+    Watcher watcher(o.db, resolver);
+    watcher.setNetworkInterval(o.interval);
+    watcher.setAutoRescan(!o.dryRun);
+    if (o.workers > 0)
+        watcher.setWorkers(o.workers);
+    auto line = [&](const QJsonObject &event) {
+        out << QString::fromUtf8(QJsonDocument(event).toJson(QJsonDocument::Compact)) << Qt::endl;
+    };
+    QObject::connect(&watcher, &Watcher::foldersChanged, [&](const QStringList &folders) {
+        if (o.json)
+            line({{"event", "changed"}, {"folders", QJsonArray::fromStringList(folders)}});
+        else
+            for (const QString &folder : folders)
+                out << "changed  " << folder << Qt::endl;
+    });
+    QObject::connect(&watcher, &Watcher::rescanFinished, [&](const QJsonObject &r) {
+        if (o.json) {
+            QJsonObject e = r;
+            e["event"] = "rescanned";
+            line(e);
+            return;
+        }
+        out << "rescan   " << r.value("kind").toString() << ": " << summary(r) << " ("
+            << r.value("elapsed_ms").toInt() << " ms)" << Qt::endl;
+        for (const QJsonValue &m : r.value("moved_paths").toArray())
+            out << "moved    " << m.toString() << Qt::endl;
+        if (!r.value("ok").toBool(true))
+            err << "omamp: " << r.value("error").toString() << Qt::endl;
+    });
+    QObject::connect(&watcher, &Watcher::watchLimitReached, [&](int watched, int limit) {
+        err << "omamp: the watch limit (" << limit << ") ran out after " << watched
+            << " folders; the rest are rescanned every " << o.interval << " s" << Qt::endl;
+    });
+    QString error;
+    if (!watcher.start(&error) && !error.isEmpty())
+        err << "omamp: " << error << Qt::endl;
+    if (o.json) {
+        line({{"event", "watching"},
+              {"folders", watcher.watchedFolders()},
+              {"local_roots", QJsonArray::fromStringList(watcher.localRoots())},
+              {"scheduled_roots", QJsonArray::fromStringList(watcher.scheduledRoots())},
+              {"degraded", watcher.isDegraded()}});
+    } else {
+        out << "Watching " << watcher.watchedFolders() << " folders in " << watcher.localRoots().size()
+            << " local library folders." << Qt::endl;
+        for (const QString &root : watcher.scheduledRoots())
+            out << "Rescanning every " << o.interval << " s (not watched): " << root << Qt::endl;
+        if (watcher.localRoots().isEmpty() && watcher.scheduledRoots().isEmpty())
+            out << "The library has no folders online. Add one with: omamp scan <folder>" << Qt::endl;
+        out << "Press Ctrl+C to stop." << Qt::endl;
+    }
+
+    if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, signalPipe) != 0)
+        return failWith(o, out, err, "can't set up the signal handler");
+    QSocketNotifier stopper(signalPipe[0], QSocketNotifier::Read);
+    QObject::connect(&stopper, &QSocketNotifier::activated, QCoreApplication::instance(), &QCoreApplication::quit);
+    std::signal(SIGINT, onSignal);
+    std::signal(SIGTERM, onSignal);
+    QCoreApplication::exec();
+    std::signal(SIGINT, SIG_DFL);
+    std::signal(SIGTERM, SIG_DFL);
+    watcher.stop();
+    ::close(signalPipe[0]);
+    ::close(signalPipe[1]);
+    if (!o.json)
+        out << "Stopped." << Qt::endl;
+    return 0;
+}
+
+int locate(Library &library, const Options &o, const VolumeResolver &resolver, QTextStream &out, QTextStream &err) {
+    if (o.rest.size() != 1)
+        return failWith(o, out, err, "locate needs one folder, for example: omamp locate /mnt/music");
+    Scanner scanner(library, resolver);
+    const LocateResult r = scanner.locate(o.rest.first());
+    if (!r.ok)
+        return failWith(o, out, err, r.error);
+    if (o.json) {
+        out << json(r.toJson()) << Qt::flush;
+        return 0;
+    }
+    for (const QString &m : r.located)
+        out << "found    " << m << '\n';
+    out << QString("Looked at %1 files: found %2 of %3 missing tracks; %4 still missing.")
+               .arg(r.searched)
+               .arg(r.located.size())
+               .arg(r.missingBefore)
+               .arg(r.missingAfter)
+        << Qt::endl;
+    return 0;
+}
+
+int art(Library &library, const Options &o, QTextStream &out, QTextStream &err) {
+    ArtworkCache cache(library);
+    const QString what = o.rest.value(0);
+    if (what == "all") {
+        const int made = cache.prefetch(o.size);
+        if (o.json)
+            out << json({{"ok", true}, {"made", made}, {"cache", cache.cacheDir()}}) << Qt::flush;
+        else
+            out << "Pictures for " << made << " albums are in " << cache.cacheDir() << Qt::endl;
+        return 0;
+    }
+    bool ok = false;
+    const qint64 id = o.rest.value(1).toLongLong(&ok);
+    if ((what != "album" && what != "track") || !ok)
+        return failWith(o, out, err, "art needs album <id>, track <id> or all");
+    const QString path =
+        cache.artworkFor(what == "album" ? ArtworkCache::Kind::Album : ArtworkCache::Kind::Track, id, o.size);
+    if (path.isEmpty())
+        return failWith(o, out, err,
+                        cache.lastError().isEmpty() ? QString("%1 %2 has no picture").arg(what).arg(id)
+                                                    : cache.lastError());
+    if (o.json)
+        out << json({{"ok", true}, {"path", path}, {"size", ArtworkCache::snapSize(o.size)}}) << Qt::flush;
+    else
+        out << path << Qt::endl;
+    return 0;
+}
+
 } // namespace
 
 bool isCommand(const QString &first) { return commands.contains(first); }
@@ -280,7 +446,7 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         else if (a == "--db") {
             if (!value(&o.db))
                 return failWith(o, out, err, "--db needs a path");
-        } else if (a == "--limit" || a == "--workers" || a == "--offset" || a == "--seed") {
+        } else if (a == "--limit" || a == "--workers" || a == "--offset" || a == "--seed" || a == "--interval" || a == "--size") {
             bool ok = false;
             const qint64 n = value(&v) ? v.toLongLong(&ok) : 0;
             if (!ok || n < 0 || n > 2147483647LL)
@@ -291,8 +457,16 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
                 o.workers = int(n);
             else if (a == "--offset")
                 o.offset = int(n);
+            else if (a == "--interval")
+                o.interval = int(n);
+            else if (a == "--size")
+                o.size = int(n);
             else
                 o.seed = n;
+        } else if (a == "--quick") {
+            o.quick = true;
+        } else if (a == "--dry-run") {
+            o.dryRun = true;
         } else if (a == "--") {
             o.rest += arguments.mid(i + 1);
             break;
@@ -330,6 +504,15 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         return query(library, o, volumes, out, err);
     if (command == "stats")
         return stats(library, o, volumes, out);
+    if (command == "locate")
+        return locate(library, o, volumes, out, err);
+    if (command == "art")
+        return art(library, o, out, err);
+    if (command == "watch") {
+        // The watcher opens its own connections; this one isn't needed.
+        library.close();
+        return watch(o, volumes, out, err);
+    }
     return failWith(o, out, err, "Unknown command " + command);
 }
 

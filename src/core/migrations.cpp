@@ -270,10 +270,40 @@ static const QStringList version2 = {
     "INSERT INTO tracks_fts (tracks_fts) VALUES ('rebuild')",
 };
 
+// Phase 1C: more from the tags, moved-file identity and the artwork cache.
+//
+// - tag_version records which TagReader read a row. Rows read before this
+//   step are 0, so the next scan reads them again once (even unchanged) to
+//   pick up the new fields; after that a rescan is stat-only again.
+// - tag_rating and tag_play_count keep what the file itself says. The
+//   library's own rating and play_count are filled from them only while
+//   empty, and only when the file's value is new, so a rating the user
+//   cleared in Omamp is not brought back by every rescan.
+// - quick_hash is a hash of 64 KiB from the middle of the file, which
+//   identifies a moved file even when its tags are empty.
+// - albums.art_checked is when the album was last searched for artwork; NULL
+//   means look again (the scanner clears it when the album's tracks change).
+static const QStringList version3 = {
+    "ALTER TABLE tracks ADD COLUMN tag_version INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tracks ADD COLUMN has_embedded_art INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tracks ADD COLUMN has_lyrics INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tracks ADD COLUMN mb_release_group_id TEXT",
+    "ALTER TABLE tracks ADD COLUMN mb_album_artist_id TEXT",
+    "ALTER TABLE tracks ADD COLUMN tag_rating INTEGER",
+    "ALTER TABLE tracks ADD COLUMN tag_play_count INTEGER",
+    "ALTER TABLE tracks ADD COLUMN quick_hash TEXT",
+    "CREATE INDEX tracks_size ON tracks(size)",
+    "CREATE INDEX tracks_quick_hash ON tracks(quick_hash) WHERE quick_hash IS NOT NULL",
+    "ALTER TABLE albums ADD COLUMN mb_release_group_id TEXT",
+    "ALTER TABLE albums ADD COLUMN art_checked INTEGER",
+    "ALTER TABLE artwork ADD COLUMN added INTEGER",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
         {2, "trigram search index", version2},
+        {3, "tag extras, moved files, artwork cache", version3},
     };
     return all;
 }

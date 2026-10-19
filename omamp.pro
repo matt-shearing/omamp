@@ -11,12 +11,14 @@ include(src/cli/cli.pri)
 INCLUDEPATH += src/app
 
 HEADERS += \
+    src/app/artprovider.h \
     src/app/mpris.h \
     src/app/portal.h \
     src/app/theme.h \
     src/app/translator.h
 
 SOURCES += \
+    src/app/artprovider.cpp \
     src/app/main.cpp \
     src/app/mpris.cpp \
     src/app/portal.cpp \

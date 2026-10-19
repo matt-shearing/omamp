@@ -1,5 +1,6 @@
 #include "librarytree.h"
 
+#include "audit.h"
 #include "query.h"
 
 #include <QCollator>
@@ -62,6 +63,8 @@ void LibraryTree::setDatabase(const QSqlDatabase &db) {
     m_nodes = topLevel();
     endResetModel();
     emit countChanged();
+    if (filesToEditOpen())
+        emit auditCountsWanted();
 }
 
 int LibraryTree::rowCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : m_nodes.size(); }
@@ -69,7 +72,7 @@ int LibraryTree::rowCount(const QModelIndex &parent) const { return parent.isVal
 QHash<int, QByteArray> LibraryTree::roleNames() const {
     return {{LabelRole, "label"},           {DepthRole, "depth"}, {ExpandableRole, "expandable"},
             {ExpandedRole, "expanded"},     {TrackCountRole, "trackCount"}, {DimRole, "dim"},
-            {KindRole, "kind"},             {KeyRole, "key"}};
+            {KindRole, "kind"},             {KeyRole, "key"},  {DescriptionRole, "description"}};
 }
 
 QVariant LibraryTree::data(const QModelIndex &index, int role) const {
@@ -86,6 +89,7 @@ QVariant LibraryTree::data(const QModelIndex &index, int role) const {
     case DimRole: return n.dim;
     case KindRole: return n.kind;
     case KeyRole: return n.key;
+    case DescriptionRole: return n.description;
     }
     return {};
 }
@@ -120,6 +124,7 @@ QVector<LibraryTree::Node> LibraryTree::topLevel() const {
     group("composers", tr("Composer"));
     group("locations", tr("Location"));
     group("playlists", tr("Playlists"));
+    group("filestoedit", tr("Files to Edit"));
     return out;
 }
 
@@ -418,6 +423,21 @@ QVector<LibraryTree::Node> LibraryTree::children(const Node &parent) const {
         }
     } else if (parent.kind == "folder") {
         out = folderChildren(parent);
+    } else if (parent.key == "filestoedit") {
+        // Duplicates first, then every check. A check that finds nothing
+        // stays, dimmed, so the list doesn't change shape as things are fixed.
+        Node dup = make("duplicates", "duplicates", tr("Duplicates"), -1, "0", {});
+        dup.description = tr("The same song more than once, by tags, by content or by sound");
+        out << dup;
+        for (const Audits::Audit &a : Audits::audits()) {
+            const Query::Compiled c = Audits::compile(a);
+            Node n = make("audit", "audit:" + a.id, a.title, m_auditCounts.value(a.id, -1), c.ok() ? c.where : "0",
+                          c.params);
+            n.description = a.description;
+            n.value = a.id;
+            n.dim = m_auditCounts.contains(a.id) && m_auditCounts.value(a.id) == 0;
+            out << n;
+        }
     } else if (parent.key == "playlists") {
         out << make("nowplaying", "nowplaying", tr("Now Playing"), -1, "0", {});
         if (!q.exec("SELECT p.id, p.name, p.kind, p.query FROM playlists p WHERE p.kind != 'folder' "
@@ -458,6 +478,29 @@ void LibraryTree::expand(int row) {
         m_nodes.insert(row + 1 + i, kids[i]);
     endInsertRows();
     emit countChanged();
+    // (n is gone: the inserts may have moved the vector.)
+    if (m_nodes[row].key == QLatin1String("filestoedit"))
+        emit auditCountsWanted();
+}
+
+bool LibraryTree::filesToEditOpen() const {
+    const int row = rowOfKey("filestoedit");
+    return row >= 0 && m_nodes[row].expanded;
+}
+
+void LibraryTree::setAuditCounts(const QHash<QString, qint64> &counts) {
+    m_auditCounts = counts;
+    for (int row = 0; row < m_nodes.size(); ++row) {
+        Node &n = m_nodes[row];
+        if (n.kind != QLatin1String("audit"))
+            continue;
+        const QString id = n.value.toString();
+        if (!counts.contains(id))
+            continue;
+        n.count = counts.value(id);
+        n.dim = n.count == 0;
+        emit dataChanged(index(row), index(row), {TrackCountRole, DimRole});
+    }
 }
 
 void LibraryTree::collapse(int row) {
@@ -527,4 +570,6 @@ void LibraryTree::reload() {
     }
     endResetModel();
     emit countChanged();
+    if (filesToEditOpen())
+        emit auditCountsWanted();
 }

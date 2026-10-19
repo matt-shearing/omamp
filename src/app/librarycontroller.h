@@ -5,6 +5,8 @@
 #include <QPointer>
 #include <QStringList>
 #include <QThread>
+#include <QVariantList>
+#include <functional>
 #include <memory>
 
 #include "albumgridmodel.h"
@@ -14,6 +16,10 @@
 #include "tracklistmodel.h"
 
 #include "portal.h"
+#include "duplicatesmodel.h"
+#include "organisemodel.h"
+#include "tageditor.h"
+#include "tagfromname.h"
 class ArtworkPrefetch;
 class Job;
 class Library;
@@ -51,6 +57,18 @@ class LibraryController : public QObject {
     // trackInfo() and covers ("?v=") read again.
     Q_PROPERTY(int revision READ revision NOTIFY revisionChanged)
     Q_PROPERTY(bool artworkBusy READ artworkBusy NOTIFY artworkBusyChanged)
+    // Phase 2: the tag editor, organise preview, tag from file names and
+    // the duplicates view, each a model QML binds to.
+    Q_PROPERTY(TagEditor *tagEditor READ tagEditor CONSTANT)
+    Q_PROPERTY(OrganiseModel *organiser READ organiser CONSTANT)
+    Q_PROPERTY(TagFromNameModel *tagFromName READ tagFromName CONSTANT)
+    Q_PROPERTY(DuplicatesModel *duplicates READ duplicates CONSTANT)
+    // What Ctrl+Z and Ctrl+Shift+Z would do, in words ("tag edit of 2
+    // tracks"), or empty when there is nothing; refreshed by refreshUndo().
+    Q_PROPERTY(QString undoText READ undoText NOTIFY undoChanged)
+    Q_PROPERTY(QString redoText READ redoText NOTIFY undoChanged)
+    // The kind of the running job: scan, tag, organise, undo, duplicates, trash.
+    Q_PROPERTY(QString jobKind READ jobKind NOTIFY jobChanged)
 
 public:
     // An empty path means the default library (~/.local/share/omamp/library.db).
@@ -86,6 +104,39 @@ public:
     bool artworkBusy() const;
     // The window's connection (main thread only), once ready.
     Library *library() const { return m_library.get(); }
+    TagEditor *tagEditor() const { return m_tagEditor; }
+    OrganiseModel *organiser() const { return m_organiser; }
+    TagFromNameModel *tagFromName() const { return m_tagFromName; }
+    DuplicatesModel *duplicates() const { return m_duplicates; }
+    QString undoText() const { return m_undoText; }
+    QString redoText() const { return m_redoText; }
+    QString jobKind() const { return m_jobKind; }
+
+    // Work that writes to the library or the files runs here, one job at a
+    // time, on a worker thread with its own Library on the same file. work
+    // gets that Library and the Job (for progress and cancel); done runs on
+    // the window's thread with work's result. Returns false, with a message,
+    // when another job is running or the library won't open.
+    using JobWork = std::function<QJsonObject(Library &library, Job *job)>;
+    using JobDone = std::function<void(const QJsonObject &result)>;
+    bool runJob(const QString &kind, const QString &text, JobWork work, JobDone done);
+
+    // Tests fence every file the window writes, moves or trashes into this
+    // folder; the tag writer and organiser refuse anything outside it.
+    void setWriteSandbox(const QString &folder) { m_sandbox = folder; }
+    QString writeSandbox() const { return m_sandbox; }
+    // Test seam for "Move to trash": the default is QFile::moveToTrash, which
+    // uses the desktop's trash (~/.local/share/Trash or the disk's .Trash-uid).
+    void setTrashFunction(std::function<bool(const QString &path, QString *error)> trash) {
+        m_trash = std::move(trash);
+    }
+
+    // Dates as the window shows them. English gets "12 Jul 2026", which
+    // reads the same in Sydney and in Boston; other languages get their own
+    // short date with a four-digit year.
+    static QString dateText(const QDate &date);
+    Q_INVOKABLE QString formatDate(qint64 secondsSinceEpoch) const;
+    Q_INVOKABLE QString formatDateTime(qint64 secondsSinceEpoch) const;
 
     // Opens the library (once). Returns ready().
     Q_INVOKABLE bool activate();
@@ -129,6 +180,52 @@ public:
     // Makes album pictures in the background, so the grid fills in.
     Q_INVOKABLE void prefetchArtwork();
 
+    // The selected tracks' ids in list order (the cursor's when none are
+    // selected), for the tag editor, organise and tag from file names.
+    Q_INVOKABLE QVariantList selectedTrackIds() const;
+    // An album's tracks in disc and track order (the grid's chosen album).
+    Q_INVOKABLE QVariantList albumTrackIds(qint64 albumId) const;
+    // The Files to Edit checks, for the palette: [{id, title, description}].
+    Q_INVOKABLE QVariantList auditList() const;
+
+    // Undo (Ctrl+Z) the newest change still in effect: a tag edit, tags
+    // from file names, an organise, or a redo. Redo (Ctrl+Shift+Z) undoes
+    // the newest undo, until a new change is made. Both run as a job and
+    // say what they did in a toast. false when there is nothing to do.
+    Q_INVOKABLE bool undo();
+    Q_INVOKABLE bool redo();
+    // Undoes one batch from the history, whatever its age.
+    Q_INVOKABLE bool undoBatch(const QString &batch);
+    Q_INVOKABLE void refreshUndo();
+    // The journal for the Undo history view: batches newest first
+    // ({batch, kind, label, when, tracks, entries, undone, canUndo}), and one
+    // batch's changes ({track, title, field, oldValue, newValue, undone}).
+    Q_INVOKABLE QVariantList journalBatches(int limit = 200) const;
+    Q_INVOKABLE QVariantList journalEntries(const QString &batch) const;
+
+    // Takes tracks out of the library only; the files stay where they are
+    // (a rescan of their folder adds them back). Returns how many went.
+    Q_INVOKABLE int removeFromLibrary(const QVariantList &ids);
+    // Moves the tracks' files to the desktop's trash, as a job, and takes
+    // them out of the library. Never deletes anything outright.
+    Q_INVOKABLE bool moveToTrash(const QVariantList &ids);
+
+    // Counts the Files to Edit checks on a worker thread; the tree shows them.
+    Q_INVOKABLE void countAudits();
+
+    // Which batches Ctrl+Z and Ctrl+Shift+Z act on, worked out from the
+    // journal. A batch's depth is 0 for a change, 1 for its undo, 2 for the
+    // undo of that undo (a redo), and so on: Ctrl+Z takes the newest batch
+    // still in effect with an even depth; Ctrl+Shift+Z the newest with an
+    // odd depth, unless a new change (depth 0) came after it.
+    struct UndoTargets {
+        QString undo, redo;
+        QString undoLabel, redoLabel;
+    };
+    static UndoTargets undoTargets(Library &library);
+    // "tag edit of 2 tracks (genre)", "organise of 12 files".
+    static QString describeBatch(Library &library, const QString &batch);
+
     // Most tracks "play now" hands the player. Beyond this, the list from
     // the chosen row onward is taken, so Now Playing stays quick to save.
     static constexpr int maxPlayNow = 5000;
@@ -147,10 +244,21 @@ signals:
     void searchSet(const QString &text);
     // The list should scroll to this row and take the focus.
     void revealRow(int row);
+    void undoChanged();
+    // A short note for the toast over the window ("Undone: tag edit of 2 tracks").
+    void toast(const QString &text);
+    // A job started by runJob() finished (after its done callback ran).
+    void jobFinished(const QString &kind, const QJsonObject &result);
+    // The audit counts arrived (tests wait on this).
+    void auditsCounted();
+    // Tracks left the library (removed, or their files trashed).
+    void tracksRemoved();
 
 private:
     void startScan(const QStringList &folders);
     void onScanFinished(const QJsonObject &result);
+    void finishJob(const QJsonObject &result);
+    bool runUndo(const QString &batch, const QString &label, bool redo);
     void setMessage(const QString &text);
     void updatePlayingTrack();
     void startWatcher();
@@ -174,6 +282,17 @@ private:
     QString m_error, m_message, m_jobText;
     double m_jobProgress = -1;
     int m_currentNode = 0;
-    QThread *m_scanThread = nullptr;
+    QThread *m_scanThread = nullptr; // the running job's thread (any kind, not just scans)
     Job *m_job = nullptr;
+    QString m_jobKind;
+    JobDone m_jobDone;
+    QString m_sandbox;
+    std::function<bool(const QString &, QString *)> m_trash;
+    QString m_undoText, m_redoText;
+    TagEditor *m_tagEditor = nullptr;
+    OrganiseModel *m_organiser = nullptr;
+    TagFromNameModel *m_tagFromName = nullptr;
+    DuplicatesModel *m_duplicates = nullptr;
+    QThread *m_auditThread = nullptr;
+    bool m_auditAgain = false;
 };

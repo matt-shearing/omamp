@@ -17,7 +17,9 @@ class QQuickWindow;
 //   OMAMP_DEMO="expand:artists;node:artist:12;select:3;queue:0;filter:coast;sort:1"
 //       steps run once the window is up: open a tree node (by key), choose
 //       a node, select a row, add a row to Now Playing (not played), search,
-//       sort by a column. Also: browse:<pane>:<value> (browse+ adds with
+//       sort by a column. Also: action:<id> (any palette action), mask:<text>
+//       (organise), tagset:<field>=<value> (the tag editor), audits (count
+//       Files to Edit), browse:<pane>:<value> (browse+ adds with
 //       Ctrl), grid, info and browser (toggle them), album:<row> (choose a
 //       grid tile), current:<row> (move the cursor), palette:<text>.
 //   OMAMP_SCREENSHOT=<file.png>   save the window there, then quit

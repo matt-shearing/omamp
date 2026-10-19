@@ -88,6 +88,55 @@ window size for each.
   your selection and your place. Shares on the network are checked every 15
   minutes. The status line says what is watched.
 
+### Tags, files and tidying up
+
+- **Edit tags** (`Ctrl+E`, or right-click **Edit tags…**) opens the tag
+  editor for the selected tracks: title, artists, album artist, album,
+  genres, composers, year, track and disc numbers, BPM, comment, rating and
+  five custom fields, with tabs for the artwork and the lyrics. With several
+  tracks chosen, a field they disagree on shows **‹keep›**: each track keeps
+  its own value unless you type a new one, and the **✕** empties it in all of
+  them. Edited fields are marked. **Save** (`Ctrl+Enter`) writes only what you
+  changed, safely (to a copy that replaces the file only once it checks
+  out), and any file that fails is listed with the reason. The artwork tab
+  shows the picture in the file, or the folder's `cover.jpg`, and takes a
+  new one from a file, from the clipboard, or removes it.
+- **`F2`** edits the title of the track under the cursor in place.
+- **Organise files** (`Ctrl+Shift+O`) renames and moves the selected files by
+  a mask such as `<Album Artist>/<Album> (<Year>)/<Track#:2> <Title>`, with a
+  preview of every old and new place before anything moves. Type `<` or `$`
+  for a list of fields and functions; a mistake in the mask says where it is.
+  Double-click a new place to change it by hand. A name that is taken shows
+  as a conflict and that file is left where it is; existing files are never
+  replaced. Pictures and cue sheets can go with their folder, and folders
+  left empty can be removed. [docs/masks.md](docs/masks.md) has the mask
+  language.
+- **Tag from file names** (right-click) reads tags out of the files' names
+  and folders with a pattern such as `<Track#> - <Title>`, showing what each
+  file would get before it writes anything.
+- **Undo** (`Ctrl+Z`) takes back the last tag edit, tags from file names or
+  organise, files and library together, and says what it undid; `Ctrl+Shift+Z`
+  does it again. **Undo history** (from `Ctrl+K`) lists every change with
+  what it changed, and can undo any of them.
+- **Files to Edit**, at the bottom of the tree, lists the checks MediaMonkey
+  has, with how many tracks each finds: unknown title, artist, album, genre
+  or year, missing artwork, album artist, year or genre differing within an
+  album, track-number gaps, not levelled, dead links, offline and more.
+  Choose one to see its tracks.
+- **Duplicates**, under Files to Edit, finds the same song more than once:
+  by artist and title, by identical files, or by how it sounds (Chromaprint's
+  `fpcalc`, so an MP3 and a FLAC of one recording match). Each group
+  suggests the copy to keep and says why. Tick the others to take them out
+  of the library, or move their files to the desktop's trash, after asking.
+  Nothing is ever deleted outright.
+- Dates read the same everywhere: "12 Jul 2026", not "7/12/26".
+
+![The tag editor, three tracks at once](docs/tag-editor.png)
+
+![Organise files: the preview](docs/organise.png)
+
+![Files to Edit, with the info panel](docs/files-to-edit.png)
+
 ![The album grid with the info panel](docs/album-grid.png)
 
 ![The command palette](docs/command-palette-live.png)
@@ -149,6 +198,13 @@ instead of the playlist, and these keys work too:
 | `G` | Album covers instead of the track list, and back |
 | `Enter`, `Ctrl+Enter` in the grid | Play the album; show its tracks |
 | `I` | Show or hide the info panel |
+| `Ctrl+E` | Edit the tags of the selected tracks (in the grid, the chosen album's) |
+| `F2` | Edit the title of the track under the cursor; `Enter` saves, `Esc` leaves it |
+| `Ctrl+Shift+O` | Organise files: rename and move the selected tracks by a mask |
+| `Ctrl+Z` | Undo the last tag edit or organise |
+| `Ctrl+Shift+Z` or `Ctrl+Y` | Redo what was undone |
+| `Ctrl+Enter` or `Ctrl+S` in an editor | Save, organise or tag |
+| `Esc` in an editor | Close it (asking first if there are unsaved changes) |
 
 ## Build and install
 
@@ -167,8 +223,7 @@ Omarchy's own apps are built.
 
 The full plan is in [docs/plan/](docs/plan/). In short:
 
-- **Tagging:** batch editing, MusicBrainz and AcoustID lookups, artwork and lyrics.
-- **Organising:** rename and move files by a pattern, with a preview before anything moves.
+- **Tagging:** MusicBrainz and AcoustID lookups, and lyrics from the web.
 - **NAS libraries:** SMB, NFS or a Navidrome/Subsonic server, with offline tracks kept in the library.
 - **The 2000s comforts:** Auto-DJ, party mode, auto-playlists, ReplayGain, play counts and ratings.
 

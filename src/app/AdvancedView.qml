@@ -26,14 +26,21 @@ FocusScope {
     signal toggleBrowser()
     signal toggleInfo()
     signal toggleGrid()
+    // A command from a menu (edit-tags, organise, tag-from-filename), run by the window.
+    signal action(string id)
+    signal confirm(string title, string text, string confirmText, var action)
 
     readonly property bool nowPlaying: library.currentKind === "nowplaying"
-    readonly property bool showingBrowser: browserVisible && !nowPlaying
-    readonly property bool showingGrid: gridVisible && !nowPlaying
+    // Files to Edit > Duplicates shows its own view instead of the list.
+    readonly property bool duplicatesNode: library.currentKind === "duplicates"
+    readonly property bool special: nowPlaying || duplicatesNode
+    readonly property bool showingBrowser: browserVisible && !special
+    readonly property bool showingGrid: gridVisible && !special
 
     function focusSearch() { search.forceActiveFocus(); search.selectAll() }
     function focusList() {
         if (nowPlaying) nowPlayingList.forceActiveFocus()
+        else if (duplicatesNode) duplicatesView.forceActiveFocus()
         else if (showingGrid) grid.forceActiveFocus()
         else table.forceActiveFocus()
     }
@@ -44,6 +51,9 @@ FocusScope {
     function currentBrowserHeight() { return Math.round(browserPanes.height) }
     function currentInfoWidth() { return Math.round(info.width) }
     function jumpToEnd() { table.jumpToEnd() }
+    // F2: the title of the track under the cursor, edited in place.
+    function editTitle() { if (!special && !showingGrid) table.editTitle() }
+    readonly property bool listShowing: !special && !showingGrid
     // Puts text in the search box and searches at once.
     function setSearchText(text) {
         search.text = text
@@ -213,7 +223,7 @@ FocusScope {
                         border.color: Qt.alpha(theme.accent, 0.7)
                     }
                     implicitHeight: 34; topInset: 0; bottomInset: 0
-                    enabled: index === 2 || !view.nowPlaying
+                    enabled: index === 2 || !view.special
                     ToolTip.visible: hovered
                     ToolTip.delay: 600
                     ToolTip.text: modelData.tip
@@ -226,7 +236,7 @@ FocusScope {
                 flat: true
                 font.pixelSize: 13
                 implicitHeight: 34; topInset: 0; bottomInset: 0
-                visible: !view.nowPlaying && !view.showingGrid
+                visible: !view.special && !view.showingGrid
                 onClicked: table.openColumns(columnsButton)
             }
         }
@@ -280,9 +290,10 @@ FocusScope {
                     TrackTable {
                         id: table
                         anchors.fill: parent
-                        visible: !view.nowPlaying && !view.showingGrid
+                        visible: !view.special && !view.showingGrid
                         onLeave: view.showingBrowser ? view.focusBrowser() : view.focusTree()
                         onLayoutEdited: view.layoutEdited()
+                        onAction: (id) => view.action(id)
                     }
                     AlbumGrid {
                         id: grid
@@ -302,6 +313,13 @@ FocusScope {
                         visible: view.nowPlaying
                         onLeave: view.focusTree()
                     }
+                    DuplicatesView {
+                        id: duplicatesView
+                        anchors.fill: parent
+                        visible: view.duplicatesNode
+                        onLeave: view.focusTree()
+                        onConfirm: (title, text, confirmText, action) => view.confirm(title, text, confirmText, action)
+                    }
                 }
             }
 
@@ -314,7 +332,7 @@ FocusScope {
                 chosenHeading: view.showingGrid ? qsTr("Chosen album, first track") : ""
                 // The track under the cursor, or the album chosen in the grid;
                 // 0 shows the track that is playing.
-                chosenTrack: view.nowPlaying ? 0
+                chosenTrack: view.special ? 0
                            : view.showingGrid ? (library.albumGrid.currentAlbum > 0 ? library.firstTrackOfAlbum(library.albumGrid.currentAlbum) : 0)
                            : library.tracks.currentRow >= 0 ? library.tracks.trackId(library.tracks.currentRow) : 0
             }

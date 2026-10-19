@@ -2428,3 +2428,214 @@ omamp lyrics <query> [--fetch] [--write lrc|tag] [--dry-run] [--json]
 omamp scrobble status | flush | login listenbrainz --token <t> | login lastfm [--complete] [--json]
 omamp net status | set <key> <value> | unset <key> | clear-cache [--json]
 ```
+
+## Phase 2 window: the tag editor, organise, undo, Files to Edit and duplicates (20 October 2026)
+
+The Phase 2 backend now has its window. `Ctrl+E` opens a tag editor for one
+track or many, with MediaMonkey's ‹keep› for fields the tracks disagree on,
+an Artwork tab and a Lyrics tab. `Ctrl+Shift+O` organises files with a live
+preview that can be edited row by row. Tags from file names has its own
+preview. `Ctrl+Z` and `Ctrl+Shift+Z` undo and redo any tag edit or organise,
+with a toast saying what; the palette opens an undo history. Files to Edit
+sits at the bottom of the tree with a count beside each check, and its
+Duplicates node finds the same song by tags, bytes or sound and can take
+copies out of the library or move them to the trash. Dates read "12 Jul
+2026". All tests pass. Nothing is pushed.
+
+![The tag editor](../tag-editor.png)
+
+### What was built
+
+```text
+src/app/librarycontroller.{h,cpp}   runJob(): any write runs on the job thread (scans use it too);
+                                    owns the four models below; F2/Files to Edit/undo plumbing
+src/app/librarycontroller_tidy.cpp  undo and redo targets, the journal for the history view,
+                                    remove from library, move to trash, audit counts, dates
+src/app/tageditor.{h,cpp}           the tag editor: tri-state fields, artwork, lyrics, save as a job
+src/app/organisemodel.{h,cpp}       the organise preview: plan, hand edits, conflicts, apply, undo
+src/app/tagfromname.{h,cpp}         tag from file names: pattern, live preview, apply
+src/app/duplicatesmodel.{h,cpp}     the duplicates view: groups with keeper and reason, ticks
+src/app/dates.h                     "12 Jul 2026" in English, the locale's date elsewhere
+src/app/librarytree.{h,cpp}         Files to Edit: Duplicates and one node per audit, with counts
+src/app/portal.{h,cpp}              the portal picker can pick one folder or picture files
+src/app/ToolSheet.qml               the frame every editor uses: title, body, buttons, Esc, Ctrl+Enter
+src/app/FormField.qml               a labelled field with ‹keep›, edited mark and ✕
+src/app/TagEditorSheet.qml, OrganiseSheet.qml, TagFromNameSheet.qml, UndoHistorySheet.qml,
+src/app/ConfirmSheet.qml, DuplicatesView.qml, PrimaryButton.qml, Toast.qml
+src/app/Main.qml, AdvancedView.qml, TrackTable.qml, JobsBar.qml, InfoPanel.qml, LibraryTreePane.qml
+tests/tidywindow_tests.cpp          the models on real files, and the window from the keyboard
+```
+
+**Jobs.** `LibraryController::runJob(kind, text, work, done)` runs `work`
+on a worker thread with its own `Library` and a `Job`, shows its progress
+and Cancel in the jobs bar, and calls `done` on the window's thread. Scans
+were moved onto it, so one job runs at a time; starting another says "Wait
+for the running job to finish". Tag edits, tags from file names, organise,
+undo, redo, the duplicate search (with fingerprinting first, by sound) and
+the trash all run there. Reading tags for the editor uses its own short
+thread, since it only reads.
+
+**Tag editor.** `TagEditor::load(ids)` reads each file with
+`TagWriter::currentValues` on a thread and keeps, per field, the distinct
+values. One value shows as text; several show as ‹keep›, with a tooltip of
+what the tracks have. Typing replaces the value for every track; typing a
+‹keep› field back to empty returns it to ‹keep›; the ✕ empties it for real.
+Typing a value every track already has is no edit. Edited fields carry an
+accent bar. Save sends only edited fields to `TagWriter::apply`, one batch;
+a file that fails is listed with its error and the edits stay for another
+try. Fields: title, artists, album artist, album, genres, composers,
+comment, year, track and total, disc and total, BPM, rating (half stars, or
+Unrated), custom 1 to 5 and lyrics. Artwork shows the first track's front
+cover, else the folder's `cover.jpg` (said so), notes when the tracks have
+different pictures, and takes a picture from the portal file picker, the
+clipboard (an image, or a picture file copied in the file manager), or
+removes them all. `F2` edits the title in place in the list and saves it as
+its own undoable batch.
+
+**Undo and redo.** The journal's batches form chains: an undo's source is
+`undo:<batch>`. A batch's depth is 0 for a change, 1 for its undo, 2 for the
+undo of that undo, and so on. `Ctrl+Z` undoes the newest batch still in
+effect with an even depth; `Ctrl+Shift+Z` (or `Ctrl+Y`) undoes the newest
+odd one, unless a new change came after it. So undo, undo, redo, redo works
+as in any editor, across tags and organise. The toast says "Undone: tag edit
+of 2 tracks (genre)". The Undo history sheet lists 200 batches, newest first,
+with their changes (old → new) and can undo any one.
+
+**Organise.** The model plans with `Organiser::plan` on the window's
+connection whenever the mask, destination or options settle for 150 ms. The
+table shows paths below their shared folder. A hand edit keeps the file's
+type and, given a bare name, its planned folder; it re-checks every row, so
+two rows with one name, or a name taken on disk, become **Conflict** and stay
+put (`Organiser::apply` only moves `move` and `renamed` rows). A folder's
+pictures stop following when its tracks no longer go to one place. After
+Apply the rows show Moved, Left alone or Failed, and Undo (or `Ctrl+Z`)
+puts everything back. The last mask is kept in the library's settings.
+
+**Files to Edit.** A group at the bottom of the tree: Duplicates, then each
+audit, its scope compiled by `Audits::compile`. Counts are made on a thread
+when the group opens and after every refresh; a check with none is dimmed
+rather than hidden. Each node has the audit's sentence as a tooltip.
+
+**Duplicates.** Choosing the node shows its own view. Artist and title,
+identical files, or sound (fpcalc, run as part of the job). Groups list the
+keeper first, marked, with "Keep the first: lossless (flac)" and so on.
+"Tick all but the keepers", then **Remove from library…** (database only;
+albums, artists and genres left empty go too) or **Move to trash…**
+(`QFile::moveToTrash`, the desktop's trash; the rows go once the files are
+there). Both ask first. Nothing is deleted.
+
+**Keys.** While any sheet is open, `win.sheetOpen` turns off every window
+shortcut, so letters typed or pressed in a sheet never play, skip or quit.
+`Esc` closes a sheet and asks first when there are unsaved edits;
+`Ctrl+Enter` (or `Ctrl+S`) saves. Closing a sheet puts the keys back on the
+list.
+
+**Palette.** New actions: Edit tags, Rename the track (F2), Organise files,
+Tag from file names, Undo, Redo, Undo history, Find duplicates (goes to the
+node and searches by artist and title), and "Files to Edit: …" for each of
+the sixteen checks. Selection actions are greyed when nothing is chosen.
+
+**Dates.** Matt's `LANG` and `LC_TIME` are `en_US.UTF-8` and Omarchy's
+language is English, so Qt formatted dates as 7/12/26. `Dates::text()`
+gives English "12 Jul 2026" (Australian English "12 July 2026"), which can't
+be misread either way, and other languages their own short date with a
+four-digit year. The list's Added column, the info panel and the undo
+history use it.
+
+### Test results
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 59ms      (player)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 456ms     (library)
+Totals: 24 passed, 0 failed, 0 skipped, 0 blacklisted, 21ms      (query)
+Totals: 8 passed, 0 failed, 0 skipped, 0 blacklisted, 71ms       (palette)
+Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 2508ms    (Phase 1C)
+Totals: 17 passed, 0 failed, 0 skipped, 0 blacklisted, 888ms     (library window models)
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 1438ms     (the window, offscreen)
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 3175ms     (Phase 1D window parts)
+Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 6ms       (masks)
+Totals: 21 passed, 0 failed, 0 skipped, 0 blacklisted, 1188ms    (Phase 2 backend)
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted, 523ms      (Phase 2 window models)
+Totals: 4 passed, 0 failed, 0 skipped, 0 blacklisted, 10788ms    (Phase 2 window, from the keyboard)
+```
+
+The new tests make their music with `ffmpeg` in temporary folders, and the
+controller's write sandbox (`setWriteSandbox`) fences the tag writer, the
+organiser and the trash into them; the trash itself is a test seam
+(`setTrashFunction`) that moves into the temporary folder. They cover: two
+tracks' genre and year edited in FLAC and MP3, the files and the library
+checked, then undo, redo and undo again, with the toast text and the undo
+and redo labels; a new edit ending redo; the history's five batches and
+their labels; artwork from the folder, from a file, removed, and lyrics;
+organise with the default mask's missing year and disc, a mask error's
+position, completions, a hand-edited name, two-row and on-disk conflicts,
+apply (the conflict stays), and undo back to the exact tree; tags from file
+names with a folder, a non-matching file, a bad pattern and undo; every
+Files to Edit count against `Audits::count` and the list each node shows;
+duplicates by content, remove from library (the file stays), trash (keepers
+stay), and a missing track. From the keyboard in the real window: `Ctrl+A`,
+`Ctrl+E`, typing "Q Jazz" into a field (the Q stays in the field),
+`Ctrl+Enter`, `Ctrl+Z` with its toast, `Ctrl+Shift+Z`, `F2` rename, the undo
+history from the palette, `Ctrl+Shift+O` and `Ctrl+Enter` to organise and
+`Ctrl+Z` to move back; and the palette to a Files to Edit check and to Find
+duplicates.
+
+### Screenshots
+
+`docs/tag-editor.png` (three tracks, two fields edited), `docs/organise.png`
+(the whole made-up library, with two copies renamed "(2)") and
+`docs/files-to-edit.png` ("Year differs within an album" with the info
+panel). They come from `tests/make-demo-library` plus two copied files and
+three tags changed with `omamp tag`, scanned into throwaway folders in the
+scratchpad and captured offscreen in software with `OMAMP_DEMO` and
+`OMAMP_SCREENSHOT`, in the Night Ride theme. New demo verbs: `action:<id>`
+(any palette action), `selectall`, `mask:<text>`, `tagset:<field>=<value>`
+and `audits`.
+
+### Decisions
+
+- **Sheets, not separate windows.** Each editor is a large modal panel over
+  the library in the theme (one main button filled with the accent), so
+  nothing opens a window of its own and every key stays in Omamp.
+- **‹keep› goes back by emptying.** Typing a mixed field empty returns it to
+  ‹keep› rather than blanking every track; the ✕ blanks on purpose.
+- **Zero-count checks are dimmed, not hidden**, so Files to Edit keeps its
+  shape as things are fixed.
+- **Ctrl+Shift+Z and Ctrl+Y both redo.** Redo stops at the next new change,
+  as editors do; older batches can still be undone from the history.
+- **Undoing an older batch from the history is allowed** and restores that
+  batch's old values even if later edits touched the same fields.
+- **One job at a time.** Scans, saves, organise, undo and the duplicate
+  search share one slot, so two writers never race on the same files.
+- **The default organise mask leaves out a missing year and disc**
+  (`$If(<Year>, (<Year>))`, `$If(<Disc#>,<Disc#>-)`); MediaMonkey's literal
+  example made "Embers ()/-01 Kindling". The literal form is still a preset's
+  pattern in spirit, and `docs/masks.md` shows both.
+- **In the album grid, Ctrl+E edits the chosen album's tracks.**
+- **Find duplicates from the palette searches straight away** by artist and
+  title (quick); content and sound wait for Find.
+- **English dates use month names**, whatever the region, as above.
+- **Remove from library also drops albums, artists and genres left empty**,
+  as a scan does.
+
+### Known gaps
+
+- **Not checked on screen or on Matt's library**; offscreen only, in Night
+  Ride and the default palette, with the made-up library.
+- **The editor reads every chosen file** before showing values. A thousand
+  tracks on a NAS takes a while ("Reading the tags…" shows); there is no
+  database-only fast path yet.
+- **The trash on a share** uses the share's `.Trash-<uid>` if the desktop
+  can make one, else fails per file with the reason; nothing falls back to
+  deleting.
+- **No "Remove from library" in the ordinary track list's menu** yet; it is
+  in the duplicates view only.
+- **Organise across library volumes** is planned and checked by the backend,
+  but the destination picker only offers folders; a destination outside the
+  library says so per row.
+- **The column header resize test fails** if the tests run with no session
+  bus at all (`DBUS_SESSION_BUS_ADDRESS` pointing nowhere); it passes in the
+  normal `bin/test` environment, and nothing in this phase touches the
+  header. Not investigated further.
+- **Translations**: the new strings are in English only, with English plural
+  forms in `src/app/i18n/en.json`.

@@ -17,6 +17,22 @@ FocusScope {
     readonly property var defaultWidths: [46, 180, 170, 180, 56, 110, 64, 80, 56, 88, 124]
     signal leave() // to the tree
     signal layoutEdited()
+    // A command from the menu, run by the window: edit-tags, tag-from-filename, organise.
+    signal action(string id)
+
+    // F2: edit the title of the track under the cursor in place. Enter
+    // saves it to the file (one undoable batch), Esc leaves it.
+    function editTitle() {
+        const row = tracks.currentRow
+        if (row < 0) return
+        showRow(row)
+        titleEditor.trackId = tracks.trackId(row)
+        titleEditor.row = row
+        titleInput.text = tracks.data(tracks.index(row, 1), Qt.DisplayRole)
+        titleEditor.visible = true
+        titleInput.forceActiveFocus()
+        titleInput.selectAll()
+    }
 
     function columnState() {
         const w = {}
@@ -295,7 +311,54 @@ FocusScope {
         MenuItem { text: qsTr("Play next"); onTriggered: library.queueSelection() }
         MenuItem { text: qsTr("Add to Now Playing"); onTriggered: library.appendSelection() }
         MenuSeparator { }
+        MenuItem { objectName: "menuEditTags"; text: qsTr("Edit tags…"); onTriggered: pane.action("edit-tags") }
+        MenuItem { text: qsTr("Tag from file names…"); onTriggered: pane.action("tag-from-filename") }
+        MenuItem { text: qsTr("Organise files…"); onTriggered: pane.action("organise") }
+        MenuSeparator { }
         MenuItem { text: qsTr("Show in folder"); onTriggered: library.showInFolder(pane.tracks.currentRow) }
+    }
+
+    // The in-place title editor (F2), over the Title cell.
+    Rectangle {
+        id: titleEditor
+        objectName: "titleEditor"
+        property int row: -1
+        property var trackId: 0
+        visible: false
+        z: 5
+        // Placed only while open: asking the table for column widths while a
+        // header edge is dragged would fight the resize.
+        x: visible ? (pane.hidden[0] ? 0 : table.columnWidth(0)) - table.contentX : 0
+        y: visible ? header.height + row * 24 - table.contentY : 0
+        width: visible ? Math.max(160, table.columnWidth(1)) : 0
+        height: 24
+        color: theme.c.darker_background
+        border.width: 1
+        border.color: theme.accent
+        function finish(save) {
+            if (!visible) return
+            visible = false
+            if (save) library.tagEditor.quickSet(trackId, "title", titleInput.text)
+            table.forceActiveFocus()
+        }
+        TextInput {
+            id: titleInput
+            objectName: "titleInput"
+            anchors { fill: parent; leftMargin: 8; rightMargin: 8 }
+            verticalAlignment: Text.AlignVCenter
+            font.pixelSize: 13
+            color: theme.c.bright_foreground
+            selectionColor: theme.c.selection
+            selectByMouse: true
+            clip: true
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { titleEditor.finish(true); event.accepted = true }
+                else if (event.key === Qt.Key_Escape) { titleEditor.finish(false); event.accepted = true }
+            }
+            // Every key belongs to the editor while it is open.
+            Keys.onShortcutOverride: (event) => event.accepted = true
+            onActiveFocusChanged: if (!activeFocus) titleEditor.finish(false)
+        }
     }
 
     Menu {

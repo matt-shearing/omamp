@@ -15,10 +15,14 @@ HEADERS += \
     src/app/artprovider.h \
     src/app/columnbrowser.h \
     src/app/devhooks.h \
+    src/app/duplicatesmodel.h \
     src/app/librarycontroller.h \
     src/app/librarytree.h \
     src/app/mpris.h \
+    src/app/organisemodel.h \
     src/app/portal.h \
+    src/app/tageditor.h \
+    src/app/tagfromname.h \
     src/app/theme.h \
     src/app/tracklistmodel.h \
     src/app/translator.h
@@ -28,11 +32,16 @@ SOURCES += \
     src/app/artprovider.cpp \
     src/app/columnbrowser.cpp \
     src/app/devhooks.cpp \
+    src/app/duplicatesmodel.cpp \
     src/app/librarycontroller.cpp \
+    src/app/librarycontroller_tidy.cpp \
     src/app/librarytree.cpp \
     src/app/main.cpp \
     src/app/mpris.cpp \
+    src/app/organisemodel.cpp \
     src/app/portal.cpp \
+    src/app/tageditor.cpp \
+    src/app/tagfromname.cpp \
     src/app/theme.cpp \
     src/app/tracklistmodel.cpp \
     src/app/translator.cpp

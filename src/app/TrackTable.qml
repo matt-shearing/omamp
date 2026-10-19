@@ -20,6 +20,10 @@ FocusScope {
     signal layoutEdited()
     // A command from the menu, run by the window: edit-tags, tag-from-filename, organise.
     signal action(string id)
+    // Tracks dragged out of the list: where the pointer is in the window,
+    // and where they were let go.
+    signal tracksDragged(point scenePos)
+    signal tracksDropped(point scenePos, var trackIds)
 
     // F2: edit the title of the track under the cursor in place. Enter
     // saves it to the file (one undoable batch), Esc leaves it.
@@ -311,9 +315,13 @@ FocusScope {
                     const p = mapToItem(dragProxy.parent, mouse.x, mouse.y)
                     dragProxy.x = p.x + 12
                     dragProxy.y = p.y + 4
+                    pane.tracksDragged(mapToItem(null, mouse.x, mouse.y))
                 }
                 onReleased: (mouse) => {
-                    if (dragProxy.active) dragProxy.finish()
+                    if (dragProxy.active) {
+                        pane.tracksDropped(mapToItem(null, mouse.x, mouse.y), dragProxy.trackIds)
+                        dragProxy.active = false
+                    }
                     else if (deferred) pane.tracks.select(cell.row, 0)
                     deferred = false
                 }
@@ -337,8 +345,7 @@ FocusScope {
         color: theme.c.muted
     }
 
-    // What is being dragged: the chosen tracks, under the pointer. Drop
-    // areas on playlist nodes read trackIds.
+    // What is being dragged: the chosen tracks, under the pointer.
     Rectangle {
         id: dragProxy
         property var trackIds: []
@@ -348,10 +355,6 @@ FocusScope {
             parent = pane.Window.contentItem
             active = ids.length > 0
         }
-        function finish() {
-            Drag.drop()
-            active = false
-        }
         visible: active
         z: 1000
         width: dragText.implicitWidth + 20
@@ -360,11 +363,6 @@ FocusScope {
         color: theme.c.dark_background
         border.width: 1
         border.color: theme.accent
-        Drag.active: active
-        Drag.keys: ["omamp-tracks"]
-        Drag.source: dragProxy
-        Drag.hotSpot.x: -12
-        Drag.hotSpot.y: -4
         Text {
             id: dragText
             anchors.centerIn: parent

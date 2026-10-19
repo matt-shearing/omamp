@@ -62,8 +62,29 @@ FocusScope {
         color: theme.c.dark_background
     }
 
+    // Tracks dragged from the list land on a static playlist. The list
+    // reports where the pointer is in the window; the tree works out the
+    // row under it and lights it.
+    property int dropRow: -1
+    function playlistRowAt(scenePos) {
+        const p = list.mapFromItem(null, scenePos.x, scenePos.y)
+        if (p.x < 0 || p.y < 0 || p.x > list.width || p.y > list.height) return -1
+        const row = list.indexAt(10, p.y + list.contentY)
+        return row >= 0 && library.tree.kind(row) === "playlist" && !pane.locked ? row : -1
+    }
+    function dragOver(scenePos) { dropRow = playlistRowAt(scenePos) }
+    // Returns true when the tracks went into a playlist.
+    function dropAt(scenePos, ids) {
+        const row = playlistRowAt(scenePos)
+        dropRow = -1
+        if (row < 0 || ids.length === 0) return false
+        library.playlists.addTracks(library.tree.value(row), ids)
+        return true
+    }
+
     ListView {
         id: list
+        objectName: "treeList"
         anchors.fill: parent
         anchors.margins: 4
         clip: true
@@ -137,24 +158,11 @@ FocusScope {
             border.color: theme.accent
 
             HoverHandler { id: hover }
-            // Tracks dragged from the list land on a static playlist.
-            readonly property bool dropTarget: (node.kind === "playlist") && !pane.locked
             required property string kind
-            required property var key
-            DropArea {
-                id: drop
-                anchors.fill: parent
-                keys: ["omamp-tracks"]
-                enabled: node.dropTarget
-                onDropped: (event) => {
-                    const ids = event.source && event.source.trackIds ? event.source.trackIds : []
-                    if (ids.length > 0) library.playlists.addTracks(library.tree.value(node.index), ids)
-                    event.accept()
-                }
-            }
+            // Tracks dragged from the list over this playlist.
             Rectangle {
                 anchors.fill: parent
-                visible: drop.containsDrag
+                visible: pane.dropRow === node.index
                 color: Qt.alpha(theme.accent, 0.25)
                 border.width: 1
                 border.color: theme.accent

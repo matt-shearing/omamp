@@ -328,6 +328,8 @@ FocusScope {
                             view.layoutEdited()
                         }
                         onAction: (id) => view.action(id)
+                        onTracksDragged: (pos) => tree.dragOver(pos)
+                        onTracksDropped: (pos, ids) => tree.dropAt(pos, ids)
                     }
                     AlbumGrid {
                         id: grid

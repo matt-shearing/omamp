@@ -639,6 +639,46 @@ private slots:
         w.window->close();
     }
 
+    // Tracks dragged with the mouse from the list onto a playlist in the tree.
+    void dragTracksOntoAPlaylist() {
+        Window w;
+        QVERIFY(w.load());
+        LibraryController &c = *w.library;
+        QTRY_VERIFY(c.ready());
+        const qint64 id = c.playlists()->createPlaylist("Dropped");
+        QVERIFY(id > 0);
+        c.selectNode(0);
+        QTRY_COMPARE(c.tracks()->count(), int(Fixture::rows().size()));
+        const int node = c.tree()->reveal({"playlists", QString("playlist:%1").arg(id)});
+        QVERIFY(node >= 0);
+        c.selectNode(0);
+        c.tracks()->select(0);
+        c.tracks()->select(1, Qt::ShiftModifier);
+        QCOMPARE(c.tracks()->selectedCount(), 2);
+        auto *table = qobject_cast<QQuickItem *>(w.find("trackTable"));
+        auto *tree = qobject_cast<QQuickItem *>(w.find("treeList"));
+        QVERIFY(table && tree);
+        QTRY_VERIFY(table->isVisible());
+        QTest::qWait(100);
+        // The first row's title cell, and the playlist's node in the tree.
+        const QPoint from = table->mapToScene(QPointF(200, 12)).toPoint();
+        const QPoint to = tree->mapToScene(QPointF(60, node * 24 + 12 - tree->property("contentY").toReal())).toPoint();
+        QTest::mousePress(w.window, Qt::LeftButton, Qt::NoModifier, from);
+        // Moved in steps, as a hand would.
+        for (int i = 1; i <= 12; ++i) {
+            const QPoint at = from + (to - from) * i / 12;
+            QMouseEvent move(QEvent::MouseMove, at, w.window->mapToGlobal(at), Qt::NoButton, Qt::LeftButton,
+                             Qt::NoModifier);
+            QGuiApplication::sendEvent(w.window, &move);
+            QTest::qWait(15);
+        }
+        QTest::mouseRelease(w.window, Qt::LeftButton, Qt::NoModifier, to);
+        QTRY_COMPARE(Playlists::trackIds(*c.library(), id).size(), 2);
+        // Both selected tracks went in, in list order.
+        QCOMPARE(Playlists::trackIds(*c.library(), id).first(), c.tracks()->trackId(0));
+        w.window->close();
+    }
+
     void autoPlaylistEditorCountsAsYouType() {
         Window w;
         QVERIFY(w.load());

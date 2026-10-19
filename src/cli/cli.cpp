@@ -44,7 +44,7 @@ namespace {
 const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", "version", "--version",
                                "watch", "locate", "art", "tag", "undo", "journal", "organise", "organize",
                                "tag-from-filename", "audit", "duplicates", "playlist", "autoplaylist",
-                               "collection", "autodj", "import", "volume", "nas", "remote"};
+                               "collection", "autodj", "import", "volume", "nas", "remote", "sync", "report"};
 
 const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp open [files or folders...]  the same, for names that look like commands
@@ -95,6 +95,18 @@ const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp remote list|sync [source|all] [--full]|remove <source> [--keep-tracks]
        omamp remote set <source> --max-bitrate <kbit/s> --format <raw|mp3|opus|...>
                                          Navidrome and other (Open)Subsonic servers as sources
+       omamp sync list|devices           sync profiles; USB drives and Syncthing folders to sync to
+       omamp sync create <name> --to <folder> [--kind folder|usb|syncthing]
+                    --source playlist:<name>|collection:<name>|query:<text>|library ...
+                    [--rule 'lossless->opus:128' ...] [--mask '<Artist>/<Album>/<Title>']
+                    [--delete-others] [--no-playlists]
+       omamp sync set <profile> [the same options; --clear-rules, --keep-others, --playlists]
+       omamp sync run <profile> [--dry-run [--limit n] [--all]] [--workers n]
+                                         copy and convert the list to the device
+       omamp sync show|remove <profile>
+       omamp report [query] | --playlist <p> | --collection <c>
+                    [--format csv|html] [--columns title,artist,...] [--out <file>] [--title t]
+                                         a track list as CSV or an HTML page (stdout without --out)
 
 Options:
   --json         print JSON on stdout
@@ -141,6 +153,14 @@ Options:
   --days <n>     autodj: leave out tracks played in the last n days
   --map w=l      import mediamonkey: a Windows path prefix and the Linux folder it is now
   --overwrite    import mediamonkey: take MediaMonkey's values instead of merging
+
+Sync format rules (the first that fits a file wins; a file no rule fits is copied):
+  'flac,wav->opus:128'   convert FLAC and WAV to Opus at 128 kbit/s
+  'lossless->mp3:256'    every lossless format to MP3 (also aac, vorbis, flac)
+  'wma->skip'            leave WMA files off the device
+  '*->copy'              copy everything else as it is
+Report columns: title, artist, albumartist, album, disc, track, year, genre, composer,
+  length, rating, plays, lastplayed, added, format, bitrate, size, path
 
 Tag and organise examples:
   omamp tag 'album:"night drive"' --set genre=Synthwave --set year=1997
@@ -1610,6 +1630,8 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         return WebCli::run(arguments, out, err, resolver);
     if (command == "volume" || command == "nas" || command == "remote")
         return runNas(arguments, out, err, resolver);
+    if (command == "sync" || command == "report")
+        return runSync(arguments, out, err, resolver);
     for (int i = 1; i < arguments.size(); ++i) {
         const QString &a = arguments[i];
         auto value = [&](QString *target) {

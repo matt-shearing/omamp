@@ -22,6 +22,8 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
 // `omamp volume`, `omamp nas` and `omamp remote` (clinas.cpp); run() hands
 // these over.
 int runNas(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver = nullptr);
+// `omamp sync` and `omamp report` (clisync.cpp).
+int runSync(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver = nullptr);
 // What --password-stdin and --api-key-stdin read, for tests.
 void setStdinForTesting(const QString &text);
 

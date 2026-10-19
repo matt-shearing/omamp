@@ -1,4 +1,6 @@
 {
+  "Saved %n tracks to %1": { "one": "Saved %n track to %1", "other": "Saved %n tracks to %1" },
+  "…and %n more": { "one": "…and %n more", "other": "…and %n more" },
   "%n tracks": { "one": "%n track", "other": "%n tracks" },
   "%Ln tracks": { "one": "%Ln track", "other": "%Ln tracks" },
   "%Ln tracks in Now Playing": { "one": "%Ln track in Now Playing", "other": "%Ln tracks in Now Playing" },

@@ -34,6 +34,7 @@ HEADERS += \
     src/app/settingscontroller.h \
     src/app/webcontroller.h \
     src/app/nascontroller.h \
+    src/app/devicescontroller.h \
     src/app/streamresolver.h
 
 SOURCES += \
@@ -62,6 +63,8 @@ SOURCES += \
     src/app/settingscontroller.cpp \
     src/app/webcontroller.cpp \
     src/app/nascontroller.cpp \
+    src/app/devicescontroller.cpp \
+    src/app/librarycontroller_reports.cpp \
     src/app/streamresolver.cpp
 
 RESOURCES += src/app/resources.qrc

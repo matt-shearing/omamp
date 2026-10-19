@@ -38,6 +38,7 @@
         <file alias="CoverChooserSheet.qml">CoverChooserSheet.qml</file>
         <file alias="LyricsView.qml">LyricsView.qml</file>
         <file alias="VolumesSheet.qml">VolumesSheet.qml</file>
+        <file alias="DevicesSheet.qml">DevicesSheet.qml</file>
         <file alias="NasGuideSheet.qml">NasGuideSheet.qml</file>
         <file alias="RemoteSourceSheet.qml">RemoteSourceSheet.qml</file>
         <file alias="docs/nas.md">../../docs/nas.md</file>

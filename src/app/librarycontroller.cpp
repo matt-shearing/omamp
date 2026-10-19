@@ -22,9 +22,11 @@
 #include "watcher.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QLocale>
 #include <QSet>
 #include <QSqlError>
@@ -77,6 +79,20 @@ LibraryController::LibraryController(const QString &databasePath, QObject *paren
     m_recorder = new PlayRecorder(m_path, this);
     m_web = new WebController(this);
     m_nas = new NasController(this);
+    m_devices = new DevicesController(this);
+    connect(m_devices, &DevicesController::message, this, &LibraryController::toast);
+    m_reportPicker.setup(tr("Save the list in which folder?"), tr("Save here"), true, false);
+    connect(&m_reportPicker, &FolderPicker::picked, this, [this](const QStringList &folders) {
+        if (folders.isEmpty() || m_reportFormat.isEmpty())
+            return;
+        QString name = currentLabel().trimmed();
+        name.replace('/', '-');
+        if (name.isEmpty() || name.startsWith('.'))
+            name = tr("Tracks");
+        exportListTo(QDir(folders.first()).filePath(name + '.' + m_reportFormat), m_reportFormat);
+        m_reportFormat.clear();
+    });
+    connect(&m_reportPicker, &FolderPicker::failed, this, &LibraryController::toast);
     connect(m_web, &WebController::message, this, &LibraryController::toast);
     connect(m_nas, &NasController::message, this, &LibraryController::toast);
     // A counted play changes Plays and Last played on screen.
@@ -183,6 +199,7 @@ bool LibraryController::activate() {
     m_playlists->attach();
     m_dj->attach();
     m_nas->reload();
+    m_devices->reload();
     if (mountMonitoring())
         m_nas->startMonitor();
     selectNode(0);
@@ -230,7 +247,16 @@ void LibraryController::selectNode(int row) {
         return;
     m_currentNode = row;
     const LibraryTree::Node &n = m_tree.node(row);
-    m_tracks.setScope(n.where, n.params);
+    if (n.kind == QLatin1String("device")) {
+        // A sync profile shows the tracks it syncs.
+        QJsonArray ids;
+        for (qint64 id : m_devices->trackIds(n.value.toLongLong()))
+            ids << id;
+        m_tracks.setScope("t.id IN (SELECT value FROM json_each(?))",
+                          {QString::fromUtf8(QJsonDocument(ids).toJson(QJsonDocument::Compact))});
+    } else {
+        m_tracks.setScope(n.where, n.params);
+    }
     // Playlists show in their own view, in their own order.
     const bool playlist = n.kind == QLatin1String("playlist") || n.kind == QLatin1String("autoplaylist") ||
                           n.kind == QLatin1String("plfolder");

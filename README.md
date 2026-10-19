@@ -7,10 +7,11 @@ bouncing analyser, a scrolling title and a playlist, all in your Omarchy
 theme. Press `Tab` and it becomes a MediaMonkey-style library manager for big
 local libraries: a library tree, a column browser, fast search over 200,000
 tracks, a tag editor with undo, file organising with a preview, auto-playlists,
-Auto-DJ, MusicBrainz tagging, synced lyrics, and libraries that live on a NAS
-or a Navidrome server.
+Auto-DJ, MusicBrainz tagging, synced lyrics, libraries that live on a NAS
+or a Navidrome server, sync to a phone, USB drive or Syncthing folder, and
+reports as CSV or HTML.
 
-> **Status:** early (0.2.0). Everything below is built and tested (328
+> **Status:** early (0.2.0). Everything below is built and tested (343
 > automated tests), but only against made-up music, mock web services and
 > simulated network shares. It has not yet been tried on a real large library
 > or a real NAS. Expect rough edges and breaking changes. The plan and a
@@ -256,6 +257,23 @@ under 100 ms.
 
 ![Advanced mode with 200,000 synthetic tracks](docs/advanced-mode-200k.png)
 
+### Devices and reports
+
+A sync profile copies playlists, auto-playlists, collections or a query to a
+folder, a USB drive or a Syncthing folder. Format rules convert what you
+choose with `ffmpeg` (for example lossless files to Opus at 128 kbit/s) and
+copy the rest. **Preview** lists what a sync would copy, convert and delete
+before anything is written; **Sync now** runs as a job. A second sync of an
+unchanged list copies nothing, files the list no longer holds are removed,
+and other files stay unless the profile says to delete them. Each playlist is
+also written as an `.m3u8` beside the music. Profiles sit under **Devices** in
+the tree.
+
+Any list can be saved as a CSV file for a spreadsheet or as a plain web page.
+The guide is [docs/sync.md](docs/sync.md).
+
+![The Devices page with a preview of the next sync](docs/devices.png)
+
 ## Omarchy bar plugin
 
 `omarchy-plugin/` adds Omamp to the Omarchy bar: the track and play state in the bar, and a panel with seek, transport, shuffle, repeat and volume. Install it with `omarchy-plugin/install`. See [its README](omarchy-plugin/README.md).
@@ -332,6 +350,9 @@ bin/install        # makepkg -fsi: the package, system-wide (needs sudo)
 bin/install-user   # ~/.local only, no sudo
 ```
 
+An AUR package (`PKGBUILD` and `.SRCINFO`) is in [aur/](aur/), ready but not
+yet published.
+
 Built with C++ and Qt Quick (Qt Multimedia for playback), the same way
 Omarchy's own apps are built.
 
@@ -342,9 +363,9 @@ The full plan is in [docs/plan/](docs/plan/). Next up:
 - **Real-world testing:** a real large library, a real NAS share, a real
   Navidrome server, and a day of listening on the native (gapless) engine
   before it becomes the default.
-- **Device sync:** sync profiles to folders, USB drives and Syncthing, with
-  transcoding.
-- **Release:** an AUR package and a proposal to Omarchy's package list.
+- **Real-world sync:** a real phone over USB and a real Syncthing folder.
+- **Release:** the AUR package is ready in [aur/](aur/) but not published;
+  then a proposal to Omarchy's package list.
 
 ## The library from the command line
 
@@ -361,6 +382,11 @@ omamp scan --quick                       # rescan, skipping folders whose modifi
 omamp watch                              # watch the library folders and rescan what changes (Ctrl+C stops)
 omamp locate /mnt/usb/Music              # find missing tracks that were moved there
 omamp art album 12 --size 256            # print the path of an album's picture, made if needed
+omamp sync create Phone --to /run/media/$USER/PHONE/Music --kind usb \
+    --source 'playlist:Road trip' --rule 'lossless->opus:128'
+omamp sync run Phone --dry-run           # what a sync would copy, convert and delete
+omamp sync run Phone
+omamp report 'rating:5' --out five-stars.csv
 ```
 
 A file moved or renamed inside the library keeps its rating, play count,

@@ -32,7 +32,7 @@ ApplicationWindow {
                                       || autoSheet.opened || collectionSheet.opened || djSheet.opened
                                       || partySheet.opened || settingsSheet.opened
                                       || identifySheet.opened || coverChooser.opened || volumesSheet.opened
-                                      || nasGuideSheet.opened || remoteSheet.opened
+                                      || nasGuideSheet.opened || remoteSheet.opened || devicesSheet.opened
     // Party mode: what guests may do (PartyMode's action names).
     function may(action) { void library.dj.partyOn; return library.dj.allowed(action) }
     // Asks first; says so when party mode locks it.
@@ -205,6 +205,11 @@ ApplicationWindow {
         p.addAction("add-server", qsTr("Add Navidrome / Subsonic server…"), ["navidrome", "subsonic", "opensubsonic", "remote", "stream"], "")
         p.addAction("sync-servers", qsTr("Sync Navidrome / Subsonic servers"), ["navidrome", "subsonic", "refresh", "update"], "")
         p.addAction("settings-web", qsTr("Web services: AcoustID, MusicBrainz, covers…"), ["acoustid", "musicbrainz", "key", "cover size"], "")
+        // Phase 6: device sync and reports.
+        p.addAction("devices", qsTr("Devices: sync to a phone, USB drive or Syncthing…"), ["sync", "phone", "usb", "syncthing", "transcode", "convert", "copy", "device"], "")
+        p.addAction("sync-device", qsTr("Sync the chosen device now"), ["sync", "phone", "usb", "device"], "")
+        p.addAction("export-csv", qsTr("Save this list as CSV…"), ["report", "export", "spreadsheet", "csv", "excel"], "")
+        p.addAction("export-html", qsTr("Save this list as a web page (HTML)…"), ["report", "export", "html", "print", "web page"], "")
         p.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help", "keys"], "?")
         p.addAction("quit", qsTr("Quit"), ["exit", "close"], "Q")
     }
@@ -262,6 +267,11 @@ ApplicationWindow {
         for (const id of ["volumes", "connect-nas", "add-server", "settings-web"])
             p.setActionEnabled(id, may("settings"))
         p.setActionEnabled("sync-servers", may("settings") && library.nas.servers.length > 0)
+        p.setActionEnabled("devices", may("settings"))
+        p.setActionEnabled("sync-device", may("settings") && library.currentKind === "device")
+        const listing = advanced && library.ready && !(view && view.special)
+        p.setActionEnabled("export-csv", listing)
+        p.setActionEnabled("export-html", listing)
         // Playlists: what the chosen node allows.
         const kind = library.currentKind
         const isList = kind === "playlist" || kind === "autoplaylist"
@@ -295,6 +305,20 @@ ApplicationWindow {
         switch (id) {
         case "volumes": case "connect-nas": case "add-server": case "find-missing-covers":
             runAction(id)
+            return
+        case "export-csv": case "export-html":
+            // The menu's node, which may not be the chosen one yet.
+            if (node && node.row !== undefined && node.row !== library.currentNode) library.selectNode(node.row)
+            runAction(id)
+            return
+        case "devices":
+            if (guard("settings")) { setAdvanced(true); devicesSheet.openSheet(0) }
+            return
+        case "device-edit":
+            if (guard("settings")) { setAdvanced(true); devicesSheet.openSheet(node.id) }
+            return
+        case "device-sync":
+            if (guard("settings")) library.devices.syncProfile(node.id)
             return
         case "rescan-volume":
             if (guard("settings")) library.nas.rescanVolume(node.id, true)
@@ -367,6 +391,7 @@ ApplicationWindow {
                         "identify": "edit-tags", "find-cover": "edit-tags", "find-missing-covers": "edit-tags",
                         "volumes": "settings", "connect-nas": "settings", "add-server": "settings",
                         "sync-servers": "settings", "settings-web": "settings",
+                        "devices": "settings", "sync-device": "settings",
                         "add-folder": "settings", "rescan": "settings", "prefetch-art": "settings",
                         "autodj": "settings", "autodj-settings": "settings", "settings": "settings",
                         "settings-playback": "settings", "settings-scrobbling": "settings",
@@ -465,6 +490,12 @@ ApplicationWindow {
             if (advancedLoader.item) advancedLoader.item.showInfoPage(1)
             break
         case "volumes": setAdvanced(true); volumesSheet.openSheet(); break
+        case "devices": setAdvanced(true); devicesSheet.openSheet(library.currentKind === "device" ? library.tree.value(library.currentNode) : 0); break
+        case "sync-device":
+            if (library.currentKind === "device") library.devices.syncProfile(library.tree.value(library.currentNode))
+            break
+        case "export-csv": library.exportList("csv"); break
+        case "export-html": library.exportList("html"); break
         case "connect-nas": setAdvanced(true); nasGuideSheet.openSheet(); break
         case "add-server": setAdvanced(true); remoteSheet.openSheet(); break
         case "sync-servers":
@@ -1020,6 +1051,12 @@ ApplicationWindow {
             onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
             onConnectNas: nasGuideSheet.openSheet()
             onAddServer: remoteSheet.openSheet()
+        }
+        // Phase 6.
+        DevicesSheet {
+            id: devicesSheet
+            onClosed: win.backToList()
+            onConfirm: (title, text, confirmText, action) => confirmSheet.ask(title, text, confirmText, action)
         }
         NasGuideSheet { id: nasGuideSheet; onClosed: if (!volumesSheet.opened) win.backToList() }
         RemoteSourceSheet { id: remoteSheet; onClosed: if (!volumesSheet.opened) win.backToList() }

@@ -26,6 +26,7 @@ class ArtworkPrefetch;
 class PlayRecorder;
 #include "settingscontroller.h"
 #include "nascontroller.h"
+#include "devicescontroller.h"
 #include "webcontroller.h"
 class Job;
 class Library;
@@ -87,6 +88,8 @@ class LibraryController : public QObject {
     // Phases 4 and 5: identify, covers and lyrics; volumes, shares and servers.
     Q_PROPERTY(WebController *web READ web CONSTANT)
     Q_PROPERTY(NasController *nas READ nas CONSTANT)
+    // Phase 6: device sync profiles.
+    Q_PROPERTY(DevicesController *devices READ devices CONSTANT)
 
 public:
     // An empty path means the default library (~/.local/share/omamp/library.db).
@@ -102,6 +105,7 @@ public:
     PlayRecorder *recorder() const { return m_recorder; }
     WebController *web() const { return m_web; }
     NasController *nas() const { return m_nas; }
+    DevicesController *devices() const { return m_devices; }
     // Watching mounts (MountMonitor) checks volumes on a worker thread
     // instead of on the window's at start, and follows shares as they come
     // and go. The default follows setWatching(); tests turn it on alone.
@@ -224,6 +228,16 @@ public:
     // The selected tracks' ids in list order (the cursor's when none are
     // selected), for the tag editor, organise and tag from file names.
     Q_INVOKABLE QVariantList selectedTrackIds() const;
+
+    // Reports (Phase 6): the list on screen, in its order, as CSV or an
+    // HTML page. exportList asks for a folder and writes "<list name>.csv"
+    // (or .html) there; exportListTo writes a file. Both return the number
+    // of tracks written (or -1, with a toast saying why).
+    Q_INVOKABLE void exportList(const QString &format);
+    Q_INVOKABLE int exportListTo(const QString &file, const QString &format);
+    // The tracks the list on screen holds, in order (a playlist's entries
+    // when a playlist is chosen).
+    QList<qint64> listTrackIds() const;
     // An album's tracks in disc and track order (the grid's chosen album).
     Q_INVOKABLE QVariantList albumTrackIds(qint64 albumId) const;
     // The Files to Edit checks, for the palette: [{id, title, description}].
@@ -351,6 +365,9 @@ private:
     PlayRecorder *m_recorder = nullptr;
     WebController *m_web = nullptr;
     NasController *m_nas = nullptr;
+    DevicesController *m_devices = nullptr;
+    FolderPicker m_reportPicker;
+    QString m_reportFormat;
     int m_monitoring = -1; // -1: follow m_watching
     // The tree node a collection's columns belong to, while one is chosen.
     qint64 m_collection = 0;

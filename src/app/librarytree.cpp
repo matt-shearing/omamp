@@ -6,6 +6,7 @@
 #include <QCollator>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QMap>
 #include <QSet>
 #include <QSqlError>
@@ -135,6 +136,7 @@ QVector<LibraryTree::Node> LibraryTree::topLevel() const {
     group("locations", tr("Location"));
     group("playlists", tr("Playlists"));
     group("filestoedit", tr("Files to Edit"));
+    group("devices", tr("Devices"));
     return out;
 }
 
@@ -504,6 +506,21 @@ QVector<LibraryTree::Node> LibraryTree::children(const Node &parent) const {
             n.value = a.id;
             n.dim = m_auditCounts.contains(a.id) && m_auditCounts.value(a.id) == 0;
             out << n;
+        }
+    } else if (parent.key == "devices") {
+        // Sync profiles (DeviceSync, kept in the settings). The controller
+        // gives a profile's node its tracks when it is chosen.
+        QSqlQuery s(m_db);
+        if (s.exec("SELECT value FROM settings WHERE key = 'sync.profiles'") && s.next()) {
+            const QJsonArray all = QJsonDocument::fromJson(s.value(0).toString().toUtf8()).array();
+            for (const QJsonValue &v : all) {
+                const QJsonObject p = v.toObject();
+                Node n = make("device", "device:" + QString::number(p.value("id").toInteger()), p.value("name").toString(), -1,
+                              "0", {});
+                n.value = p.value("id").toInteger();
+                n.description = p.value("target").toString();
+                out << n;
+            }
         }
     } else if (parent.key == "playlists" || parent.kind == "playlist" || parent.kind == "autoplaylist" ||
                parent.kind == "plfolder") {

@@ -62,3 +62,7 @@ include($$PWD/net/net.pri)
 QT += network
 HEADERS += $$PWD/mounts.h $$PWD/peaks.h $$PWD/remote.h $$PWD/subsonic.h $$PWD/walker.h
 SOURCES += $$PWD/mounts.cpp $$PWD/peaks.cpp $$PWD/remote.cpp $$PWD/subsonic.cpp $$PWD/walker.cpp
+# Phase 6: device sync profiles (copy and convert with the ffmpeg command)
+# and track-list reports (CSV and HTML).
+HEADERS += $$PWD/devicesync.h $$PWD/report.h
+SOURCES += $$PWD/devicesync.cpp $$PWD/report.cpp

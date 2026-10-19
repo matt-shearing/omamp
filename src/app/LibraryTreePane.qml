@@ -309,6 +309,18 @@ FocusScope {
                    onTriggered: pane.nodeAction("connect-nas", menu.node) }
         MenuItem { text: qsTr("Add Navidrome / Subsonic server…"); visible: menu.node.key === "locations"; height: visible ? implicitHeight : 0
                    onTriggered: pane.nodeAction("add-server", menu.node) }
+        // Devices: sync profiles.
+        MenuItem { objectName: "menuSyncDevice"; text: qsTr("Sync now"); visible: menu.kind === "device"; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("device-sync", menu.node) }
+        MenuItem { text: qsTr("Edit sync profile…"); visible: menu.kind === "device"; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("device-edit", menu.node) }
+        MenuItem { text: qsTr("New sync profile…"); visible: menu.node.key === "devices"; height: visible ? implicitHeight : 0
+                   onTriggered: pane.nodeAction("devices", menu.node) }
+        // Any list: save it as a report.
+        MenuItem { text: qsTr("Save the list as CSV…"); visible: menu.kind !== "group" && menu.kind !== "" && menu.kind !== "plfolder"
+                   height: visible ? implicitHeight : 0; onTriggered: pane.nodeAction("export-csv", menu.node) }
+        MenuItem { text: qsTr("Save the list as a web page…"); visible: menu.kind !== "group" && menu.kind !== "" && menu.kind !== "plfolder"
+                   height: visible ? implicitHeight : 0; onTriggered: pane.nodeAction("export-html", menu.node) }
         // Files to Edit > Missing artwork.
         MenuItem { objectName: "menuFindCovers"; text: qsTr("Find the missing covers on the Cover Art Archive")
                    visible: menu.node.key === "audit:missing-artwork"; height: visible ? implicitHeight : 0

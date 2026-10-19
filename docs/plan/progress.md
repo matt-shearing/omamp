@@ -3843,3 +3843,181 @@ Lyrics tab.
   plural forms in `src/app/i18n/en.json`.
 - **A volume's local disk is named by its mount point** (`/`, `/home`) when
   it has no label.
+
+## Phase 6: device sync, reports and the AUR package (20 October 2026)
+
+Omamp now syncs music to a folder, a USB drive or a Syncthing folder, and
+saves any list as CSV or HTML. A sync profile names its target, what to
+sync (playlists, auto-playlists, collections, queries or the whole
+library), format rules that convert with the `ffmpeg` command, and a file
+name mask. A dry run lists every copy, conversion and delete before anything
+is written. In the window this is the Devices page and a Devices node in the
+tree; on the command line it is `omamp sync` and `omamp report`, both with
+`--json`. The AUR package is ready in `aur/` and not published. The user
+guide is [docs/sync.md](../sync.md). No schema change.
+
+![The Devices page](../devices.png)
+
+### What was built
+
+```text
+src/core/devicesync.{h,cpp}   profiles (in settings: sync.profiles), sources, format rules, target checks,
+                              device detection, plan() (the dry run), apply(), the .omamp-sync.json manifest
+src/core/report.{h,cpp}       CSV and HTML reports of a list of track ids, with chosen columns
+src/cli/clisync.cpp           omamp sync list|devices|create|show|set|run|remove, omamp report
+src/app/devicescontroller.*   library.devices: profiles, devices, sourceChoices, saveProfile, previewProfile
+                              and syncProfile (both through runJob), the folder picker
+src/app/librarycontroller_reports.cpp  exportList (folder picker) and exportListTo; listTrackIds
+src/app/librarytree.cpp       the Devices group; a node per profile (kind "device")
+src/app/librarycontroller.cpp a device node's scope is the profile's tracks (json_each over their ids)
+src/app/DevicesSheet.qml      the page: profiles on the left, the form, then the preview
+src/app/Main.qml, LibraryTreePane.qml  palette actions devices, sync-device, export-csv, export-html;
+                              tree menus Sync now, Edit sync profile…, New sync profile…, Save the list as…
+tests/sync_tests.cpp          SyncTests (11) and SyncWindowTests (4), OMAMP_TESTS=sync,syncwindow
+aur/                          PKGBUILD, .SRCINFO, README (how it was checked and how to publish)
+```
+
+**Profiles** are JSON in the settings table, so `--db` picks them and no
+migration was needed. `save()` checks the name (unique, ignoring case), the
+kind, the target (never `/` or the home folder), at least one source, every
+rule and the mask.
+
+**Targets.** A folder is made if missing. A USB target must be on a mounted
+filesystem that is neither `/` nor the home folder's (`setMountCheck` for
+tests); if the drive isn't there the plan fails and nothing is made, so a
+sync never fills the system disk under `/run/media`. A Syncthing target must
+hold `.stfolder`. A target that is inside a library folder, or holds one, is
+refused. `detectDevices()` lists the folders under `/run/media/$USER` and
+`/media` that are mount points, and the folders in Syncthing's `config.xml`
+(`XDG_STATE_HOME`, then `XDG_CONFIG_HOME`); `OMAMP_MEDIA_ROOTS` replaces the
+media roots for screenshots.
+
+**The plan** takes each source's tracks in order, once each. Offline and
+missing tracks, Navidrome tracks and files a rule skips are "left off". A
+track's target is the mask (the default adds the disc only when tagged)
+plus the extension of its rule; two tracks with one name get "(2)". A file
+is kept when the manifest records the same source path, the library's size
+and modification time, and the same rule signature (`copy`, `opus:128`), or,
+with no manifest entry, when a plain copy of the same size is no older than
+the source. Files not planned are deleted when the manifest says Omamp wrote
+them, or when "delete other files" is on; anything under a hidden name is
+never listed. Conversions are estimated at duration × bitrate. A plan that
+doesn't fit the free space (QStorageInfo; `OMAMP_SYNC_FREE_BYTES` in tests)
+says so and `apply()` refuses it. A plan with conversions fails at once when
+ffmpeg isn't installed.
+
+**Applying** deletes first (and removes the folders it empties), then copies
+and converts on up to four threads. Every file is written under
+`.omamp-sync-<thread>` in its folder and renamed into place. ffmpeg runs as
+`-map 0:a:0 -map_metadata 0 -c:a <encoder> -b:a <n>k`; MP3, AAC and FLAC also
+map the cover (`0:v?`, attached_pic) and retry without it if that fails.
+Cancel kills the running ffmpeg. Playlist files (`<name>.m3u8`, relative
+paths, the playlist's order, only files that are there) come last, then the
+manifest. Its sizes and nanosecond times are written as text: as JSON numbers
+they lost precision and every file looked changed on the next run.
+
+**Reports.** Columns title, artist, albumartist, album, disc, track, year,
+genre, composer, length, rating (stars), plays, lastplayed, added, format,
+bitrate, size and path. CSV is RFC 4180 with CRLF; a cell starting with `=`,
+`+`, `-` or `@` (not a negative number) gets a leading apostrophe. HTML is
+one page, no scripts, light and dark through `prefers-color-scheme`, a
+sticky header, escaped throughout. The window saves the list on screen (a
+playlist's entries in their order) as "<list name>.csv" in a folder the
+portal picker gives, and respects the write sandbox.
+
+### Test results
+
+`bin/test` with `JOBS=8`, a throwaway `HOME` and XDG folders, offscreen in
+software, `OMAMP_NO_AUDIO_DEVICE=1`: every class passed, 343 tests (328
+before). The only skips are the opt-in ones (four engine CPU benchmarks, the
+live web smoke test).
+
+```text
+Totals: 11 passed, 0 failed, 0 skipped    sync
+Totals:  4 passed, 0 failed, 0 skipped    sync window
+```
+
+The sync tests make FLAC, MP3, M4A and WMA files with ffmpeg and cover:
+
+- rules and sources read and written, and their errors;
+- profiles checked, kept across connections, edited, run recorded, removed;
+- a dry run that writes nothing, then a sync: one real Opus conversion
+  (checked with ffprobe, tags included), two byte-identical copies, the WMA
+  left off, the playlist file in order, no temporary files; a second run
+  keeps all three;
+- a changed source copied again, a track taken out deleted with its folder,
+  a new mask renaming (old files removed), a foreign file kept until
+  "delete other files", `.stfolder` never touched;
+- a USB drive not plugged in (refused, nothing made), plugged in without
+  the folder, ready; Syncthing without and with `.stfolder`; targets inside
+  or around the library; too little room; no ffmpeg (conversions refused,
+  copies still work);
+- cancel before the start; device detection from fake roots and a Syncthing
+  config;
+- CSV quoting, the formula guard, columns, unknown columns and formats; HTML
+  escaping, title, summary and rows;
+- `omamp sync` create, a bad rule, dry run and run with `--json`, list with
+  the last result, set, the text dry run, an unknown profile; `omamp report`
+  to stdout and to an HTML file, and `--json` without `--out` refused.
+
+The window tests open the Devices page from the palette (the drive under the
+fake media root is offered), fill and save the form, refuse a bad rule with
+its reason, preview as a job (five rows, the summary, nothing written), sync
+with **Sync now**, show the profile's four tracks under Devices in the tree,
+and sync again from the palette with everything kept. A second test saves the
+whole library as CSV and a playlist as HTML in its order, and is refused
+outside the sandbox.
+
+Breaking the code on purpose (hidden files no longer skipped; the manifest
+never matching) fails two sync tests, so they detect those bugs.
+
+### Screenshots
+
+`docs/devices.png` (the made-up demo library from `tests/make-demo-library`,
+a "Road trip" playlist and the "Five stars" auto-playlist synced once, then
+changed; the preview after **Preview**) and `docs/report.png` (an HTML
+report, captured with headless Chromium). Captured offscreen in software
+with `OMAMP_DEMO="action:devices;click:previewProfile"`,
+`OMAMP_SCREENSHOT_DELAY=3000` and fake media roots. The first capture put
+the preview below the fold; the form is now shorter (sources and the query
+on one row, the two switches on one row) and the preview has the rest of the
+page.
+
+### Decisions
+
+- **Profiles in settings, not a table.** A handful of rows; no migration,
+  and `--db` works unchanged.
+- **Files Omamp wrote and that left the list are always removed;** "delete
+  other files" adds everything else. A sync that left stale copies would
+  not be a sync; a sync that deleted a phone's other music by default would
+  be worse.
+- **A manifest on the device, not in the library,** so two machines, or a
+  library rebuilt from scratch, still know what is on the drive.
+- **The `ffmpeg` command for conversion,** as Omarchy's apps do, and as the
+  plan says; playback stays the exception that links FFmpeg.
+- **No conversion to the file's own lossy format;** a rule like
+  `*->mp3:192` copies MP3s as they are.
+- **USB means "a mounted drive",** not a particular device class: phones
+  that mount over MTP through gvfs show under `/run/user`, which Omamp
+  doesn't detect but accepts as a folder target.
+- **Reports from the window use the list on screen,** not a separate
+  dialog, so a query, a playlist or a collection all work the same way.
+- **The AUR package builds the 0.2.0 tag.** Phase 6 is after it; the
+  README in `aur/` suggests tagging 0.3.0 once this is merged.
+
+### Known gaps
+
+- **Not tried with a real phone, USB stick or Syncthing folder.**
+  Everything ran against folders in a temporary directory.
+- **MTP phones** (no mount point) are not detected; gvfs's mount under
+  `/run/user/<uid>/gvfs` may work as a plain folder target; that is untested.
+- **Covers in Opus and Vorbis copies** are left out: Omamp doesn't map the
+  picture for those codecs.
+- **The form's folder picker** (portal) and the report folder picker can't be
+  driven by the tests; `exportListTo` and the profile's target property are
+  what they test.
+- **ReplayGain tags** travel only as far as ffmpeg's `-map_metadata 0` takes
+  them.
+- **The AUR package is not published,** and the `v0.2.0` tag is not on
+  GitHub yet, so its source URL returns 404 until it is pushed. See
+  `aur/README.md`.

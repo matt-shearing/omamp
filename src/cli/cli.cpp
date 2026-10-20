@@ -74,6 +74,8 @@ const char *usage = R"(Usage: omamp [files or folders...]      open the player
                                          find the same song twice; nothing is deleted
        omamp playlist list|show|create|add|remove|move|rename|delete|clear|reroll|import|export
                                          playlists, playlist folders and playlist files
+       omamp playlist add <playlist> <spotify:track:id or open.spotify.com link>...
+                                         puts Spotify tracks in an Omamp playlist
        omamp autoplaylist create <name> '<query>'
                                          a playlist that is a saved query, always up to date
        omamp collection list|show|create|remove|restore-defaults
@@ -1071,8 +1073,10 @@ void printItems(const QList<Playlists::Item> &items, QTextStream &out) {
         out << QString("%1").arg(it.position + 1, 4) << "  "
             << (it.artist.isEmpty() ? QString("(unknown artist)") : it.artist) << " - "
             << (it.title.isEmpty() ? QString("(untitled)") : it.title) << "  " << formatDuration(it.durationMs) << "  "
-            << (it.path.isEmpty() ? QString("(no path)") : it.path);
-        if (it.availability != "online")
+            << (it.path.isEmpty() ? QString("(no path)") : it.isSpotify() ? Playlists::spotifyWebUrl(it.path) : it.path);
+        if (it.isSpotify())
+            out << "  [Spotify]";
+        else if (it.availability != "online")
             out << "  (" << it.availability << ")";
         out << '\n';
     }
@@ -1207,6 +1211,36 @@ int playlist(Library &library, const Options &o, QTextStream &out, QTextStream &
         return 0;
     }
     if (sub == "add") {
+        // Spotify tracks: spotify:track:<id> URIs or open.spotify.com links.
+        QStringList spotify;
+        for (const QString &a : args.mid(1))
+            if (const QString path = Playlists::spotifyTrackPath(a); !path.isEmpty())
+                spotify << path;
+        if (o.ids.isEmpty() && !spotify.isEmpty()) {
+            if (spotify.size() != args.size() - 1)
+                return failWith(o, out, err, "playlist add takes either a query or Spotify track links, not both");
+            QString note;
+            QList<Playlists::Entry> entries;
+            for (const SpotifyTrackInfo &t : lookUpSpotifyTracks(spotify, &note)) {
+                Playlists::Entry e;
+                e.path = t.path;
+                e.title = t.title;
+                e.artist = t.artist;
+                e.album = t.album;
+                e.art = t.albumId;
+                e.durationMs = t.durationMs;
+                entries << e;
+            }
+            const int added = Playlists::addEntries(library, id, entries, o.at > 0 ? o.at - 1 : -1, &error);
+            if (added < 0)
+                return failWith(o, out, err, error);
+            if (!note.isEmpty() && !o.json)
+                err << "omamp: " << note << Qt::endl;
+            QJsonObject j{{"ok", true}, {"playlist_id", id}, {"added", added}, {"spotify", added}};
+            if (!note.isEmpty())
+                j["note"] = note;
+            return done(j, QString("Added %1 Spotify tracks to %2").arg(added).arg(p.name));
+        }
         QList<qint64> ids;
         if (!o.ids.isEmpty()) {
             bool ok = false;

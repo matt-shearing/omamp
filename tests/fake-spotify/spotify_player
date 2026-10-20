@@ -120,7 +120,18 @@ playback)
     esac ;;
 playlist)
     # playlist edit --track-id <t> add <playlist>
-    [ "$2" = edit ] && echo "Track '$4' added to playlist '$6'" ;;
+    # playlist new -- <name>: adds a playlist to playlists.json, first, with
+    # an id made from the name (made-up-<name with dashes>, padded).
+    case "$2" in
+    edit) echo "Track '$4' added to playlist '$6'" ;;
+    new)
+        name=$4
+        id=$(printf 'new%s0000000000000000000000' "$(printf '%s' "$name" | tr -cd 'A-Za-z0-9')" | cut -c1-22)
+        entry=$(printf '{"id":"%s","collaborative":false,"name":"%s","owner":["Matt Example","mattexample"],"desc":"","current_folder_id":0,"snapshot_id":"AAAAnew"}' "$id" "$name")
+        printf '[%s,%s' "$entry" "$(tail -c +2 "$D/playlists.json")" > "$D/playlists.json.new"
+        mv "$D/playlists.json.new" "$D/playlists.json"
+        echo "Playlist '$name' was created" ;;
+    esac ;;
 like|connect) ;;
 authenticate) echo "refusing: the tests never sign in" >&2; exit 1 ;;
 *) echo "error: unrecognized subcommand '$1'" >&2; exit 2 ;;

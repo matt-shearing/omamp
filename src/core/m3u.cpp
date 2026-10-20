@@ -46,6 +46,10 @@ bool isUrl(const QString &s) {
 
 QString resolveLocation(const QString &location, const QDir &base) {
     QString loc = location.trimmed();
+    // A Spotify track (an open.spotify.com link or a spotify: URI) becomes
+    // the same spotify://track/<id> entry Omamp's own playlists hold.
+    if (const QString spotify = Playlists::spotifyTrackPath(loc); !spotify.isEmpty())
+        return spotify;
     if (loc.startsWith("file://", Qt::CaseInsensitive))
         return QDir::cleanPath(QUrl(loc).toLocalFile());
     if (isUrl(loc) || isWindowsPath(loc))
@@ -264,6 +268,7 @@ QJsonObject ImportResult::toJson() const {
                   {"matched_by_path", byPath},
                   {"matched_by_tags", byTags},
                   {"unmatched", unmatched},
+                  {"spotify", spotify},
                   {"unmatched_locations", QJsonArray::fromStringList(unmatchedLocations)}};
     if (!ok())
         o["error"] = error;
@@ -291,6 +296,13 @@ ImportResult import(Library &library, const QString &file, qint64 parentId, cons
         e.title = f.title;
         e.artist = f.artist;
         e.durationMs = f.durationMs;
+        // A Spotify track stays a Spotify entry: it plays on Spotify, not as
+        // a local file that happens to share its name.
+        if (Playlists::isSpotifyPath(f.path)) {
+            ++r.spotify;
+            entries << e;
+            continue;
+        }
         if (f.path.startsWith('/'))
             e.trackId = matcher->byPath(f.path);
         if (e.trackId) {
@@ -387,6 +399,10 @@ bool exportFile(Library &library, qint64 playlistId, const QString &file, const 
     }
     const QDir base = QFileInfo(file).absoluteDir();
     auto location = [&](const Playlists::Item &it) {
+        // A Spotify entry is written as its open.spotify.com link, which
+        // other players and a browser understand.
+        if (it.isSpotify())
+            return Playlists::spotifyWebUrl(it.path);
         if (!options.relative || !it.path.startsWith('/'))
             return it.path;
         return base.relativeFilePath(it.path);

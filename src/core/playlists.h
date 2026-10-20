@@ -50,17 +50,34 @@ struct Item {
     QString path;       // absolute; the track's current path when it has one
     QString title, artist, album;
     qint64 durationMs = 0;
-    // online, offline, missing (the track's state), or unmatched (no track).
+    // online, offline, missing (the track's state), unmatched (no track),
+    // or spotify (a Spotify track: path spotify://track/<id>).
     QString availability;
+    // A Spotify entry's album id or picture URL, as it was added.
+    QString art;
+    bool isSpotify() const { return availability == QLatin1String("spotify"); }
     QJsonObject toJson() const;
 };
 
-// An entry to add that may or may not be a library track.
+// An entry to add that may or may not be a library track. A Spotify track
+// is an entry with path spotify://track/<id> and no trackId; album and art
+// (its album id or a picture URL) let it show without asking Spotify.
 struct Entry {
     qint64 trackId = 0;
     QString path, title, artist;
     qint64 durationMs = 0;
+    QString album, art;
 };
+
+// Spotify tracks in playlists. A playlist entry for one has the path
+// spotify://track/<id>, the same path Now Playing uses.
+bool isSpotifyPath(const QString &path);
+// spotify://track/<id> from a spotify:track:<id> URI, an
+// open.spotify.com/track/<id> link (with or without ?si=…) or the path
+// itself; empty for anything else.
+QString spotifyTrackPath(const QString &text);
+// https://open.spotify.com/track/<id> for a spotify://track/<id> path.
+QString spotifyWebUrl(const QString &path);
 
 // Every playlist, parents before children, siblings in order.
 QList<Playlist> list(Library &library);

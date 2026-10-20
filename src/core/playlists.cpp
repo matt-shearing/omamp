@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QJsonDocument>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -221,7 +222,7 @@ QJsonObject Playlist::toJson() const {
 }
 
 QJsonObject Item::toJson() const {
-    return {{"id", id ? QJsonValue(id) : QJsonValue()},
+    QJsonObject o{{"id", id ? QJsonValue(id) : QJsonValue()},
             {"track_id", trackId ? QJsonValue(trackId) : QJsonValue()},
             {"position", position},
             {"path", path.isEmpty() ? QJsonValue() : QJsonValue(path)},
@@ -229,7 +230,28 @@ QJsonObject Item::toJson() const {
             {"artist", artist},
             {"album", album},
             {"duration_ms", durationMs},
-            {"availability", availability}};
+            {"availability", availability},
+            {"spotify", isSpotify()}};
+    if (isSpotify())
+        o["url"] = spotifyWebUrl(path);
+    if (!art.isEmpty())
+        o["art"] = art;
+    return o;
+}
+
+bool isSpotifyPath(const QString &path) { return path.startsWith(QLatin1String("spotify://track/")); }
+
+QString spotifyTrackPath(const QString &text) {
+    static const QRegularExpression forms(
+        "^(?:spotify://track/|spotify:track:|https?://open\\.spotify\\.com/(?:intl-[a-z-]+/)?track/)"
+        "([A-Za-z0-9]{10,40})(?:[?#].*)?$",
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch m = forms.match(text.trimmed());
+    return m.hasMatch() ? "spotify://track/" + m.captured(1) : QString();
+}
+
+QString spotifyWebUrl(const QString &path) {
+    return isSpotifyPath(path) ? "https://open.spotify.com/track/" + path.mid(16) : QString();
 }
 
 static void walk(Library &library, qint64 parent, QList<Playlist> &out, int depth) {
@@ -438,7 +460,7 @@ QList<Item> items(Library &library, qint64 id, QString *error) {
     QList<Item> out;
     QSqlQuery q(library.db());
     q.prepare("SELECT i.id, i.track_id, i.path, i.title, i.artist, i.duration_ms, v.root_path, t.rel_path, t.title, "
-              "t.artist, t.album, t.duration_ms, t.availability FROM playlist_items i "
+              "t.artist, t.album, t.duration_ms, t.availability, i.album, i.art FROM playlist_items i "
               "LEFT JOIN tracks t ON t.id = i.track_id LEFT JOIN volumes v ON v.id = t.volume_id "
               "WHERE i.playlist_id = ? ORDER BY i.position, i.id");
     q.addBindValue(id);
@@ -463,7 +485,9 @@ QList<Item> items(Library &library, qint64 id, QString *error) {
             it.title = q.value(3).toString();
             it.artist = q.value(4).toString();
             it.durationMs = q.value(5).toLongLong();
-            it.availability = "unmatched";
+            it.album = q.value(13).toString();
+            it.art = q.value(14).toString();
+            it.availability = isSpotifyPath(it.path) ? "spotify" : "unmatched";
         }
         out << it;
     }
@@ -515,8 +539,8 @@ int addEntries(Library &library, qint64 id, const QList<Entry> &entries, int at,
     if (at < 0 || at > order.size())
         at = order.size();
     QSqlQuery q(library.db());
-    q.prepare("INSERT INTO playlist_items (playlist_id, track_id, position, path, title, artist, duration_ms, added) "
-              "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    q.prepare("INSERT INTO playlist_items (playlist_id, track_id, position, path, title, artist, duration_ms, added, "
+              "album, art) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     QList<qint64> added;
     for (const Entry &e : entries) {
         q.addBindValue(id);
@@ -527,6 +551,8 @@ int addEntries(Library &library, qint64 id, const QList<Entry> &entries, int at,
         q.addBindValue(nullableText(e.artist));
         q.addBindValue(e.durationMs > 0 ? QVariant(e.durationMs) : QVariant(QMetaType(QMetaType::LongLong)));
         q.addBindValue(now());
+        q.addBindValue(nullableText(e.album));
+        q.addBindValue(nullableText(e.art));
         if (!q.exec()) {
             fail(error, q.lastError().text());
             return -1;

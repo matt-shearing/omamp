@@ -662,6 +662,12 @@ bool Backend::addToPlaylist(const QString &, const Item &, QString *error) {
     return false;
 }
 
+bool Backend::createPlaylist(const QString &, QString *error) {
+    if (error)
+        *error = tr("%1 can't make playlists.").arg(name());
+    return false;
+}
+
 Item Backend::track(const QString &id, QString *) {
     Item t;
     t.kind = "track";
@@ -1240,6 +1246,12 @@ bool SpotifyPlayerBackend::addToPlaylist(const QString &playlistId, const Item &
     }
     return command({"playlist", "edit", item.kind == "track" ? "--track-id" : "--album-id", item.id, "add", playlistId},
                    nullptr, error);
+}
+
+// `playlist new <name>` makes a private, non-collaborative playlist. "--"
+// keeps a name that starts with a dash from reading as an option.
+bool SpotifyPlayerBackend::createPlaylist(const QString &name, QString *error) {
+    return command({"playlist", "new", "--", name}, nullptr, error);
 }
 
 Item SpotifyPlayerBackend::track(const QString &id, QString *error) {

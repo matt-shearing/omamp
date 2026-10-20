@@ -564,6 +564,16 @@ static const QStringList version10 = {
     "CREATE INDEX radio_heard_started ON radio_heard(started)",
 };
 
+// Mixed playlists: a static playlist can hold Spotify tracks beside local
+// files. A Spotify entry is a row with no track_id whose path is
+// spotify://track/<id>; it already keeps its title, artist and length, and
+// now its album and art too, so it shows properly without asking Spotify.
+// art is the Spotify album id (for the cover Omamp caches) or a picture URL.
+static const QStringList version11 = {
+    "ALTER TABLE playlist_items ADD COLUMN album TEXT",
+    "ALTER TABLE playlist_items ADD COLUMN art TEXT",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
@@ -576,6 +586,7 @@ const QList<Migration> &migrations() {
         {8, "lyrics cache and scrobble queue", version8},
         {9, "network volumes, remote sources", version9, true},
         {10, "internet radio stations", version10},
+        {11, "Spotify entries in playlists", version11},
     };
     return all;
 }

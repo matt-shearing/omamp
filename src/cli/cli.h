@@ -28,6 +28,16 @@ int runSync(const QStringList &arguments, QTextStream &out, QTextStream &err, co
 // `omamp spotify` (clispotify.cpp).
 int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err);
 extern const char *spotifyUsage;
+// The name, artists, album and length of Spotify tracks named by
+// spotify://track/<id> paths, for `omamp playlist add`. Asks spotify_player
+// only when Spotify is switched on in Omamp and spotify_player is signed in
+// and running; otherwise (and for any it can't find) the result holds just
+// the path. *note says why names are missing, when they are.
+struct SpotifyTrackInfo {
+    QString path, title, artist, album, albumId;
+    qint64 durationMs = 0;
+};
+QList<SpotifyTrackInfo> lookUpSpotifyTracks(const QStringList &paths, QString *note);
 // `omamp radio` (cliradio.cpp).
 int runRadio(const QStringList &arguments, QTextStream &out, QTextStream &err);
 // How `omamp radio play` reaches the player: hands radio://<key> to the

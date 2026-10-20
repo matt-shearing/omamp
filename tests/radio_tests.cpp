@@ -184,7 +184,8 @@ private slots:
     void seedsEveryChannel() {
         Library library(db());
         QVERIFY(library.open());
-        QCOMPARE(library.schemaVersion(), 10);
+        // The radio step (10) is in; later steps may follow it.
+        QVERIFY(library.schemaVersion() >= 10);
         Radio::Stations stations(library);
         QVERIFY(stations.seed());
         QCOMPARE(stations.all().size(), 11);

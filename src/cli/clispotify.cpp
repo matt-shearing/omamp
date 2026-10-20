@@ -225,3 +225,48 @@ int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err)
 }
 
 } // namespace Cli
+
+namespace Cli {
+
+QList<SpotifyTrackInfo> lookUpSpotifyTracks(const QStringList &paths, QString *note) {
+    QList<SpotifyTrackInfo> out;
+    for (const QString &path : paths) {
+        SpotifyTrackInfo t;
+        t.path = path;
+        out << t;
+    }
+    const Spotify::Settings settings = Spotify::Settings::load();
+    if (!settings.enabled || settings.backend != "spotify_player") {
+        if (note)
+            *note = "Spotify is off in Omamp, so the tracks were added without their names; "
+                    "they show their Spotify ids until they are added again with Spotify on";
+        return out;
+    }
+    Spotify::SpotifyPlayerBackend backend;
+    if (!backend.installed() || !backend.signedIn() || !backend.running()) {
+        if (note)
+            *note = "spotify_player isn't running, so the tracks were added without their names";
+        return out;
+    }
+    int missing = 0;
+    for (SpotifyTrackInfo &t : out) {
+        QString kind, id, error;
+        if (!Spotify::parseReference(t.path, &kind, &id))
+            continue;
+        const Spotify::Item item = backend.track(id, &error);
+        if (!item.isValid() || item.name.isEmpty()) {
+            ++missing;
+            continue;
+        }
+        t.title = item.name;
+        t.artist = item.artistText();
+        t.album = item.album;
+        t.albumId = item.albumId;
+        t.durationMs = item.durationMs;
+    }
+    if (missing && note)
+        *note = QString("Spotify didn't say the names of %1 of the tracks").arg(missing);
+    return out;
+}
+
+}

@@ -73,7 +73,9 @@ struct ImportResult {
     QString file;
     qint64 playlistId = 0;
     QString name;
-    int entries = 0, byPath = 0, byTags = 0, unmatched = 0;
+    // spotify: Spotify tracks (open.spotify.com links or spotify: URIs),
+    // kept as Spotify entries.
+    int entries = 0, byPath = 0, byTags = 0, unmatched = 0, spotify = 0;
     QStringList unmatchedLocations;
     QString error;
     bool ok() const { return error.isEmpty(); }
@@ -94,7 +96,8 @@ struct ExportOptions {
     bool relative = false; // paths relative to the playlist file's folder
 };
 // Writes an M3U8 (for .m3u and .m3u8) or a PLS (for .pls) with each entry's
-// length, artist and title. Auto-playlists export their current tracks.
+// length, artist and title. A Spotify entry is written as its
+// https://open.spotify.com/track/<id> link, which import reads back. Auto-playlists export their current tracks.
 // Written beside the target and renamed into place.
 bool exportFile(Library &library, qint64 playlistId, const QString &file, const ExportOptions &options = {},
                 int *written = nullptr, QString *error = nullptr);

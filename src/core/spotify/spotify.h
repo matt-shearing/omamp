@@ -332,6 +332,8 @@ public:
     virtual SearchResults search(const QString &text, QString *error);
     // Adds a track or a whole album to a playlist.
     virtual bool addToPlaylist(const QString &playlistId, const Item &item, QString *error);
+    // Makes a new private playlist in your Spotify library.
+    virtual bool createPlaylist(const QString &name, QString *error);
     // A track's name, artists and album, by id. Backends that can't look
     // one up return just the id.
     virtual Item track(const QString &id, QString *error);
@@ -402,6 +404,7 @@ public:
     bool playContext(const Item &context, bool shuffle, QString *error) override;
     SearchResults search(const QString &text, QString *error) override;
     bool addToPlaylist(const QString &playlistId, const Item &item, QString *error) override;
+    bool createPlaylist(const QString &name, QString *error) override;
     Item track(const QString &id, QString *error) override;
     QString account(QString *error) override;
 

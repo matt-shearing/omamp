@@ -6,6 +6,8 @@
 
 #include "audioengine.h"
 
+class OutputFollower;
+
 // The engine Omamp has always used: QMediaPlayer with Qt's FFmpeg backend.
 // No gapless playback, crossfade, ReplayGain or equaliser; it moves to the
 // queued file when the current one ends, as the Player used to do itself.
@@ -44,11 +46,16 @@ public:
     QVariantMap metaData() const override;
 
     bool hasDevice() const { return m_player.audioOutput() != nullptr; }
+    // Keeps the audio output on the desktop's default device (null without
+    // a device). Tests construct their own with fakes.
+    OutputFollower *outputFollower() const { return m_follower; }
+    void setOutputFollower(OutputFollower *follower);
 
 private:
     QMediaPlayer m_player;
     QAudioOutput m_output;
     QAudioBufferOutput m_bufferOutput;
+    OutputFollower *m_follower = nullptr;
     QString m_source, m_queued;
     QUrl m_queuedUrl;
     bool m_buffering = false;

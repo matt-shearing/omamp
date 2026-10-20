@@ -24,6 +24,9 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
 int runNas(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver = nullptr);
 // `omamp sync` and `omamp report` (clisync.cpp).
 int runSync(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver = nullptr);
+// `omamp spotify` (clispotify.cpp).
+int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err);
+extern const char *spotifyUsage;
 // What --password-stdin and --api-key-stdin read, for tests.
 void setStdinForTesting(const QString &text);
 

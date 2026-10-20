@@ -66,3 +66,6 @@ SOURCES += $$PWD/mounts.cpp $$PWD/peaks.cpp $$PWD/remote.cpp $$PWD/subsonic.cpp 
 # and track-list reports (CSV and HTML).
 HEADERS += $$PWD/devicesync.h $$PWD/report.h
 SOURCES += $$PWD/devicesync.cpp $$PWD/report.cpp
+
+# Spotify (docs/spotify.md).
+include($$PWD/spotify/spotify.pri)

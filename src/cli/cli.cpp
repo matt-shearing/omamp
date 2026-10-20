@@ -44,7 +44,7 @@ namespace {
 const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", "version", "--version",
                                "watch", "locate", "art", "tag", "undo", "journal", "organise", "organize",
                                "tag-from-filename", "audit", "duplicates", "playlist", "autoplaylist",
-                               "collection", "autodj", "import", "volume", "nas", "remote", "sync", "report"};
+                               "collection", "autodj", "import", "volume", "nas", "remote", "sync", "report", "spotify"};
 
 const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp open [files or folders...]  the same, for names that look like commands
@@ -1634,6 +1634,8 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         return runNas(arguments, out, err, resolver);
     if (command == "sync" || command == "report")
         return runSync(arguments, out, err, resolver);
+    if (command == "spotify")
+        return runSpotify(arguments, out, err);
     for (int i = 1; i < arguments.size(); ++i) {
         const QString &a = arguments[i];
         auto value = [&](QString *target) {
@@ -1746,7 +1748,7 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         // The web commands' lines go after the others, before the options.
         QString text = QString::fromUtf8(usage);
         const int options = text.indexOf("\nOptions:");
-        text.insert(options, QString::fromUtf8(WebCli::usage));
+        text.insert(options, QString::fromUtf8(WebCli::usage) + QString::fromUtf8(spotifyUsage));
         out << text << Qt::flush;
         return 0;
     }

@@ -10,14 +10,22 @@ import QtQuick.Layouts
 //          thin position line along the bottom
 //
 // Ctrl+M (or the button at the right) goes back to the full window.
-// Wayland lets no window place itself or stay on top: a Hyprland rule for
-// the title "Omamp mini" / "Omamp micro" does that (docs/now-playing.md).
+// Wayland lets no window place itself or stay on top: on Hyprland the
+// window asks Hyprland to (WindowPlacement), and a rule for the title
+// "Omamp mini" / "Omamp micro" does it for `omamp mini` (docs/now-playing.md).
 Rectangle {
     id: mini
     objectName: "miniPlayer"
     property string mode: "mini" // or "micro"
     property var skin: appearance.deck
     property bool showRemaining: false
+    // The strip's own height. A window much taller than that is one the
+    // window manager keeps large (a tiled window): the strip then sits along
+    // the top, full width, with a line saying why, never in the middle of
+    // empty space.
+    property int stripHeight: micro ? 28 : 64
+    readonly property bool large: height > stripHeight + 40
+    readonly property int stripAreaHeight: large ? stripHeight : height
     signal restore()
     signal toggleRemaining()
     signal openBigView()
@@ -84,7 +92,8 @@ Rectangle {
     // ---- Mini: 420 x 64 ----------------------------------------------------
     RowLayout {
         objectName: "miniLayout"
-        anchors.fill: parent
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: mini.stripAreaHeight - 2 * anchors.margins
         anchors.margins: 6
         spacing: 6
         visible: !mini.micro
@@ -178,7 +187,8 @@ Rectangle {
     // ---- Micro: 275 x 28, Winamp's windowshade ---------------------------
     Item {
         objectName: "microLayout"
-        anchors.fill: parent
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: mini.stripAreaHeight - 2 * anchors.margins
         anchors.margins: 3
         visible: mini.micro
 
@@ -261,5 +271,18 @@ Rectangle {
                 onClicked: (mouse) => backend.seek(Math.max(0, Math.min(1, mouse.x / width)) * backend.duration)
             }
         }
+    }
+
+    // The window manager kept the window large.
+    Text {
+        objectName: "compactHint"
+        visible: mini.large
+        anchors { left: parent.left; right: parent.right; top: parent.top; bottom: parent.bottom
+                  topMargin: mini.stripHeight + 12; margins: 16 }
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.Wrap
+        text: qsTr("Your window manager keeps this window large. Make it floating to shrink it.")
+        font.pixelSize: 13
+        color: mini.skin.labelDim
     }
 }

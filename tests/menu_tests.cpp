@@ -3,7 +3,8 @@
 // library; View's Player / Library / Now Playing; the bar hidden in the
 // mini and micro players and the big view; party mode's locks; the Spotify
 // menu switched off and on; the one-time library hint; the keys from any
-// focus; a tiled window never resizing itself; and how long Tab takes.
+// focus; a tiled window never resizing itself; the compact players on
+// Hyprland through a fake hyprctl; and how long Tab takes.
 //
 // Offscreen in software, never on an audio device, settings in temporary
 // folders. Entries that would reach the internet, open a file picker or a
@@ -11,6 +12,9 @@
 
 #include <QDir>
 #include <QElapsedTimer>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QSignalSpy>
 #include <QFile>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -204,6 +208,60 @@ void writeConf(const QString &path, bool advanced, bool hintDone = true) {
     conf.setValue("window/libraryHintDone", hintDone);
 }
 
+// A hyprctl that keeps one client (this process, address 0x5afe, on
+// monitor 1) in files beside it, applies the Lua dispatches it is sent to
+// that state, logs every batch to `log`, and fails each batch while a file
+// called `fail` is there. floating: how the window starts.
+QString fakeHyprctl(const QString &dir, bool floating) {
+    auto put = [&](const QString &name, const QByteArray &text) {
+        QFile f(dir + "/" + name);
+        f.open(QIODevice::WriteOnly);
+        f.write(text);
+    };
+    put("floating", floating ? "true\n" : "false\n");
+    put("pinned", "false\n");
+    put("at", floating ? "100,200\n" : "12,42\n");
+    put("size", floating ? "1100,760\n" : "1700,1000\n");
+    // Monitor 1 sits right of monitor 0 and scales by 1.5: 2560 x 1440.
+    put("monitors.json", R"([{"id":0,"name":"DP-1","x":0,"y":0,"width":6144,"height":2560,"scale":1,"transform":0},
+                            {"id":1,"name":"HDMI-A-1","x":6144,"y":0,"width":3840,"height":2160,"scale":1.5,"transform":0}])");
+    const QString script = dir + "/hyprctl";
+    put("hyprctl", QString(R"SH(#!/bin/sh
+d=$(dirname "$0")
+st() { tr -d '\n' < "$d/$1"; }
+xy() { echo "$1" | sed 's/.*x = \([0-9-]*\), y = \([0-9-]*\).*/\1,\2/'; }
+case "$1" in
+-j)
+  if [ "$2" = monitors ]; then cat "$d/monitors.json"; exit 0; fi
+  printf '[{"address":"0x5afe","pid":%1,"title":"Omamp","floating":%s,"pinned":%s,"fullscreen":0,"monitor":1,"at":[%s],"size":[%s]}]\n' \
+    "$(st floating)" "$(st pinned)" "$(st at)" "$(st size)" ;;
+--batch)
+  printf '%s\n' "$2" >> "$d/log"
+  if [ -e "$d/fail" ]; then echo ok; echo 'error: [string "x"]:1: attempt to call a nil value'; exit 0; fi
+  echo "$2" | tr ';' '\n' | while IFS= read -r c; do
+    case "$c" in
+      *'float({'*'"on"'*) echo true > "$d/floating" ;;
+      *'float({'*'"off"'*) echo false > "$d/floating"; echo 1700,1000 > "$d/size" ;;
+      *'pin({'*'"on"'*) echo true > "$d/pinned" ;;
+      *'pin({'*'"off"'*) echo false > "$d/pinned" ;;
+      *'resize({'*) xy "$c" > "$d/size" ;;
+      *'move({'*) xy "$c" > "$d/at" ;;
+    esac
+    echo ok
+  done ;;
+esac
+)SH").arg(QCoreApplication::applicationPid()).toUtf8());
+    QFile::setPermissions(script, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return script;
+}
+
+QStringList batches(const QString &dir) {
+    QFile f(dir + "/log");
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    return QString::fromUtf8(f.readAll()).split('\n', Qt::SkipEmptyParts);
+}
+
 } // namespace
 
 class MenuTests : public QObject {
@@ -236,6 +294,232 @@ private slots:
         QVERIFY(!WindowPlacement::managedIn(R"([{"pid":1,"floating":false}])", pid, &found));
         QVERIFY(!found);
         QVERIFY(!WindowPlacement::managedIn("not json", pid, &found));
+    }
+
+    // The Lua dispatches for Hyprland 0.56: placed as the window rule
+    // places a compact player, on the window's own monitor, and put back.
+    void placementCommands() {
+        const qint64 pid = 4242;
+        const QByteArray clients = R"([{"address":"0x1","pid":17,"title":"x"},
+            {"address":"0xa","pid":4242,"title":"Omamp","monitor":1,"floating":false},
+            {"address":"0xb","pid":4242,"title":"Omamp mini","monitor":1,"floating":false}])";
+        QCOMPARE(WindowPlacement::clientIn(clients, pid).value("address").toString(), QString("0xa"));
+        QCOMPARE(WindowPlacement::clientIn(clients, pid, "Omamp mini").value("address").toString(), QString("0xb"));
+        QVERIFY(WindowPlacement::clientIn(clients, 99).isEmpty());
+
+        const QJsonArray monitors = QJsonDocument::fromJson(R"([{"id":0,"x":0,"y":0,"width":6144,"height":2560,"scale":1},
+            {"id":1,"x":6144,"y":0,"width":3840,"height":2160,"scale":1.5,"transform":0},
+            {"id":2,"x":0,"y":2560,"width":1080,"height":1920,"scale":1,"transform":1}])").array();
+        QJsonObject client{{"address", "0xb"}, {"monitor", 0}};
+        QCOMPARE(WindowPlacement::enterCommands(client, monitors, 420, 64), QStringList({
+            R"(hl.dsp.window.float({ window = "address:0xb", action = "on" }))",
+            R"(hl.dsp.window.resize({ window = "address:0xb", x = 420, y = 64, exact = true }))",
+            R"(hl.dsp.window.move({ window = "address:0xb", x = 5700, y = 128, exact = true }))",
+            R"(hl.dsp.window.pin({ window = "address:0xb", action = "on" }))"}));
+        // Scaled: 2560 x 1440 in layout pixels, right of the first monitor.
+        client["monitor"] = 1;
+        QVERIFY(WindowPlacement::enterCommands(client, monitors, 275, 28).at(2).contains("x = 8405, y = 72,"));
+        // Turned: 1920 wide.
+        client["monitor"] = 2;
+        QVERIFY(WindowPlacement::enterCommands(client, monitors, 420, 64).at(2).contains("x = 1476, y = 2614,"));
+        client["monitor"] = 7;
+        QVERIFY(WindowPlacement::enterCommands(client, monitors, 420, 64).isEmpty());
+
+        WindowPlacement::Saved tiled;
+        tiled.valid = true;
+        QCOMPARE(WindowPlacement::leaveCommands("0xb", tiled), QStringList({
+            R"(hl.dsp.window.pin({ window = "address:0xb", action = "off" }))",
+            R"(hl.dsp.window.float({ window = "address:0xb", action = "off" }))"}));
+        WindowPlacement::Saved floating{true, true, true, 100, 200, 1100, 760};
+        QCOMPARE(WindowPlacement::leaveCommands("0xb", floating), QStringList({
+            R"(hl.dsp.window.resize({ window = "address:0xb", x = 1100, y = 760, exact = true }))",
+            R"(hl.dsp.window.move({ window = "address:0xb", x = 100, y = 200, exact = true }))"}));
+
+        QCOMPARE(WindowPlacement::batch({"a()", "b()"}), QString("dispatch a(); dispatch b()"));
+        QVERIFY(WindowPlacement::batchOk("ok\n\n\nok\n"));
+        QVERIFY(!WindowPlacement::batchOk("ok\n\nerror: [string]:1: attempt to call a nil value\n"));
+        QVERIFY(!WindowPlacement::batchOk(""));
+    }
+
+    // Ctrl+M on a tiled window on Hyprland: the title first, then Hyprland
+    // floats, sizes, places and pins it; the content stays hidden until the
+    // size arrives. Mini to micro keeps what the window was; back tiles it.
+    void compactPlayersOnHyprlandTiled() {
+        QTemporaryDir dir;
+        writeConf(dir.filePath("window.conf"), false);
+        const QString hyprctl = fakeHyprctl(dir.path(), false);
+        Rig rig(dir, hyprctl);
+        QVERIFY(rig.load());
+        QVERIFY(rig.placement->available());
+        rig.placement->refresh();
+        QTRY_VERIFY(rig.placement->managed());
+        rig.window->resize(1700, 1000);
+        QTRY_COMPARE(rig.window->width(), 1700);
+        QObject *modes = rig.modes();
+        QQuickItem *root = qobject_cast<QQuickItem *>(rig.find("deckView"))->parentItem();
+
+        rig.run("mini-player");
+        QCOMPARE(rig.window->title(), QString("Omamp mini"));
+        QVERIFY(modes->property("placing").toBool());
+        QCOMPARE(root->property("opacity").toDouble(), 0.0);
+        QCOMPARE(rig.window->width(), 1700); // never asks for a size itself
+        QTRY_COMPARE(batches(dir.path()).size(), 1);
+        QCOMPARE(batches(dir.path()).at(0), WindowPlacement::batch({
+            R"(hl.dsp.window.float({ window = "address:0x5afe", action = "on" }))",
+            R"(hl.dsp.window.resize({ window = "address:0x5afe", x = 420, y = 64, exact = true }))",
+            R"(hl.dsp.window.move({ window = "address:0x5afe", x = 8260, y = 72, exact = true }))",
+            R"(hl.dsp.window.pin({ window = "address:0x5afe", action = "on" }))"}));
+        // Still hidden until Hyprland's size arrives.
+        QTest::qWait(100);
+        QVERIFY(modes->property("placing").toBool());
+        rig.window->resize(420, 64); // as Hyprland would
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        QCOMPARE(root->property("opacity").toDouble(), 1.0);
+        QVERIFY(!rig.placement->managed());
+        QObject *mini = rig.find("miniPlayer");
+        QVERIFY(mini && !mini->property("large").toBool());
+        QVERIFY(!rig.find("compactHint")->property("visible").toBool());
+
+        rig.run("micro-player");
+        QCOMPARE(rig.window->title(), QString("Omamp micro"));
+        QTRY_COMPARE(batches(dir.path()).size(), 2);
+        QVERIFY(batches(dir.path()).at(1).contains("x = 275, y = 28, exact"));
+        QVERIFY(batches(dir.path()).at(1).contains("x = 8405, y = 72, exact"));
+        rig.window->resize(275, 28);
+        QTRY_VERIFY(!modes->property("placing").toBool());
+
+        // Back: unpinned and tiled again, as it was before the mini player.
+        rig.run("micro-player");
+        QVERIFY(rig.window->title() != "Omamp micro");
+        QVERIFY(modes->property("placing").toBool());
+        QTRY_COMPARE(batches(dir.path()).size(), 3);
+        QCOMPARE(batches(dir.path()).at(2), WindowPlacement::batch({
+            R"(hl.dsp.window.pin({ window = "address:0x5afe", action = "off" }))",
+            R"(hl.dsp.window.float({ window = "address:0x5afe", action = "off" }))"}));
+        rig.window->resize(1700, 1000);
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        QTRY_VERIFY(rig.placement->managed());
+        QVERIFY(rig.bar()->property("visible").toBool());
+        QCOMPARE(rig.window->width(), 1700);
+        QVERIFY2(m_warnings.isEmpty(), qPrintable(m_warnings.join("\n")));
+    }
+
+    // A floating window goes back to its own size and place, unpinned.
+    void compactPlayersOnHyprlandFloating() {
+        QTemporaryDir dir;
+        writeConf(dir.filePath("window.conf"), false);
+        const QString hyprctl = fakeHyprctl(dir.path(), true);
+        Rig rig(dir, hyprctl);
+        QVERIFY(rig.load());
+        QObject *modes = rig.modes();
+        rig.run("mini-player");
+        QTRY_COMPARE(batches(dir.path()).size(), 1);
+        rig.window->resize(420, 64);
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        rig.run("mini-player");
+        QTRY_COMPARE(batches(dir.path()).size(), 2);
+        QCOMPARE(batches(dir.path()).at(1), WindowPlacement::batch({
+            R"(hl.dsp.window.pin({ window = "address:0x5afe", action = "off" }))",
+            R"(hl.dsp.window.resize({ window = "address:0x5afe", x = 1100, y = 760, exact = true }))",
+            R"(hl.dsp.window.move({ window = "address:0x5afe", x = 100, y = 200, exact = true }))"}));
+        rig.window->resize(1100, 760);
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        QVERIFY(!rig.placement->managed());
+        QVERIFY2(m_warnings.isEmpty(), qPrintable(m_warnings.join("\n")));
+    }
+
+    // `omamp mini`: the title and size are there from the first frame, for
+    // the window rule; Hyprland is asked as well, for a desktop without the
+    // rule; and going back tiles the window, Hyprland's default.
+    void compactPlayerAtStartUp() {
+        QTemporaryDir dir;
+        writeConf(dir.filePath("window.conf"), false);
+        const QString hyprctl = fakeHyprctl(dir.path(), true); // the rule floated it
+        Rig rig(dir, hyprctl);
+        rig.engine.rootContext()->setContextProperty("startMode", QString("mini"));
+        QObject *created = nullptr;
+        QString firstTitle;
+        QSize firstSize;
+        QObject::connect(&rig.engine, &QQmlApplicationEngine::objectCreated, [&](QObject *o) {
+            created = o;
+            firstTitle = o ? o->property("title").toString() : QString();
+            firstSize = o ? QSize(o->property("width").toInt(), o->property("height").toInt()) : QSize();
+        });
+        QVERIFY(rig.load());
+        QVERIFY(created);
+        QCOMPARE(firstTitle, QString("Omamp mini"));
+        QCOMPARE(firstSize, QSize(420, 64));
+        QObject *modes = rig.modes();
+        QCOMPARE(modes->property("compact").toString(), QString("mini"));
+        QTRY_COMPARE(batches(dir.path()).size(), 1);
+        QVERIFY(batches(dir.path()).at(0).contains("x = 420, y = 64, exact"));
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        rig.run("mini-player");
+        QTRY_COMPARE(batches(dir.path()).size(), 2);
+        QCOMPARE(batches(dir.path()).at(1), WindowPlacement::batch({
+            R"(hl.dsp.window.pin({ window = "address:0x5afe", action = "off" }))",
+            R"(hl.dsp.window.float({ window = "address:0x5afe", action = "off" }))"}));
+        QVERIFY2(m_warnings.isEmpty(), qPrintable(m_warnings.join("\n")));
+    }
+
+    // Hyprland says no (or there is no hyprctl and the window manager keeps
+    // the window large): the strip lies along the top, full width, with a
+    // line saying why; never a small strip in the middle of empty space.
+    void compactPlayerFallsBackWhenKeptLarge() {
+        QTemporaryDir dir;
+        writeConf(dir.filePath("window.conf"), false);
+        const QString hyprctl = fakeHyprctl(dir.path(), false);
+        QFile(dir.filePath("fail")).open(QIODevice::WriteOnly);
+        Rig rig(dir, hyprctl);
+        QVERIFY(rig.load());
+        rig.placement->refresh();
+        QTRY_VERIFY(rig.placement->managed());
+        rig.window->resize(1700, 1000);
+        QTRY_COMPARE(rig.window->width(), 1700);
+        QObject *modes = rig.modes();
+        QSignalSpy placed(rig.placement, &WindowPlacement::compactPlaced);
+        rig.run("mini-player");
+        QTRY_COMPARE(placed.size(), 1);
+        QCOMPARE(placed.at(0).at(0).toBool(), false);
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        QCOMPARE(rig.window->width(), 1700);
+        QCOMPARE(rig.window->title(), QString("Omamp mini"));
+        auto *mini = qobject_cast<QQuickItem *>(rig.find("miniPlayer"));
+        QVERIFY(mini && mini->property("large").toBool());
+        QCOMPARE(mini->width(), 1700.0);
+        auto *strip = qobject_cast<QQuickItem *>(rig.find("miniLayout"));
+        QCOMPARE(strip->y(), 6.0);
+        QCOMPARE(strip->height(), 52.0);
+        QCOMPARE(strip->width(), 1700.0 - 12);
+        auto *hint = qobject_cast<QQuickItem *>(rig.find("compactHint"));
+        QVERIFY(hint->isVisible());
+        QVERIFY(hint->property("text").toString().contains("keeps this window large"));
+        QVERIFY(hint->y() >= 64 && hint->y() < 120);
+        // The micro bar too.
+        rig.run("micro-player");
+        QTRY_COMPARE(placed.size(), 2);
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        auto *micro = qobject_cast<QQuickItem *>(rig.find("microLayout"));
+        QCOMPARE(micro->y(), 3.0);
+        QCOMPARE(micro->height(), 22.0);
+        QVERIFY(hint->isVisible());
+        // Back to the deck: nothing had changed, nothing is undone.
+        rig.run("micro-player");
+        QTRY_VERIFY(!modes->property("placing").toBool());
+        QCOMPARE(rig.window->width(), 1700);
+        QVERIFY(rig.find("miniPlayer") == nullptr);
+
+        // Without hyprctl at all, the window asks for the size itself.
+        QTemporaryDir dir2;
+        writeConf(dir2.filePath("window.conf"), false);
+        Rig plain(dir2);
+        QVERIFY(plain.load());
+        QVERIFY(!plain.placement->available());
+        plain.run("mini-player");
+        QTRY_COMPARE(plain.window->size(), QSize(420, 64));
+        QTRY_VERIFY(!plain.modes()->property("placing").toBool());
+        QTRY_VERIFY(!plain.find("compactHint")->property("visible").toBool());
+        QVERIFY2(m_warnings.isEmpty(), qPrintable(m_warnings.join("\n")));
     }
 
     // Every entry, on the deck and in the library: greyed exactly when the

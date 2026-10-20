@@ -10,14 +10,27 @@ import QtQuick
 // [compact]. Which mode was showing is not remembered: Omamp opens as the
 // full window unless started with `omamp mini` or `omamp micro`, because a
 // compact player that Hyprland tiles instead of floating is no use.
+//
+// On Hyprland a window rule applies only when a window opens, so switching
+// asks Hyprland (WindowPlacement) to float, pin, size and place the window
+// top right under the bar, and to put it back as it was afterwards.
 QtObject {
     id: modes
     // The ApplicationWindow and its Settings (prefs).
     required property var window
     required property var prefs
 
-    // "", "mini" or "micro".
-    property string compact: ""
+    // "", "mini" or "micro". `omamp mini` / `omamp micro` start in one, so
+    // the window has its title and size before its first frame and a
+    // Hyprland window rule for the title applies when it opens.
+    property string compact: typeof startMode === "string" && (startMode === "mini" || startMode === "micro")
+                             ? startMode : ""
+    // Hyprland is placing the window (WindowPlacement): the content stays
+    // hidden until the new size arrives, so no frame shows a layout at the
+    // wrong size.
+    property bool placing: false
+    readonly property var placement: typeof windowPlacement !== "undefined" ? windowPlacement : null
+    readonly property bool hyprland: placement !== null && placement.available
     property bool bigView: false
     readonly property bool fullScreen: window.visibility === Window.FullScreen
 
@@ -57,11 +70,64 @@ QtObject {
         else window.rememberLayout()
         if (fullScreen) window.showNormal()
         bigView = false
+        // The title first, then the size.
         compact = mode
-        // Only while the window floats: Hyprland sizes a tiled one.
-        if (mode !== "") window.resizeTo(compactWidth, compactHeight)
+        if (hyprland) {
+            // Hyprland floats, pins and sizes the window, or tiles it again
+            // (compactPlaced / compactLeft below).
+            placing = true
+            settle.restart()
+            if (mode !== "") placement.enterCompact(title, compactWidth, compactHeight, false)
+            else placement.leaveCompact()
+            return
+        }
+        resizeForMode()
+    }
+
+    // Without Hyprland, or when it said no: the window asks for the size
+    // itself; nothing happens where the compositor decides (sizeManaged),
+    // and the compact player then lays its strip along the top.
+    function resizeForMode() {
+        if (compact !== "") window.resizeTo(compactWidth, compactHeight)
         else window.resizeTo(prefs.advanced ? prefs.advancedWidth : prefs.deckWidth,
                              prefs.advanced ? prefs.advancedHeight : prefs.deckHeight)
+    }
+
+    // The window's size has caught up with the mode: compact-sized in a
+    // compact player, larger out of one.
+    function sizeArrived() {
+        const small = window.width <= compactWidth + 40 && window.height <= compactHeight + 40
+        return compact !== "" ? small : !small
+    }
+
+    // Shows the content once Hyprland has answered and the size has
+    // arrived, or after a second whatever happened.
+    property Timer settle: Timer {
+        interval: 1000
+        onTriggered: modes.placing = false
+    }
+    property bool answered: false
+    property Timer poll: Timer {
+        interval: 16
+        repeat: true
+        running: modes.placing && modes.answered
+        onTriggered: if (modes.sizeArrived()) { modes.placing = false; modes.answered = false }
+    }
+    onPlacingChanged: if (!placing) { answered = false; settle.stop() }
+
+    property Connections placed: Connections {
+        target: modes.placement
+        ignoreUnknownSignals: true
+        function onCompactPlaced(ok) {
+            if (modes.compact === "") return // left again meanwhile
+            modes.answered = true
+            if (!ok) { modes.resizeForMode(); modes.placing = false }
+        }
+        function onCompactLeft(ok) {
+            if (modes.compact !== "") return
+            modes.answered = true
+            if (!ok) { modes.resizeForMode(); modes.placing = false }
+        }
     }
 
     function setBigView(on) {
@@ -87,8 +153,16 @@ QtObject {
     }
 
     // `omamp mini` and `omamp micro` start here.
+    // The window already opened as that player (compact starts from
+    // startMode); without a window rule Hyprland tiled it, so ask it to
+    // float the window too. Going back then tiles it.
     function start(mode) {
-        if (mode === "mini" || mode === "micro") setCompact(mode)
+        if (mode !== "mini" && mode !== "micro") return
+        if (compact !== mode) compact = mode
+        if (!hyprland) return
+        placing = true
+        settle.restart()
+        placement.enterCompact(title, compactWidth, compactHeight, true)
     }
 
     function registerActions(p) {

@@ -78,7 +78,7 @@ ApplicationWindow {
     property bool menuPeek: false
     // The library view gets built in the background after start-up.
     property bool libraryWarm: false
-    readonly property bool menuBarShown: modes.compact === "" && !modes.bigView && !library.dj.partyDisplay
+    readonly property bool menuBarShown: modes.compact === "" && !modes.placing && !modes.bigView && !library.dj.partyDisplay
                                          && (prefs.menuBar || menuPeek)
     menuBar: MainMenuBar {
         id: mainMenu
@@ -752,6 +752,8 @@ ApplicationWindow {
     Item {
         id: root
         anchors.fill: parent
+        // Hidden while Hyprland moves into or out of a compact player.
+        opacity: modes.placing ? 0 : 1
         LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
         LayoutMirroring.childrenInherit: true
         // Takes the keys nothing else wants (the deck has no focus item), so
@@ -894,6 +896,7 @@ ApplicationWindow {
             active: modes.compact !== ""
             sourceComponent: MiniPlayer {
                 mode: modes.compact
+                stripHeight: modes.compactHeight
                 showRemaining: win.showRemaining
                 onRestore: modes.setCompact("")
                 onToggleRemaining: win.showRemaining = !win.showRemaining

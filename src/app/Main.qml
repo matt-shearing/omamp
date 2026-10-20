@@ -35,6 +35,7 @@ ApplicationWindow {
                                       || partySheet.opened || settingsSheet.opened
                                       || identifySheet.opened || coverChooser.opened || volumesSheet.opened
                                       || nasGuideSheet.opened || remoteSheet.opened || devicesSheet.opened
+                                      || radioUi.sheetOpen
     // Party mode: what guests may do (PartyMode's action names).
     function may(action) { void library.dj.partyOn; return library.dj.allowed(action) }
     // Asks first; says so when party mode locks it.
@@ -137,6 +138,7 @@ ApplicationWindow {
         if (advanced) library.activate()
         registerActions()
         modes.registerActions(commandPalette)
+        radioUi.registerActions(commandPalette)
         modes.start(typeof startMode === "string" ? startMode : "")
     }
 
@@ -299,6 +301,7 @@ ApplicationWindow {
         // A job running meanwhile only makes these wait their turn.
         p.setActionEnabled("undo", library.undoText !== "" || library.busy)
         p.setActionEnabled("redo", library.redoText !== "" || library.busy)
+        radioUi.updateActions(p)
     }
 
     // The tree node that is chosen, as the tree's menu hands it over.
@@ -410,6 +413,7 @@ ApplicationWindow {
                         "advanced": "library", "search": "library", "settings-appearance": "settings" }
         if (locks[id] !== undefined && !guard(locks[id])) return
         if (modes.runAction(id)) return
+        if (radioUi.runAction(id)) return
         switch (id) {
         case "play-pause": backend.toggle(); break
         case "play": backend.play(); break
@@ -632,6 +636,7 @@ ApplicationWindow {
             onSelectRow: (row) => win.select(row)
             onOpenBigView: win.runAction("big-view")
             onOpenMini: win.runAction("mini-player")
+            onOpenRadio: win.runAction("radio")
         }
 
         // Advanced mode, built the first time it is shown.
@@ -670,6 +675,7 @@ ApplicationWindow {
             sourceComponent: BigView {
                 fullScreen: modes.fullScreen
                 onClose: modes.setBigView(false)
+                onOpenRadio: { modes.setBigView(false); win.runAction("radio") }
                 onToggleFullScreen: modes.toggleFullScreen()
             }
         }
@@ -769,6 +775,13 @@ ApplicationWindow {
             function onMessage(text) { toast.show(text) }
         }
 
+        // Internet radio: its keys, palette actions and sheets (RadioActions.qml).
+        RadioActions { id: radioUi; window: win }
+        Connections {
+            target: radio
+            function onToast(text) { toast.show(text) }
+        }
+
         // Ctrl+K: actions, artists, albums and tracks in one list.
         CommandPalette {
             id: palette
@@ -816,6 +829,7 @@ ApplicationWindow {
                             ["T", qsTr("Show time left or time played")],
                             ["N  F11", qsTr("Big Now Playing view, fullscreen")],
                             ["Ctrl+M", qsTr("Mini player (Ctrl+Shift+M: micro)")],
+                            ["Shift+R  [  ]", qsTr("Radio channels; previous or next channel")],
                             ["Tab", qsTr("Back to the deck")],
                             ["?", qsTr("Show or hide these keys")],
                             ["Q", qsTr("Quit")]
@@ -874,6 +888,8 @@ ApplicationWindow {
                             ["N  F11", qsTr("Big Now Playing view, fullscreen")],
                             ["Shift+V", qsTr("Next visualiser style")],
                             ["Ctrl+M", qsTr("Mini player (Ctrl+Shift+M: micro)")],
+                            ["Shift+R", qsTr("Radio: choose a channel")],
+                            ["[  ]", qsTr("Previous or next radio channel")],
                             ["Tab", qsTr("Open the library (advanced mode)")],
                             ["Ctrl+K", qsTr("Command palette")],
                             ["Ctrl+J", qsTr("Auto-DJ on or off")],

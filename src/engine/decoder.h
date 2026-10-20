@@ -70,8 +70,20 @@ public:
     int sourceChannels() const { return m_sourceChannels; }
     qint64 durationMs() const { return m_durationMs; }
     int bitrateKbps() const { return m_bitrateKbps; }
-    // title, artist, albumArtist, album, bitrate.
+    // title, artist, albumArtist, album, bitrate, and for a live stream
+    // streamTitle: the ICY title the station sends now ("Artist - Title").
     QVariantMap metaData() const { return m_meta; }
+    // A live radio stream (a radio:// queue entry): no length, no seeking,
+    // reconnected when it drops, and its ICY titles read as they change.
+    bool isLive() const { return m_live; }
+    QString streamTitle() const { return m_meta.value(QStringLiteral("streamTitle")).toString(); }
+    // True once after the ICY title changed; the native engine then tells
+    // the window at the moment that audio is heard.
+    bool takeStreamTitleChanged() {
+        const bool changed = m_titleChanged;
+        m_titleChanged = false;
+        return changed;
+    }
     // A tag from the container or the stream, matched without case.
     QString tag(const char *key) const;
 
@@ -88,12 +100,16 @@ private:
     bool decodeMore();
     void convert(AVFrame *frame);
     void fail(const QString &message);
+    // Reads FFmpeg's latest ICY metadata block from the HTTP layer.
+    void pollIcy();
     bool interrupted() const { return m_interrupt && m_interrupt(); }
     static int interruptCallback(void *opaque);
 
     QString m_path;
     QUrl m_url;
     bool m_network = false;
+    bool m_live = false, m_titleChanged = false;
+    int m_packetsSinceIcy = 0;
     std::function<bool()> m_interrupt;
     QString m_readError;
     AVFormatContext *m_format = nullptr;

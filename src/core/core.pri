@@ -69,3 +69,8 @@ SOURCES += $$PWD/devicesync.cpp $$PWD/report.cpp
 
 # Spotify (docs/spotify.md).
 include($$PWD/spotify/spotify.pri)
+
+# Internet radio: stations (migration 10), the Nightride FM catalogue and
+# feed, ICY titles, radio-browser.info and station lists.
+HEADERS += $$PWD/radio.h
+SOURCES += $$PWD/radio.cpp

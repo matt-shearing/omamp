@@ -351,6 +351,14 @@ ToolSheet {
                         onClicked: sheet.s.setFlag("scrobble.enabled", checked)
                     }
                     Note { text: qsTr("A listen counts after half the track or four minutes. Listens wait in a queue while you're offline.") }
+                    CheckBox {
+                        objectName: "radioScrobble"
+                        text: qsTr("Send songs heard on the radio too")
+                        font.pixelSize: 13
+                        checked: sheet.on("radio.scrobble", false)
+                        onClicked: { sheet.s.setFlag("radio.scrobble", checked); radio.scrobbleChanged() }
+                    }
+                    Note { text: qsTr("Off unless you turn it on: the station chose those songs, not you. Only a song heard from its start, for 30 seconds or more, is sent.") }
 
                     Heading { text: qsTr("ListenBrainz") }
                     Note {

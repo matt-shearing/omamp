@@ -15,6 +15,7 @@
 #include "equalizer.h"
 #include "nativeengine.h"
 #include "qtengine.h"
+#include "streaming.h"
 
 namespace {
 // The settings file beside the state file: ~/.config/omamp/omamp.conf.
@@ -139,6 +140,12 @@ void Player::connectEngine() {
         if (why.isEmpty() && Playlist::isReference(path))
             why = detail;
         why = AudioEngine::redact(why);
+        if (Streaming::isLive(path)) {
+            // The radio decides: another address for the station, or a
+            // message. A live station never makes the list move on.
+            emit liveStreamFailed(path, why);
+            return;
+        }
         setError(why.isEmpty() ? tr("Can't play %1").arg(displayName(path))
                                : tr("Can't play %1: %2").arg(displayName(path), why));
         if (!m_engine->skipsUnplayable() || !m_wantPlaying)
@@ -323,6 +330,16 @@ void Player::requeue() {
 
 void Player::readMetaData() {
     const QVariantMap meta = m_engine->metaData();
+    if (live()) {
+        // The radio sets a station's title and artist (setLiveInfo); the
+        // queue row keeps the station's name.
+        const int bitrate = meta.value("bitrate").toInt();
+        if (bitrate != m_bitrate) {
+            m_bitrate = bitrate;
+            emit trackChanged();
+        }
+        return;
+    }
     m_title = meta.value("title").toString();
     m_artist = meta.value("artist").toString();
     if (m_artist.isEmpty())
@@ -431,7 +448,23 @@ void Player::playIndex(int row) {
     m_engine->play();
 }
 
+bool Player::live() const {
+    return m_current >= 0 && m_current < m_playlist.count() && Streaming::isLive(m_playlist.at(m_current).path);
+}
+
+void Player::setLiveInfo(const QString &title, const QString &artist, const QString &album) {
+    if (!live() || (title == m_title && artist == m_artist && album == m_album))
+        return;
+    m_title = title;
+    m_artist = artist;
+    m_album = album;
+    emit trackChanged();
+}
+
 void Player::seek(qint64 ms) {
+    // A live station has nowhere to go.
+    if (live())
+        return;
     const qint64 target = qBound<qint64>(0, ms, qMax<qint64>(0, duration()));
     // A seek is not listening: count from where it lands.
     m_lastPos = target;

@@ -44,7 +44,7 @@ namespace {
 const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", "version", "--version",
                                "watch", "locate", "art", "tag", "undo", "journal", "organise", "organize",
                                "tag-from-filename", "audit", "duplicates", "playlist", "autoplaylist",
-                               "collection", "autodj", "import", "volume", "nas", "remote", "sync", "report", "spotify"};
+                               "collection", "autodj", "import", "volume", "nas", "remote", "sync", "report", "spotify", "radio"};
 
 const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp open [files or folders...]  the same, for names that look like commands
@@ -97,6 +97,15 @@ const char *usage = R"(Usage: omamp [files or folders...]      open the player
        omamp remote list|sync [source|all] [--full]|remove <source> [--keep-tracks]
        omamp remote set <source> --max-bitrate <kbit/s> --format <raw|mp3|opus|...>
                                          Navidrome and other (Open)Subsonic servers as sources
+       omamp radio list [--group nightride|rekt|favourites|mine|recent]
+                                         internet radio stations (Nightride FM built in)
+       omamp radio play <station>        tune the running Omamp in (or start it): a name,
+                                         a key, or a Nightride channel such as darksynth
+       omamp radio search <words> [--limit n]
+                                         find stations on radio-browser.info
+       omamp radio add <url> [--name n]  keep a stream address under My stations
+       omamp radio remove|favourite|unfavourite <station>
+       omamp radio import <file.pls|.m3u>|export <file> [--group g]|heard
        omamp sync list|devices           sync profiles; USB drives and Syncthing folders to sync to
        omamp sync create <name> --to <folder> [--kind folder|usb|syncthing]
                     --source playlist:<name>|collection:<name>|query:<text>|library ...
@@ -1636,6 +1645,8 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         return runSync(arguments, out, err, resolver);
     if (command == "spotify")
         return runSpotify(arguments, out, err);
+    if (command == "radio")
+        return runRadio(arguments, out, err);
     for (int i = 1; i < arguments.size(); ++i) {
         const QString &a = arguments[i];
         auto value = [&](QString *target) {

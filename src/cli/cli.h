@@ -2,6 +2,7 @@
 
 #include <QStringList>
 #include <QTextStream>
+#include <functional>
 
 class VolumeResolver;
 
@@ -27,6 +28,13 @@ int runSync(const QStringList &arguments, QTextStream &out, QTextStream &err, co
 // `omamp spotify` (clispotify.cpp).
 int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err);
 extern const char *spotifyUsage;
+// `omamp radio` (cliradio.cpp).
+int runRadio(const QStringList &arguments, QTextStream &out, QTextStream &err);
+// How `omamp radio play` reaches the player: hands radio://<key> to the
+// running Omamp over MPRIS, or starts it. Tests put a fake in its place.
+// how says which ("running", "started") or why it failed.
+using RadioLauncher = std::function<bool(const QString &uri, QString *how)>;
+void setRadioLauncher(RadioLauncher launcher);
 // What --password-stdin and --api-key-stdin read, for tests.
 void setStdinForTesting(const QString &text);
 

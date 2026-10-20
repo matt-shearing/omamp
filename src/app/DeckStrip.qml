@@ -10,6 +10,7 @@ Rectangle {
     id: strip
     property bool showRemaining: false
     signal clockClicked()
+    signal openRadio()
     // The Auto-DJ and party lamps: a click switches Auto-DJ, or asks for
     // the PIN to leave party mode.
     signal autoDjClicked()
@@ -74,7 +75,7 @@ Rectangle {
                 id: time
                 anchors { left: glyph.right; leftMargin: 6; verticalCenter: parent.verticalCenter }
                 width: 92
-                text: (strip.showRemaining ? "-" : "") + strip.clock(strip.showRemaining
+                text: (strip.showRemaining && !backend.live ? "-" : "") + strip.clock(strip.showRemaining && !backend.live
                       ? backend.duration - backend.position : backend.position)
                 font.family: strip.mono
                 font.pixelSize: 24
@@ -101,15 +102,23 @@ Rectangle {
                 text: backend.currentIndex < 0 ? qsTr("Nothing playing")
                       : (backend.artist ? backend.artist + " - " : "") + backend.title
                         + (backend.duration > 0 ? "  (" + strip.clock(backend.duration) + ")" : "")
+                        + (backend.live && backend.album ? "  ·  " + backend.album : "")
                 font.family: strip.mono
                 font.pixelSize: 13
                 color: backend.currentIndex < 0 ? theme.c.muted : theme.c.green
             }
             Bar {
                 Layout.fillWidth: true
+                visible: !backend.live
                 active: backend.duration > 0
                 value: backend.duration > 0 ? backend.position / backend.duration : 0
                 onReleased: (v) => backend.seek(v * backend.duration)
+            }
+            // A radio station: the dial instead of the position.
+            LiveBar {
+                Layout.fillWidth: true
+                visible: backend.live
+                onOpenPicker: strip.openRadio()
             }
         }
 

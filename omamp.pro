@@ -39,7 +39,8 @@ HEADERS += \
     src/app/nascontroller.h \
     src/app/devicescontroller.h \
     src/app/streamresolver.h \
-    src/app/spotifycontroller.h
+    src/app/spotifycontroller.h \
+    src/app/radiocontroller.h
 
 SOURCES += \
     src/app/albumgridmodel.cpp \
@@ -73,6 +74,7 @@ SOURCES += \
     src/app/devicescontroller.cpp \
     src/app/librarycontroller_reports.cpp \
     src/app/streamresolver.cpp \
-    src/app/spotifycontroller.cpp
+    src/app/spotifycontroller.cpp \
+    src/app/radiocontroller.cpp
 
 RESOURCES += src/app/resources.qrc

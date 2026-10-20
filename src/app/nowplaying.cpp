@@ -4,6 +4,7 @@
 #include "library.h"
 #include "player.h"
 #include "playlist.h"
+#include "radio.h"
 #include "remote.h"
 #include "tagreader.h"
 
@@ -216,6 +217,36 @@ NowPlaying::Art NowPlaying::resolve(const QString &path, qint64 trackId, const Q
         return art;
     const bool reference = Playlist::isReference(path);
     Library *library = workerLibrary(dbPath);
+    if (Radio::isRadioPath(path)) {
+        // A station: its own picture (a radio-browser.info favicon, saved
+        // when it was added), else a tile in its colour with its name.
+        const QString key = Radio::keyFromPath(path);
+        Radio::Station station;
+        if (library)
+            station = Radio::Stations(*library).byKey(key);
+        if (!station.isValid())
+            for (const Radio::Station &s : Radio::builtinStations())
+                if (s.key == key)
+                    station = s;
+        if (!station.isValid())
+            return art;
+        if (!station.artPath.isEmpty()) {
+            const QImage own(station.artPath);
+            // Favicons are often tiny; one under 96 px looks worse than the tile.
+            if (!own.isNull() && qMin(own.width(), own.height()) >= 96 &&
+                storePicture(readPicture(station.artPath), cacheDir, &art)) {
+                art.source = "radio";
+                return art;
+            }
+        }
+        QByteArray png;
+        QBuffer buffer(&png);
+        buffer.open(QIODevice::WriteOnly);
+        Radio::tile(station, 600).save(&buffer, "PNG");
+        if (storePicture(png, cacheDir, &art))
+            art.source = "radio";
+        return art;
+    }
     if (library && trackId <= 0 && !reference)
         trackId = trackForPath(*library, path);
     if (library && trackId > 0) {

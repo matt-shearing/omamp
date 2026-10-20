@@ -112,7 +112,7 @@ public:
     void setMountMonitoring(bool on) { m_monitoring = on ? 1 : 0; }
     bool mountMonitoring() const { return m_monitoring < 0 ? m_watching : m_monitoring == 1; }
     // Reads the tree again (after a playlist change), keeping the chosen node.
-    void reloadTree();
+    Q_INVOKABLE void reloadTree();
     // Starts, stops or re-times the folder watcher from the settings.
     void applyWatchSettings();
     // Where album pictures are cached; empty means ~/.cache/omamp/art.

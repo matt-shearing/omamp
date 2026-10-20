@@ -17,6 +17,7 @@ ColumnLayout {
     signal selectRow(int row)
     signal openBigView()
     signal openMini()
+    signal openRadio()
 
     readonly property string mono: "JetBrainsMono Nerd Font"
     readonly property bool coverShown: appearance.coverInDeck
@@ -96,11 +97,23 @@ ColumnLayout {
                         font.pixelSize: 14
                         color: backend.state === "playing" ? deck.skin.lcdText : deck.skin.lcdDim
                     }
+                    // On the air.
+                    Rectangle {
+                        objectName: "deckLiveBadge"
+                        visible: backend.live
+                        anchors { left: stateGlyph.left; top: stateGlyph.bottom; topMargin: 3 }
+                        width: liveWord.implicitWidth + 8; height: 14
+                        radius: Math.min(2, deck.skin.radius)
+                        color: deck.skin.error
+                        Text { id: liveWord; anchors.centerIn: parent; text: qsTr("LIVE"); color: "white"
+                               font.family: deck.mono; font.pixelSize: 9; font.bold: true }
+                    }
 
                     Text {
                         id: time
                         anchors { right: parent.right; rightMargin: 10; top: parent.top; topMargin: 2 }
-                        text: (deck.showRemaining ? "-" : "") + deck.clock(deck.showRemaining
+                        // A live station has no time left: always the time listened.
+                        text: (deck.showRemaining && !backend.live ? "-" : "") + deck.clock(deck.showRemaining && !backend.live
                               ? backend.duration - backend.position : backend.position)
                         font.family: deck.mono
                         font.pixelSize: deck.coverShown ? 31 : 34
@@ -142,6 +155,7 @@ ColumnLayout {
                             ? qsTr("Omamp — drop some music in")
                             : (backend.currentIndex + 1) + ". " + (backend.artist ? backend.artist + " - " : "")
                               + backend.title + (backend.duration > 0 ? " (" + deck.clock(backend.duration) + ")" : "")
+                              + (backend.live && backend.album ? "  ·  " + backend.album : "")
                         readonly property bool scrolls: one.width > width - 16
 
                         TextMetrics { id: one; font: marquee.font; text: marqueeBox.line }
@@ -245,9 +259,19 @@ ColumnLayout {
                 id: seekBar
                 skin: deck.skin
                 Layout.fillWidth: true
+                visible: !backend.live
                 active: backend.duration > 0
                 value: backend.duration > 0 ? backend.position / backend.duration : 0
                 onReleased: (v) => backend.seek(v * backend.duration)
+            }
+            // A radio station: the dial instead of the position.
+            LiveBar {
+                objectName: "deckLiveBar"
+                skin: deck.skin
+                Layout.fillWidth: true
+                Layout.preferredHeight: seekBar.implicitHeight
+                visible: backend.live
+                onOpenPicker: deck.openRadio()
             }
 
             // Transport.

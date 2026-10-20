@@ -275,7 +275,7 @@ private slots:
             Library library(dir.filePath("library.db"));
             QVERIFY(library.open());
             QString error;
-            const qint64 id = RemoteSources::add(library, server.url(), "matt", "sesame", "token", "Home NAS", &error);
+            const qint64 id = RemoteSources::add(library, server.url(), "listener", "sesame", "token", "Home NAS", &error);
             QVERIFY2(id, qPrintable(error));
             QVERIFY(RemoteSources::sync(library, id).ok);
             QSqlQuery q(library.db());

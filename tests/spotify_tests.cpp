@@ -175,7 +175,7 @@ private slots:
         const QList<Spotify::Item> playlists = Spotify::parseItems(readCli(fake.state() + "/playlists.json").toArray(), "playlist");
         QCOMPARE(playlists.size(), 5);
         QCOMPARE(playlists[0].name, QString("Late Night Drive"));
-        QCOMPARE(playlists[0].owner, QString("Matt Example"));
+        QCOMPARE(playlists[0].owner, QString("Sam Listener"));
         QCOMPARE(playlists[3].owner, QString("Spotify"));
         QCOMPARE(playlists[0].id, fake.id("playlist:Late Night Drive"));
 
@@ -335,7 +335,7 @@ private slots:
         QVERIFY(p.valid && p.playing);
         QCOMPARE(p.track.id, track);
         QCOMPARE(b.track(track, &error).name, QString("Pixel Rain"));
-        QCOMPARE(b.account(&error), QString("Matt Example"));
+        QCOMPARE(b.account(&error), QString("Sam Listener"));
 
         // The backend's own error comes through, first line, without
         // spotify_player's "Bad request: ".
@@ -431,7 +431,7 @@ private slots:
             const QJsonObject s = QJsonDocument::fromJson(o.toUtf8()).object();
             QVERIFY(s.value("signed_in").toBool() && s.value("running").toBool());
             QCOMPARE(s.value("premium").toString(), QString("yes"));
-            QCOMPARE(s.value("account").toString(), QString("Matt Example"));
+            QCOMPARE(s.value("account").toString(), QString("Sam Listener"));
             QCOMPARE(s.value("devices").toArray().size(), 2);
         }
         {
@@ -446,7 +446,7 @@ private slots:
             QString o, e;
             QTextStream out(&o), err(&e);
             QCOMPARE(Cli::run({"spotify", "playlists"}, out, err), 0);
-            QVERIFY(o.contains("spotify:playlist:" + fake.id("playlist:Late Night Drive") + "\tLate Night Drive by Matt Example"));
+            QVERIFY(o.contains("spotify:playlist:" + fake.id("playlist:Late Night Drive") + "\tLate Night Drive by Sam Listener"));
         }
         {
             QString o, e;
@@ -502,9 +502,9 @@ private slots:
         // Switching on starts the daemon (start_daemon is on) and reads
         // the account and the device.
         QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
-        QCOMPARE(c.account(), QString("Matt Example"));
+        QCOMPARE(c.account(), QString("Sam Listener"));
         QCOMPARE(c.premium(), QString("yes"));
-        QVERIFY(c.statusText().contains("Connected as Matt Example"));
+        QVERIFY(c.statusText().contains("Connected as Sam Listener"));
         // The list loads when the view is shown, from the playlists the
         // status check already read.
         QCOMPARE(c.items()->count(), 0);

@@ -92,7 +92,7 @@ private slots:
 
     void pingSignsEveryRequest() {
         MockSubsonic server;
-        SubsonicClient client(server.url(), "matt", "sesame", SubsonicClient::Auth::Token);
+        SubsonicClient client(server.url(), "listener", "sesame", SubsonicClient::Auth::Token);
         SubsonicServer info;
         QString error;
         QVERIFY2(client.ping(&info, &error), qPrintable(error));
@@ -110,7 +110,7 @@ private slots:
             QCOMPARE(q.queryItemValue("c"), QString("omamp"));
         }
 
-        SubsonicClient wrong(server.url(), "matt", "nope", SubsonicClient::Auth::Token);
+        SubsonicClient wrong(server.url(), "listener", "nope", SubsonicClient::Auth::Token);
         QVERIFY(!wrong.ping(nullptr, &error));
         QCOMPARE(error, QString("Wrong username or password"));
         const SubsonicClient::Reply r = wrong.call("ping");
@@ -128,14 +128,14 @@ private slots:
         QVERIFY(!client.ping(nullptr, &error));
         QVERIFY2(error.contains("503"), qPrintable(error));
         QVERIFY(!error.contains("t=")); // never the signed URL
-        SubsonicClient nowhere(QUrl("http://127.0.0.1:1"), "matt", "sesame", SubsonicClient::Auth::Token);
+        SubsonicClient nowhere(QUrl("http://127.0.0.1:1"), "listener", "sesame", SubsonicClient::Auth::Token);
         QVERIFY(!nowhere.ping(nullptr, &error));
         QVERIFY(!error.isEmpty());
     }
 
     void browsingCalls() {
         MockSubsonic server;
-        SubsonicClient client(QUrl(server.url().toString() + "/"), "matt", "sesame", SubsonicClient::Auth::Token);
+        SubsonicClient client(QUrl(server.url().toString() + "/"), "listener", "sesame", SubsonicClient::Auth::Token);
         QString error;
         QCOMPARE(client.musicFolders(&error).size(), 1);
         const QJsonArray artists = client.artists(&error);
@@ -161,7 +161,7 @@ private slots:
 
     void coverStreamScrobbleAndRating() {
         MockSubsonic server;
-        SubsonicClient client(server.url(), "matt", "sesame", SubsonicClient::Auth::Token);
+        SubsonicClient client(server.url(), "listener", "sesame", SubsonicClient::Auth::Token);
         QString error, type;
         const QByteArray cover = client.coverArt("al-1", 300, &type, &error);
         QVERIFY2(cover.startsWith("\x89PNG"), qPrintable(error));
@@ -194,7 +194,7 @@ private slots:
         QVERIFY(library.open());
         QString error;
         RemoteSource added;
-        const qint64 id = RemoteSources::add(library, server.url(), "matt", "sesame", "token", "Home NAS", &error, &added);
+        const qint64 id = RemoteSources::add(library, server.url(), "listener", "sesame", "token", "Home NAS", &error, &added);
         QVERIFY2(id, qPrintable(error));
         QCOMPARE(added.serverType, QString("navidrome"));
         QCOMPARE(added.secretStore, QString("file"));
@@ -213,9 +213,9 @@ private slots:
             for (int i = 0; i < all.record().count(); ++i)
                 QVERIFY(!all.value(i).toString().contains("sesame"));
         // The same server and user twice is refused.
-        QVERIFY(!RemoteSources::add(library, server.url(), "matt", "sesame", "token", "Again", &error));
+        QVERIFY(!RemoteSources::add(library, server.url(), "listener", "sesame", "token", "Again", &error));
         QVERIFY(error.contains("already"));
-        QVERIFY(!RemoteSources::add(library, server.url(), "matt", "wrong", "token", "Bad", &error));
+        QVERIFY(!RemoteSources::add(library, server.url(), "listener", "wrong", "token", "Bad", &error));
         QVERIFY(error.contains("Wrong username or password"));
 
         // First sync: everything.
@@ -379,13 +379,13 @@ private slots:
         QTemporaryDir dir;
         const QString db = dir.filePath("library.db");
         QString out, err;
-        QCOMPARE(cli({"remote", "add", "subsonic", server.url().toString(), "--user", "matt", "--password", "x", "--db", db},
+        QCOMPARE(cli({"remote", "add", "subsonic", server.url().toString(), "--user", "listener", "--password", "x", "--db", db},
                      &out, &err),
                  1);
         QVERIFY(err.contains("never taken from the command line"));
-        QCOMPARE(cli({"remote", "add", "subsonic", server.url().toString(), "--user", "matt", "--db", db}, &out, &err), 1);
+        QCOMPARE(cli({"remote", "add", "subsonic", server.url().toString(), "--user", "listener", "--db", db}, &out, &err), 1);
         Cli::setStdinForTesting("sesame\n");
-        QCOMPARE(cli({"remote", "add", "subsonic", server.url().toString(), "--user", "matt", "--password-stdin",
+        QCOMPARE(cli({"remote", "add", "subsonic", server.url().toString(), "--user", "listener", "--password-stdin",
                       "--name", "nas", "--db", db, "--json"},
                      &out, &err),
                  0);

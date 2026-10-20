@@ -16,7 +16,7 @@ if [ -f "$D/session-signin" ]; then
     printf '{"ready":false,"error":"%s"}\n' "$(cat "$D/session-signin")"
     exit 1
 fi
-printf '{"ready":true,"user":"mattexample","country":"AU"}\n'
+printf '{"ready":true,"user":"samlistener","country":"AU"}\n'
 field() { printf '%s' "$1" | sed -n "s/.*\"$2\":\"\\([^\"]*\\)\".*/\\1/p"; }
 while IFS= read -r line; do
     cmd=$(field "$line" cmd)

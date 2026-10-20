@@ -732,12 +732,12 @@ private slots:
 
         // The test button: a wrong password, then the right one.
         QSignalSpy tested(nas, &NasController::tested);
-        nas->testServer(server.url().toString(), "matt", "wrong", false);
+        nas->testServer(server.url().toString(), "listener", "wrong", false);
         QVERIFY(seen(tested, 10000));
         QVERIFY(!tested.first().at(0).toBool());
         QVERIFY2(tested.first().at(1).toString().contains("Wrong username or password"), qPrintable(tested.first().at(1).toString()));
         tested.clear();
-        nas->testServer(server.url().toString(), "matt", "sesame", false);
+        nas->testServer(server.url().toString(), "listener", "sesame", false);
         QVERIFY(seen(tested, 10000));
         QVERIFY(tested.first().at(0).toBool());
         QVERIFY2(tested.first().at(1).toString().contains("Navidrome 0.53.3"), qPrintable(tested.first().at(1).toString()));
@@ -747,7 +747,7 @@ private slots:
         QObject *sheet = w.find("remoteSourceSheet");
         QTRY_VERIFY(sheet->property("opened").toBool());
         w.find("serverAddress")->setProperty("text", server.url().toString());
-        w.find("serverUser")->setProperty("text", "matt");
+        w.find("serverUser")->setProperty("text", "listener");
         w.find("serverSecret")->setProperty("text", "sesame");
         QObject *add = w.find("addServerButton");
         QTRY_VERIFY(add->property("enabled").toBool());

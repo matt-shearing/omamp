@@ -16,7 +16,8 @@ Popup {
     property var model: null
     property string fontFamily: "JetBrainsMono Nerd Font"
     readonly property int rowHeight: 44
-    readonly property int visibleRows: 8
+    // More rows while Spotify's results follow the library's.
+    readonly property int visibleRows: { void list.count; return model && model.hasExternalRows && model.hasExternalRows() ? 11 : 8 }
 
     // After a row is chosen, with the row's roles (kind, itemId, title...).
     signal chosen(var item)
@@ -162,6 +163,22 @@ Popup {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+            // "Local" and "Spotify" headings, only while Spotify has rows.
+            section.property: "section"
+            section.delegate: Text {
+                required property string section
+                width: ListView.view.width
+                height: section.length > 0 ? 24 : 0
+                visible: section.length > 0
+                leftPadding: 10
+                verticalAlignment: Text.AlignVCenter
+                text: section
+                font.family: root.fontFamily
+                font.pixelSize: 11
+                font.bold: true
+                color: theme.c.muted
+            }
+
             delegate: Rectangle {
                 id: row
                 required property int index
@@ -195,6 +212,7 @@ Popup {
                                                  : row.kind === "artist" ? 0xF0803   // account-music
                                                  : row.kind === "album" ? 0xF0025    // album
                                                  : row.kind === "track" ? 0xF075A    // music-note
+                                                 : row.kind === "external" ? 0xF04C7 // spotify
                                                  : 0xF0349)                          // magnify
                         font.family: root.fontFamily
                         font.pixelSize: 16

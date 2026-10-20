@@ -52,5 +52,9 @@
         <file alias="AppearancePage.qml">AppearancePage.qml</file>
         <file alias="docs/nas.md">../../docs/nas.md</file>
         <file alias="i18n/en.json">i18n/en.json</file>
+        <file alias="SpotifyPage.qml">SpotifyPage.qml</file>
+        <file alias="SpotifyView.qml">SpotifyView.qml</file>
+        <file alias="SpotifyBlendStrip.qml">SpotifyBlendStrip.qml</file>
+        <file alias="SpotifyHooks.qml">SpotifyHooks.qml</file>
     </qresource>
 </RCC>

@@ -4177,3 +4177,157 @@ column only when there are lyrics.
 - The plugin changes only `Widget.qml`, `Service.qml` and `Model.js`, no new
   files, which the shell hot-reloads. If the panel shows no cover, run
   `omarchy restart shell` and check `journalctl --user --since '2 min ago'`.
+
+## Spotify (20 October 2026)
+
+Spotify can now sit beside the library, off until **Settings → Spotify →
+Show Spotify in Omamp** is switched on. Omamp drives spotify_player (the full
+integration) or Spotifast (control only) through their command lines and never
+holds a Spotify credential. [docs/spotify.md](../spotify.md) is the user's
+guide and the reasoning; this entry is the record. Nothing reached Spotify:
+every test and screenshot ran against a fake `spotify_player`.
+
+### What was built
+
+- **Core** (`src/core/spotify/`): `Spotify::Item`, `Playback`, `Device`,
+  `SearchResults`; parsers for spotify_player 0.25.1's JSON (its own `Track`,
+  `Album`, `Artist`, `Playlist` from `state/model.rs`, and rspotify-model
+  0.16.1's `CurrentPlaybackContext` and `Device`), checked against the
+  source: ids are bare, a track's duration is `{"secs","nanos"}`, a
+  playlist's owner is `["name","user id"]`, lists carry no pictures.
+  `repair()` undoes the CLI's `\n` → newline rewrite. `Settings` in
+  `~/.config/omamp/spotify.conf`. `Backend` with `SpotifyPlayerBackend` and
+  `SpotifastBackend`; each command is a `QProcess` with stdin closed and a
+  20 s limit.
+- **Guards**: spotify_player's CLI starts a client of its own when no
+  instance runs, and that client may stop to ask for a sign-in. Omamp runs a
+  command only when the sign-in files exist (`credentials.json`,
+  `*_token.json`, names only) and an instance runs (found in `/proc` by its
+  executable or script path, without a CLI subcommand).
+- **The handover** (`src/engine/handoffengine.{h,cpp}`): an `AudioEngine`
+  in front of the real one that passes `spotify://track/<id>` entries to an
+  `ExternalPlayback`. Local → Spotify: the real engine gets nothing to queue,
+  so its `endOfQueue` starts Spotify. Spotify → local: `finished` makes the
+  real engine load and play the next file. `Player::createEngine()` is the
+  only Player change, so the deck, strip, big view, mini players, MPRIS and
+  the bar plugin follow Spotify without changes. `StreamResolver` passes
+  `spotify://` through.
+- **`SpotifyPlayback`** (`src/app/spotifycontroller.cpp`): starts the track,
+  reads the state every second (every 400 ms near the end), moves the
+  position smoothly between reads, follows a pause or resume from another
+  device, and counts the track as finished when Spotify stops at (or back to
+  the start after) its end. A start not seen within 12 s fails with a reason
+  (Premium or no Connect device). State reads that began before Omamp's own
+  latest command, or within 1.5 s of it, don't change the play state.
+- **`SpotifyController`** (QML `spotify`): settings, status (installed,
+  signed in, running, account, Premium, device, devices), the view
+  (sections, a playlist's, album's or artist's tracks, search, back), Play /
+  Play next / Add to Now Playing / Add to playlist, Like for the playing
+  track, links, the blend strip's search and the palette's. Work runs on two
+  one-thread pools: control (playback, in order) and data (lists, search,
+  status).
+- **`SpotifyArt`**: pictures in `~/.cache/omamp/spotify`, from the playback
+  state's album images or from Spotify's public oEmbed page, at most three at
+  a time, each once. `NowPlaying::setReferenceArt()` lets the deck and MPRIS
+  use them; a `track-<id>.jpg` link keeps a restored queue's cover.
+- **Palette**: an `External` kind added with `setExternalResults(source,
+  text, items)`, a `section` role ("Local", "Spotify") and
+  `externalActivated(source, reference)`. Query-language text and `>` stay
+  local. The palette shows 11 rows instead of 8 while Spotify has rows.
+- **Tree**: `LibraryTree::setExtraNode(key, label, shown)`, a generic
+  top-level node after Devices, used for `spotify`.
+- **Window**: `SpotifyPage.qml` (Settings → Spotify, tab 5),
+  `SpotifyView.qml` (the node's view), `SpotifyBlendStrip.qml` (under the
+  track list while searching, with a "Local" heading over the list),
+  `SpotifyHooks.qml` (palette actions `spotify` and `settings-spotify`,
+  opening the node or the tab, toasts). JobsBar names the backend.
+- **CLI**: `omamp spotify status|search|playlists|liked|albums|artists|
+  tracks|play|now|pause|resume`, with `--json` and `--backend`.
+- **DevHooks**: a `wait:<ms>` demo step, so screenshots can let a worker's
+  answer land.
+
+### Test results
+
+`tests/spotify_tests.cpp` (`OMAMP_TESTS=spotify`), 17 tests against
+`tests/fake-spotify/spotify_player` and `spotifast` on `PATH`, answering from
+`tests/fixtures/spotify` (made-up data from `make-fixtures.py`):
+
+| Test | What it shows |
+|---|---|
+| Shapes | Every recorded answer parses: playlists with owners, liked tracks with durations from `secs`, albums, search, devices, an album context without its album, the playback state with the largest picture; the CLI's raw newlines are repaired |
+| References | URIs, links (with `intl-xx` and `?si=`), queue paths, a bare id only with a kind; shows and other sites refused |
+| Instances | The binary or a script counts as running; CLI commands and other copies don't |
+| Guards | Not signed in: no command runs, not even the daemon; signed in but stopped: no command runs |
+| Commands | Daemon start, all four sections, tracks of a playlist and an artist, search text, play, seek by offset both ways, Like and Unlike, add to playlist, connect, account from playlist owners; the backend's own error, first line, and Premium worded for people |
+| Device name | Read from `[device] name` in `app.toml` only |
+| Spotifast | Control only; `now-playing --raw` parsed; play-uri, seek-to in seconds, Like toggles only when needed; "not running" passed on |
+| Settings | Off by default, saved and read back, nothing secret |
+| CLI | `status` before and after the daemon (Premium, account, devices, next step), `search --json`, `playlists`, `play` with a link and an album, `now`, a bad link |
+| Enable and disable | Off runs nothing; on adds the tree node, starts the daemon, reads the account; sections, a playlist, back, Liked, search with headings; off again removes the node |
+| Sign in | Runs `spotify_player authenticate` through the terminal launcher and waits; the fake is never asked to authenticate |
+| Blending | Off: palette local only. On: "Local" then "Spotify" rows, 10 of them; a Spotify track plays; an album opens the view; `artist:` text stays local; the search strip fills and empties when switched off |
+| Handover | Local → Spotify (the engine gets no queue, the start goes out, title, artist and length show, buffering ends), position from the state, pause and resume both ways, seek by offset, Spotify → local at the end |
+| Elsewhere | Pause and resume on another device followed; Spotify → Spotify; something else started in Spotify pauses the queue with a message (with a 500 ms read interval, which caught a timer bug) |
+| Free account | No Connect device: status says browse and search work; a start fails within the limit with "Premium" in the message; browsing still works |
+| Spotify off | A Spotify entry is skipped with "Spotify is off", on to the next file, nothing run |
+| Pictures | The playing track's largest album picture downloaded and found for its queue entry and by NowPlaying; a playlist's picture through oEmbed, asked once |
+
+`bin/test` with JOBS=4: every class passed, the Spotify class last with
+19 passed (its 17 tests plus Qt's set-up and tidy-up), 0 failed. The Spotify
+class also passed three runs in a row on its own.
+
+The window tests now give Main.qml a `spotify` (switched off) through
+`installNowPlaying` and in the sync window test.
+
+### Screenshots
+
+`docs/spotify-panel.png` (Liked Songs, a Spotify track playing on the deck
+with its cover), `docs/spotify-search-blend.png` (the palette's Local and
+Spotify rows over the search strip) and `docs/settings-spotify.png`, in the
+Night Ride theme, offscreen in software, with the demo library, a throwaway
+HOME, made-up covers in the Spotify picture cache and the fake daemon. Looking
+at them found two bugs: the poll timer never fired at the real one-second
+interval (the position tick restarted it), and the backend radio buttons
+lost their check to the device list's (one parent, one exclusive group).
+
+### Decisions
+
+- **spotify_player over linking librespot**: no credentials in Omamp, no Rust
+  in the build, and a CLI that already answers in JSON.
+- **The queue stays Omamp's**: each Spotify track starts on its own, so
+  local and Spotify tracks mix in one order. The cost is about a second
+  between Spotify tracks.
+- **Everything through the CLI, nothing through spotify_player's UDP socket**
+  directly: the socket protocol is internal and unversioned; the CLI is the
+  documented surface.
+- **Spotifast is control only**, and the official Spotify app is not a
+  backend: neither offers a library or search on its command line.
+- **Off by default**, the daemon started only when Spotify is on, signed in
+  and "Start spotify_player" is ticked.
+- **The tree node is generic** (`setExtraNode`) so the radio work can add its
+  own the same way.
+
+### Known gaps
+
+- **Not tried against a real account.** The shapes come from the source of
+  the installed version (0.25.1); a later spotify_player may change them.
+- **Premium is inferred**: from the Connect device being there, or from a
+  start that never shows up. spotify_player's CLI can't say directly.
+- **The account name is inferred** from the owner of most of your playlists.
+- **Like works on the playing track only**, and Omamp knows a track is
+  liked only after Liked Songs has been opened.
+- **Playlists show at most what spotify_player returns** for each section,
+  read whole each time; there is no paging or caching.
+- **No art for artists** where oEmbed has none; covers appear as rows are
+  shown, so a long list fills in over a few seconds.
+- **The Spotifast backend** was tested against a fake only; its
+  `devices --raw` JSON shape isn't documented and is read leniently.
+- **Translations**: the new strings are English only.
+
+### After merging
+
+- The radio branch also adds a tree node, a settings tab and palette
+  actions. `SpotifyHooks.settingsPage` is 5 (after Appearance); if the radio
+  tab lands first, bump it.
+- Rebuild and reinstall. Then Settings → Spotify → switch on → Sign in…, and
+  run `omamp spotify status`.

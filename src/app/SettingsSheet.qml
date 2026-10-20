@@ -87,6 +87,7 @@ ToolSheet {
             TabButton { text: qsTr("Scrobbling"); font.pixelSize: 13 }
             TabButton { text: qsTr("Web"); font.pixelSize: 13 }
             TabButton { objectName: "appearanceTab"; text: qsTr("Appearance"); font.pixelSize: 13 }
+            TabButton { objectName: "spotifyTab"; text: qsTr("Spotify"); font.pixelSize: 13 }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: theme.c.lighter_background }
 
@@ -606,6 +607,9 @@ ToolSheet {
 
             // ---- Appearance (page 4) ---------------------------------------
             AppearancePage {}
+
+            // ---- Spotify (page 5) -------------------------------------------
+            SpotifyPage {}
         }
     }
 

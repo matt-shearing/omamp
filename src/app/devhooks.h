@@ -24,7 +24,8 @@ class QQuickWindow;
 //       grid tile), current:<row> (move the cursor), palette:<text>,
 //       party:<preset> (party mode with the big display), playlist:<id>,
 //       set:<objectName>.<property>=<value> (any named item, sheets too),
-//       click:<objectName> (press a named button).
+//       click:<objectName> (press a named button), wait:<ms> (let
+//       background work land).
 //   OMAMP_SCREENSHOT=<file.png>   save the window there, then quit
 //   OMAMP_PROFILE=1               print the time to the first frame and, in
 //       advanced mode, how long a jump to the end, a sort and two searches

@@ -1,5 +1,7 @@
 #include "devhooks.h"
 
+#include <QEventLoop>
+
 #include "librarycontroller.h"
 
 #include <QCoreApplication>
@@ -181,6 +183,12 @@ void DevHooks::runDemo() {
             QObject *o = findNamed(m_window, arg);
             if (!o || !QMetaObject::invokeMethod(o, "clicked"))
                 say("can't click " + arg);
+        } else if (verb == "wait") {
+            // wait:<ms> lets work in the background (a worker thread, a
+            // backend's answer) land before the next step.
+            QEventLoop loop;
+            QTimer::singleShot(arg.toInt(), &loop, &QEventLoop::quit);
+            loop.exec();
         } else if (verb == "playlist")
             // playlist:<id> shows a playlist (opening its folders).
             m_library->playlists()->show(arg.toLongLong());

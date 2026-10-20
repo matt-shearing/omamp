@@ -11,7 +11,7 @@ Auto-DJ, MusicBrainz tagging, synced lyrics, libraries that live on a NAS
 or a Navidrome server, sync to a phone, USB drive or Syncthing folder, and
 reports as CSV or HTML.
 
-> **Status:** early (0.2.0). Everything below is built and tested (351
+> **Status:** early (0.2.0). Everything below is built and tested (368
 > automated tests), but only against made-up music, mock web services and
 > simulated network shares. It has not yet been tried on a real large library
 > or a real NAS. Expect rough edges and breaking changes. The plan and a
@@ -319,6 +319,26 @@ The guide is [docs/sync.md](docs/sync.md).
 
 ![The Devices page with a preview of the next sync](docs/devices.png)
 
+## Spotify (optional)
+
+Switch on **Settings → Spotify** to put Spotify beside your own music: a
+Spotify node in the library tree with your playlists, Liked Songs, saved
+albums, followed artists and search; Spotify results under the library search
+and in the command palette; and Spotify tracks in Now Playing between your
+own files. When a Spotify track's turn comes, Spotify plays it on its Spotify
+Connect device and Omamp follows it on the deck, the big view, the mini
+players, MPRIS and the bar.
+
+Omamp never sees your Spotify password. It drives
+[spotify_player](https://github.com/aome510/spotify-player), which keeps its
+own sign-in: **Sign in…** runs `spotify_player authenticate` in a terminal.
+Spotifast works too, for playing links and control only. Playing needs
+Spotify Premium; a Free account can browse and search. Gapless joins,
+crossfade, the equaliser and the visualiser stay with your own files.
+[docs/spotify.md](docs/spotify.md) has the details and the reasons.
+
+![The Spotify node](docs/spotify-panel.png)
+
 ## Omarchy bar plugin
 
 `omarchy-plugin/` adds Omamp to the Omarchy bar: the track and play state in the bar, and a panel with the cover, seek, transport, shuffle, repeat and volume. Install it with `omarchy-plugin/install`. See [its README](omarchy-plugin/README.md).
@@ -438,6 +458,8 @@ omamp sync create Phone --to /run/media/$USER/PHONE/Music --kind usb \
 omamp sync run Phone --dry-run           # what a sync would copy, convert and delete
 omamp sync run Phone
 omamp report 'rating:5' --out five-stars.csv
+omamp spotify status                     # is spotify_player signed in and running? Premium?
+omamp spotify search 'neon coast' --json # Spotify's tracks, albums, artists and playlists
 ```
 
 A file moved or renamed inside the library keeps its rating, play count,

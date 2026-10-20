@@ -25,6 +25,8 @@ Rectangle {
         Text {
             text: library.currentKind === "nowplaying"
                   ? qsTr("%Ln tracks in Now Playing", "", backend.playlist.count)
+                  : library.currentKind === "spotify"
+                  ? qsTr("Spotify, through %1").arg(spotify.backendName)
                   : library.currentKind === "duplicates"
                   ? (library.duplicates.searched ? library.duplicates.summary : qsTr("Duplicates"))
                   : library.currentKind === "playlist" || library.currentKind === "autoplaylist" || library.currentKind === "plfolder"

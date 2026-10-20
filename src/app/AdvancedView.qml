@@ -40,7 +40,9 @@ FocusScope {
     // A playlist, auto-playlist or playlist folder shows the playlist view.
     readonly property bool playlistNode: library.currentKind === "playlist" || library.currentKind === "autoplaylist"
                                          || library.currentKind === "plfolder"
-    readonly property bool special: nowPlaying || duplicatesNode || playlistNode
+    // Spotify (SpotifyView.qml) when it is switched on.
+    readonly property bool spotifyNode: library.currentKind === "spotify"
+    readonly property bool special: nowPlaying || duplicatesNode || playlistNode || spotifyNode
     // Party mode locks changing playlists.
     readonly property bool playlistsLocked: library.dj.partyOn && !library.dj.allowed("edit-playlists")
     readonly property bool showingBrowser: browserVisible && !special
@@ -51,6 +53,7 @@ FocusScope {
         if (nowPlaying) nowPlayingList.forceActiveFocus()
         else if (duplicatesNode) duplicatesView.forceActiveFocus()
         else if (playlistNode) playlistView.forceActiveFocus()
+        else if (spotifyNode) spotifyView.focusList()
         else if (showingGrid) grid.forceActiveFocus()
         else table.forceActiveFocus()
     }
@@ -320,9 +323,21 @@ FocusScope {
                 Item {
                     SplitView.fillHeight: true
                     SplitView.minimumHeight: 120
+                    // "Local" over the list while Spotify's results show below it.
+                    Text {
+                        id: localHeading
+                        visible: blendStrip.visible && table.visible
+                        height: visible ? 26 : 0
+                        leftPadding: 12
+                        verticalAlignment: Text.AlignVCenter
+                        text: qsTr("Local: %Ln tracks", "", library.tracks.count)
+                        font.pixelSize: 13
+                        font.bold: true
+                        color: theme.c.bright_foreground
+                    }
                     TrackTable {
                         id: table
-                        anchors.fill: parent
+                        anchors { fill: parent; topMargin: localHeading.height }
                         visible: !view.special && !view.showingGrid
                         onLeave: view.showingBrowser ? view.focusBrowser() : view.focusTree()
                         onLayoutEdited: {
@@ -362,6 +377,12 @@ FocusScope {
                         onLeave: view.focusTree()
                         onAction: (id) => view.action(id)
                     }
+                    SpotifyView {
+                        id: spotifyView
+                        anchors.fill: parent
+                        visible: view.spotifyNode
+                        onLeave: view.focusTree()
+                    }
                     DuplicatesView {
                         id: duplicatesView
                         anchors.fill: parent
@@ -369,6 +390,14 @@ FocusScope {
                         onLeave: view.focusTree()
                         onConfirm: (title, text, confirmText, action) => view.confirm(title, text, confirmText, action)
                     }
+                }
+                // Spotify's answers to the search, under the track list.
+                SpotifyBlendStrip {
+                    id: blendStrip
+                    visible: spotify.enabled && spotify.blendSearch && spotify.canBrowse && !view.special
+                             && library.tracks.filter.trim().length >= 2
+                    SplitView.preferredHeight: 196
+                    SplitView.minimumHeight: 150
                 }
             }
 

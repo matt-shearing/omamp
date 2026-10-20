@@ -297,7 +297,8 @@ SpotifyPlayback::SpotifyPlayback(SpotifyController *controller) : m_c(controller
             if (m_position.interval() != interval)
                 m_position.setInterval(interval);
         } else {
-            const int interval = nearEnd ? qMin(1500, m_pollMs) : m_pollMs;
+            // While a start waits to be seen, a little sooner too.
+            const int interval = nearEnd || m_starting ? qMin(1500, m_pollMs) : m_pollMs;
             if (m_poll.interval() != interval)
                 m_poll.setInterval(interval);
         }
@@ -434,6 +435,8 @@ void SpotifyPlayback::startFollowing() {
         }
     } else {
         m_position.stop();
+        if (m_starting)
+            m_poll.setInterval(qMin(1500, m_pollMs));
         if (!m_poll.isActive())
             m_poll.start();
     }
@@ -903,7 +906,7 @@ void SpotifyController::checkRateLimit(bool failed, const QString &error) {
                      (failed && m_rateLimited && error.contains("in time"));
     if (hit) {
         QDateTime until = news.retryUntil.isValid() ? news.retryUntil : m_retryUntil;
-        if (failed && (!until.isValid() || until < now.addSecs(5)))
+        if (failed && (!until.isValid() || until < now.addSecs(2)))
             until = now.addSecs(10);
         if (!until.isValid())
             until = now;

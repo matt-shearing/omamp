@@ -63,7 +63,7 @@ private:
     void watch();
     void unwatch();
     void setAvailable(bool on);
-    void apply(const QVariantMap &properties);
+    void apply(const QVariantMap &properties, bool announce = true);
     void setPosition(qint64 us);
 
     QDBusConnection m_bus;

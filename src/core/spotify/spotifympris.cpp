@@ -167,9 +167,8 @@ void MprisWatch::refreshPosition() {
         if (generation != m_generation)
             return;
         const QDBusMessage reply = w->reply();
-        if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty())
-            return;
-        setPosition(unwrap(reply.arguments().at(0)).toLongLong());
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+            setPosition(unwrap(reply.arguments().at(0)).toLongLong());
         emit changed();
     });
 }
@@ -179,7 +178,7 @@ void MprisWatch::setPosition(qint64 us) {
     m_positionAt.restart();
 }
 
-void MprisWatch::apply(const QVariantMap &p) {
+void MprisWatch::apply(const QVariantMap &p, bool announce) {
     if (p.contains("PlaybackStatus")) {
         // Keep the moved-on position when the status changes.
         const qint64 now = state().progressMs * 1000;
@@ -195,7 +194,8 @@ void MprisWatch::apply(const QVariantMap &p) {
     }
     if (p.contains("Position"))
         setPosition(unwrap(p.value("Position")).toLongLong());
-    emit changed();
+    if (announce)
+        emit changed();
 }
 
 void MprisWatch::onPropertiesChanged(const QString &interface, const QVariantMap &changedProperties,
@@ -206,9 +206,12 @@ void MprisWatch::onPropertiesChanged(const QString &interface, const QVariantMap
         refreshAll();
         return;
     }
-    apply(changedProperties);
-    // Position is rarely announced; read it after anything else changes.
-    if (!changedProperties.contains("Position") || invalidated.contains("Position"))
+    // Position is rarely announced with the rest, so it is read before the
+    // change is passed on: a pause is then seen with the position it
+    // stopped at.
+    const bool withPosition = changedProperties.contains("Position") && !invalidated.contains("Position");
+    apply(changedProperties, withPosition);
+    if (!withPosition)
         refreshPosition();
 }
 

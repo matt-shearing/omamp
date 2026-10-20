@@ -2,7 +2,7 @@
 
 // What Main.qml needs beside the player and the library since the now
 // playing work: `appearance` (deck style, visualiser) and `nowPlaying` (the
-// playing track's cover). Both belong to the engine, so they go before the
+// playing track's cover), and since the radio, `radio`. Both belong to the engine, so they go before the
 // player and the library do. Settings stay in memory unless a window.conf
 // is given; pictures go to the test's own art folder.
 
@@ -11,6 +11,7 @@
 
 #include "appearance.h"
 #include "nowplaying.h"
+#include "radiocontroller.h"
 
 class Player;
 class Theme;
@@ -21,4 +22,9 @@ inline void installNowPlaying(QQmlEngine &engine, Theme *theme, Player *player, 
     auto *now = new NowPlaying(player, dbPath, artDir, &engine);
     engine.rootContext()->setContextProperty("appearance", appearance);
     engine.rootContext()->setContextProperty("nowPlayingArt", now);
+    // Internet radio: its tiles go beside the test's pictures.
+    auto *radio = new RadioController(dbPath, &engine);
+    radio->setCacheDir(artDir + "/radio");
+    radio->setPlayer(player);
+    engine.rootContext()->setContextProperty("radio", radio);
 }

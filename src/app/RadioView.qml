@@ -30,9 +30,16 @@ FocusScope {
 
     // Every channel's now-playing line stays live while the picker shows.
     Binding { target: radio; property: "pickerVisible"; value: view.visible }
-    onVisibleChanged: if (visible) {
+    // The cursor starts on the station playing, else on the first card.
+    function placeCursor() {
         const row = radio.stations.rowOf(radio.currentKey)
         if (row >= 0) grid.currentIndex = row
+        else if (grid.currentIndex < 0 || grid.currentIndex >= grid.count) grid.currentIndex = grid.count > 0 ? 0 : -1
+    }
+    onVisibleChanged: if (visible) Qt.callLater(placeCursor)
+    Connections {
+        target: radio.stations
+        function onModelReset() { Qt.callLater(view.placeCursor) }
     }
 
     Rectangle { anchors.fill: parent; color: theme.c.background }
@@ -107,8 +114,13 @@ FocusScope {
                 } else if (event.key === Qt.Key_Delete && currentIndex >= 0 && currentItem && !currentItem.isBuiltin) {
                     radio.removeStation(radio.stations.keyAt(currentIndex))
                     event.accepted = true
-                } else if (event.key === Qt.Key_Left && currentIndex % columns === 0) {
-                    view.leave()
+                } else if (event.key === Qt.Key_Left) {
+                    // From the first column back to the tree.
+                    if (currentIndex % columns === 0) view.leave()
+                    else moveCurrentIndexLeft()
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Right) {
+                    moveCurrentIndexRight()
                     event.accepted = true
                 }
             }

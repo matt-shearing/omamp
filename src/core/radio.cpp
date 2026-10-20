@@ -338,7 +338,7 @@ QStringList IcyParser::feed(const QByteArray &bytes) {
     int i = 0;
     const int n = bytes.size();
     while (i < n) {
-        if (m_metaLeft < 0) {
+        if (m_metaLeft == -1) {
             // In the audio.
             const int take = qMin(m_left, n - i);
             i += take;

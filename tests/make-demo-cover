@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+# Draws a made-up album cover for the demo library: one of a few plain
+# graphic styles in three colours, with the artist and album printed on it,
+# so screenshots look like a real shelf without using anyone's real artwork.
+#
+#   tests/make-demo-cover <out.jpg> <style> <colour1> <colour2> <colour3> <artist> <album>
+#
+# Styles: sun, rings, stripes, shapes, waves, type, grid. Needs Pillow.
+import math, random, subprocess, sys
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+out, style, c1, c2, c3, artist, album = sys.argv[1:8]
+S = 600
+rng = random.Random(artist + album)
+
+
+def rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def mix(a, b, t):
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+def font(size, bold=True):
+    name = "DejaVu Sans:bold" if bold else "DejaVu Sans"
+    try:
+        path = subprocess.run(["fc-match", "-f", "%{file}", name], capture_output=True, text=True).stdout
+        return ImageFont.truetype(path, size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+a, b, c = rgb(c1), rgb(c2), rgb(c3)
+img = Image.new("RGB", (S, S), a)
+d = ImageDraw.Draw(img)
+ink = c  # the text colour, unless a style says otherwise
+
+if style == "sun":
+    # A synthwave sunset: a sky gradient, a striped sun and a floor grid.
+    horizon = 380
+    for y in range(horizon):
+        d.line([(0, y), (S, y)], fill=mix(a, b, y / horizon))
+    d.rectangle([0, horizon, S, S], fill=mix(a, (0, 0, 0), 0.55))
+    sun = Image.new("RGB", (S, S))
+    sd = ImageDraw.Draw(sun)
+    for y in range(120, horizon):
+        sd.line([(0, y), (S, y)], fill=mix(c, b, (y - 120) / (horizon - 120)))
+    mask = Image.new("L", (S, S), 0)
+    md = ImageDraw.Draw(mask)
+    md.ellipse([170, 120, 430, 380], fill=255)
+    for i, y in enumerate(range(270, horizon, 22)):
+        md.rectangle([0, y, S, y + 4 + i * 2], fill=0)
+    img.paste(sun, (0, 0), mask)
+    for i in range(-12, 13):
+        d.line([(S / 2 + i * 18, horizon), (S / 2 + i * 120, S)], fill=b, width=2)
+    y, step = horizon, 6
+    while y < S:
+        d.line([(0, y), (S, y)], fill=b, width=2)
+        step *= 1.45
+        y += step
+    ink = (255, 255, 255)
+elif style == "rings":
+    cx, cy = rng.randint(200, 400), rng.randint(180, 320)
+    for i, r in enumerate(range(520, 0, -38)):
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=b if i % 2 else mix(a, c, 0.15))
+    d.ellipse([cx - 40, cy - 40, cx + 40, cy + 40], fill=c)
+    ink = c
+elif style == "stripes":
+    for i in range(-S, 2 * S, 60):
+        d.polygon([(i, 0), (i + 30, 0), (i + 30 - S, S), (i - S, S)], fill=b)
+    d.ellipse([150, 120, 450, 420], fill=c)
+    d.ellipse([190, 160, 410, 380], fill=a)
+    ink = (255, 255, 255)
+elif style == "shapes":
+    d.ellipse([60, 70, 360, 370], fill=b)
+    d.rectangle([300, 260, 540, 500], fill=c)
+    d.polygon([(90, 520), (230, 300), (370, 520)], fill=mix(b, c, 0.5))
+    ink = c
+elif style == "waves":
+    for k in range(14):
+        col = mix(a, b, k / 13) if k < 7 else mix(b, c, (k - 7) / 6)
+        pts = [(x, 120 + k * 34 + 22 * math.sin(x / 70 + k * 0.6)) for x in range(0, S + 10, 10)]
+        d.polygon(pts + [(S, S), (0, S)], fill=col)
+    ink = (255, 255, 255)
+elif style == "type":
+    f = font(150)
+    words = album.lower().split()
+    y = 70
+    for w in words[:3]:
+        d.text((40, y), w, font=f, fill=b)
+        y += 150
+    d.rectangle([40, 540, 300, 548], fill=c)
+    ink = c
+elif style == "grid":
+    n = 6
+    cell = S // n
+    for i in range(n):
+        for j in range(n):
+            col = [a, b, c, mix(a, b, 0.5)][rng.randrange(4)]
+            if rng.random() < 0.5:
+                d.rectangle([i * cell, j * cell, (i + 1) * cell, (j + 1) * cell], fill=col)
+            else:
+                d.ellipse([i * cell + 6, j * cell + 6, (i + 1) * cell - 6, (j + 1) * cell - 6], fill=col)
+    ink = (255, 255, 255)
+
+# A little grain, so flat colours read as printed rather than drawn.
+noise = Image.effect_noise((S, S), 18).convert("RGB")
+img = Image.blend(img, Image.composite(img, noise, Image.new("L", (S, S), 235)), 0.5)
+img = img.filter(ImageFilter.SMOOTH)
+
+# The words get a thin outline in black or white, whichever is further from
+# their colour, so they read over any part of the picture.
+d = ImageDraw.Draw(img)
+edge = (0, 0, 0) if sum(ink) > 380 else (255, 255, 255)
+d.text((34, 30), artist.upper(), font=font(26), fill=ink, stroke_width=2, stroke_fill=edge)
+if style != "type":
+    d.text((34, S - 62), album, font=font(30, bold=False), fill=ink, stroke_width=2, stroke_fill=edge)
+img.save(out, quality=90)

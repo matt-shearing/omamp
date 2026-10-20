@@ -45,9 +45,9 @@ def full(t):  # rspotify FullTrack, as in the playback state
             "track_number": 1, "type": "track"}
 def pl(name, owner, uid, desc, ids):
     return {"id": sid("pl"+name), "collaborative": False, "name": name, "owner": [owner, uid], "desc": desc, "current_folder_id": 0, "snapshot_id": "AAAA"+sid("snap"+name)[:10]}, ids
-playlists = [pl("Late Night Drive","Matt Example","mattexample","For the long way home",["Coastline at 2 AM","Night Ride Home","Tail Lights","Harbor Lights","Turbo Twilight"]),
-             pl("Focus Synth","Matt Example","mattexample","",["Static Bloom","Velvet Signal","Pixel Rain"]),
-             pl("Gym Runs","Matt Example","mattexample","Fast ones",["Overdrive Hearts","Redline Romance","Insert Coin"]),
+playlists = [pl("Late Night Drive","Sam Listener","samlistener","For the long way home",["Coastline at 2 AM","Night Ride Home","Tail Lights","Harbor Lights","Turbo Twilight"]),
+             pl("Focus Synth","Sam Listener","samlistener","",["Static Bloom","Velvet Signal","Pixel Rain"]),
+             pl("Gym Runs","Sam Listener","samlistener","Fast ones",["Overdrive Hearts","Redline Romance","Insert Coin"]),
              pl("Synthwave Essentials","Spotify","spotify","The essential tracks.\nUpdated weekly.",["Afterglow Avenue","Pixel Rain","Harbor Lights"]),
              pl("Retro Futures","Kai Rivers","kairivers","Chrome and\nneon",["Cassette Moon","Last Exit Glow"])]
 def cli(obj):  # what the CLI prints: serde_json, then "\\n" -> newline

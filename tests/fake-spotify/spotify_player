@@ -127,7 +127,7 @@ playlist)
     new)
         name=$4
         id=$(printf 'new%s0000000000000000000000' "$(printf '%s' "$name" | tr -cd 'A-Za-z0-9')" | cut -c1-22)
-        entry=$(printf '{"id":"%s","collaborative":false,"name":"%s","owner":["Matt Example","mattexample"],"desc":"","current_folder_id":0,"snapshot_id":"AAAAnew"}' "$id" "$name")
+        entry=$(printf '{"id":"%s","collaborative":false,"name":"%s","owner":["Sam Listener","samlistener"],"desc":"","current_folder_id":0,"snapshot_id":"AAAAnew"}' "$id" "$name")
         printf '[%s,%s' "$entry" "$(tail -c +2 "$D/playlists.json")" > "$D/playlists.json.new"
         mv "$D/playlists.json.new" "$D/playlists.json"
         echo "Playlist '$name' was created" ;;

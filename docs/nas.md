@@ -96,6 +96,8 @@ section).
 
 ## When the NAS is off
 
+![Volumes: the local music folder, a share that isn't connected, and a Navidrome server](volumes.png)
+
 Every library folder belongs to a volume. A share is recognised by a small
 file, `.omamp-volume-id`, that Omamp writes at the folder you add (when the
 share is writable). If the share is read-only, the server and share name
@@ -199,10 +201,12 @@ the first and last few hundred kilobytes of each file.
 
 ## Navidrome as a source
 
+![Adding a Navidrome server, with the connection tested](remote-source.png)
+
 If the NAS runs Navidrome (or another OpenSubsonic or Subsonic server), add it:
 
 ```sh
-printf '%s\n' "$NAVIDROME_PASSWORD" | omamp remote add subsonic https://nas:4533 --user matt --password-stdin
+printf '%s\n' "$NAVIDROME_PASSWORD" | omamp remote add subsonic https://nas:4533 --user listener --password-stdin
 omamp remote sync
 ```
 

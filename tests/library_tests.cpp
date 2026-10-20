@@ -202,8 +202,8 @@ private slots:
         // Unplugged, then plugged in somewhere else.
         fake.setMounts({});
         QVERIFY(r.locate(info.key, root, info.mountSubpath).isEmpty());
-        fake.setMounts({{"/run/media/matt/usb", "/", "ext4", dev}});
-        QCOMPARE(r.locate(info.key, root, info.mountSubpath), QString("/run/media/matt/usb"));
+        fake.setMounts({{"/run/media/you/usb", "/", "ext4", dev}});
+        QCOMPARE(r.locate(info.key, root, info.mountSubpath), QString("/run/media/you/usb"));
 
         // A btrfs subvolume shares the UUID, so its root is part of the key.
         fake.setMounts({{root, "/@music", "btrfs", dev}});
@@ -530,7 +530,7 @@ private slots:
         QCOMPARE(cli({"scan", "--db", db, dir.filePath("nowhere")}, nullptr, &errors), 1);
         QVERIFY(errors.contains("not a folder"));
         QVERIFY(Cli::isCommand("scan"));
-        QVERIFY(!Cli::isCommand("/home/matt/Music"));
+        QVERIFY(!Cli::isCommand("/home/you/Music"));
     }
 };
 

@@ -77,6 +77,8 @@ omamp net status | set <key> <value> | unset <key> | clear-cache
 
 ### Identify
 
+![Identify with MusicBrainz: releases, scores and the tag changes](identify.png)
+
 `omamp identify` works the way Picard does.
 
 1. **Cluster.** The tracks the query finds are grouped into would-be albums
@@ -118,6 +120,8 @@ writes it into every track (journalled), and `--save-cover` saves `cover.jpg`
 beside the tracks when the folder has no picture file.
 
 ### Lyrics
+
+![Timed lyrics in the info panel](lyrics.png)
 
 `omamp lyrics <query>` shows the lyrics Omamp already has for each track, in
 this order:

@@ -32,7 +32,7 @@ namespace {
 
 // Keep in step with src/app/main.cpp. The command line and the window set
 // the application version; tests and libraries that don't fall back to this.
-const char *fallbackVersion = "0.2.0";
+const char *fallbackVersion = "0.3.0";
 
 constexpr int serviceCount = 7;
 

@@ -17,6 +17,8 @@ Free account can browse and search.
 
 ![Settings → Spotify](settings-spotify.png)
 
+![Spotify → Search Spotify… from the deck opens the library on Spotify](menu-spotify-search.png)
+
 ## Signing in
 
 Omamp never asks for your Spotify password and keeps no Spotify token. A
@@ -170,7 +172,10 @@ In the Spotify node:
 
 ### Choosing several rows
 
-![Five tracks chosen in Liked Songs, with Add to playlist open](spotify-multiselect.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="spotify-multiselect-dark.png">
+  <img alt="Five tracks chosen in Liked Songs, with Add to playlist open" src="spotify-multiselect-light.png">
+</picture>
 
 Every Spotify list (your playlists' tracks, Liked Songs, an album, an
 artist's page, search results) and the Spotify strip under the library
@@ -285,8 +290,8 @@ JSON: library, search, playback state, play, pause, seek, Like, add to a
 playlist and choose a device. That gives the whole feature without Omamp ever
 touching a credential.
 
-**Spotifast is a second choice, for control only.** It is a good Spotify app
-and Matt already uses it, but its command line plays a link, pauses, seeks and
+**Spotifast is a second choice, for control only.** It is a good Spotify app,
+but its command line plays a link, pauses, seeks and
 reports what is playing; it has no search or library. Omamp uses it for
 exactly that. The official Spotify app offers only MPRIS, so it isn't a
 backend.

@@ -47,7 +47,7 @@ inline QJsonObject song(const QString &id, const QString &title, const QString &
 // Navidrome, as far as these tests need it.
 class MockSubsonic : public QObject {
 public:
-    QString user = "matt", password = "sesame", apiKey = "key-123";
+    QString user = "listener", password = "sesame", apiKey = "key-123";
     bool refuse = false;
     bool realPictures = false;              // getCoverArt answers with a real PNG
     QList<QJsonObject> albums;              // getAlbumList2 entries, kept sorted by name

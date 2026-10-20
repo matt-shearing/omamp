@@ -1,5 +1,7 @@
 #include "spotifycontroller.h"
 
+#include <QAudio>
+
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
@@ -2414,4 +2416,14 @@ void SpotifyController::runPaletteSearch() {
         rememberTracks(r.search.tracks);
         m_palette->setExternalResults("Spotify", text, rows);
     });
+}
+
+// Omamp's volume slider sets the Spotify player's volume too, over its MPRIS
+// service. Without MPRIS (Spotifast's own volume, or no service) it is left.
+//
+// The engines take a linear gain, made from the slider's perceptual scale.
+// librespot's mixer applies its own curve, so it gets the slider's value
+// back, or 30 % on the slider would be nearly silent on Spotify.
+void SpotifyPlayback::setVolume(qreal linear) {
+    m_c->mpris()->setVolume(QAudio::convertVolume(linear, QAudio::LinearVolumeScale, QAudio::LogarithmicVolumeScale));
 }

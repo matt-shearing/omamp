@@ -244,3 +244,13 @@ Playback MprisWatch::state() const {
 }
 
 } // namespace Spotify
+
+void Spotify::MprisWatch::setVolume(qreal volume) {
+    if (m_service.isEmpty())
+        return;
+    QDBusMessage set = QDBusMessage::createMethodCall(m_service, "/org/mpris/MediaPlayer2",
+                                                      "org.freedesktop.DBus.Properties", "Set");
+    set << QString("org.mpris.MediaPlayer2.Player") << QString("Volume")
+        << QVariant::fromValue(QDBusVariant(qBound(0.0, volume, 1.0)));
+    m_bus.asyncCall(set);
+}

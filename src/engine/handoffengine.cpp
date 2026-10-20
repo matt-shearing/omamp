@@ -145,6 +145,7 @@ void HandoffEngine::startExternal(const QString &path) {
     m_external = true;
     m_inner->load({});
     m_ext->load(path);
+    pushVolume();
     // The Player takes the queued row as current and queues the next.
     emit advanced();
     m_ext->play();
@@ -222,4 +223,23 @@ QVariantMap HandoffEngine::metaData() const { return m_external ? m_ext->metaDat
 void HandoffEngine::setSettings(const Settings &settings) {
     AudioEngine::setSettings(settings);
     m_inner->setSettings(settings);
+}
+
+void HandoffEngine::setVolume(qreal linear) {
+    m_volume = linear;
+    m_inner->setVolume(linear);
+    pushVolume();
+}
+
+void HandoffEngine::setMuted(bool muted) {
+    m_muted = muted;
+    m_inner->setMuted(muted);
+    pushVolume();
+}
+
+// The outside player only hears the volume while it plays Omamp's entry, so
+// a Spotify volume set elsewhere is left alone the rest of the time.
+void HandoffEngine::pushVolume() {
+    if (m_ext && m_external)
+        m_ext->setVolume(m_muted ? 0.0 : m_volume);
 }

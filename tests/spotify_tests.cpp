@@ -97,6 +97,7 @@ class FakeMpris : public QObject {
     Q_PROPERTY(QString PlaybackStatus READ playbackStatus)
     Q_PROPERTY(QVariantMap Metadata READ metadata)
     Q_PROPERTY(qlonglong Position READ position)
+    Q_PROPERTY(double Volume READ volume WRITE setVolume)
 
 public:
     FakeMpris(const QString &address, const QString &name) : m_bus(QDBusConnection::connectToBus(address, "fake-mpris")) {
@@ -114,6 +115,8 @@ public:
     QString playbackStatus() const { return m_status; }
     QVariantMap metadata() const { return m_metadata; }
     qlonglong position() const { return m_positionUs; }
+    double volume() const { return m_volume; }
+    void setVolume(double v) { m_volume = v; }
 
     // What spotify_player would show for a track.
     void show(const QString &title, const QString &artists, const QString &album, qint64 lengthMs,
@@ -148,6 +151,7 @@ private:
     QString m_status = "Stopped";
     QVariantMap m_metadata;
     qint64 m_positionUs = 0;
+    double m_volume = 1.0;
 };
 
 // Counts the playback-state reads in the fake's log: each one is a Spotify
@@ -1239,6 +1243,13 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 3000);
         QCOMPARE(player.state(), QString("playing"));
         QCOMPARE(c.nowPlaying().value("title").toString(), QString("Tail Lights"));
+
+        // Omamp's volume slider reaches Spotify's player, on the slider's
+        // own scale (librespot applies its own curve).
+        player.setVolume(50);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(mpris.volume() - 0.5) < 0.02, 3000);
+        player.setVolume(20);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(mpris.volume() - 0.2) < 0.02, 3000);
 
         // Paused on the phone.
         QTest::qWait(300);

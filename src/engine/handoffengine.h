@@ -31,6 +31,9 @@ public:
     virtual qint64 duration() const = 0;
     virtual AudioEngine::State state() const = 0;
     virtual bool buffering() const { return false; }
+    // Omamp's volume, 0..1 linear as AudioEngine takes it, for the outside
+    // player's own volume. Players that can't take it ignore it.
+    virtual void setVolume(qreal linear) { Q_UNUSED(linear); }
     // title, artist, album, as AudioEngine::metaData().
     virtual QVariantMap metaData() const = 0;
 
@@ -88,8 +91,9 @@ public:
     State state() const override;
     bool buffering() const override;
 
-    void setVolume(qreal linear) override { m_inner->setVolume(linear); }
-    void setMuted(bool muted) override { m_inner->setMuted(muted); }
+    // The volume reaches both sides, so the slider works whichever plays.
+    void setVolume(qreal linear) override;
+    void setMuted(bool muted) override;
     QVariantMap metaData() const override;
     void setSettings(const Settings &settings) override;
 
@@ -106,6 +110,9 @@ private:
     QPointer<ExternalPlayback> m_ext;
     QMetaObject::Connection m_extConnections[8];
     bool m_external = false;
+    qreal m_volume = 1.0;
+    bool m_muted = false;
+    void pushVolume();
     QString m_queuedPath;
     QUrl m_queuedUrl;
 };

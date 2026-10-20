@@ -179,6 +179,7 @@ public:
     AudioEngine::State state() const override { return m_state; }
     bool buffering() const override { return m_starting; }
     QVariantMap metaData() const override;
+    void setVolume(qreal linear) override;
 
     QString trackId() const { return m_track.id; }
     // Whether the entry is a whole playlist, album or artist that Spotify

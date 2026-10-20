@@ -35,6 +35,9 @@ public:
     // replaces it (tests), and OMAMP_SPOTIFY_MPRIS_BUS names a private bus
     // to use instead of the session bus (tests).
     void setService(const QString &busName);
+    // Sets the player's MPRIS Volume (0..1). A local D-Bus call: it costs
+    // Spotify no Web API request.
+    void setVolume(qreal volume);
     QString service() const { return m_service; }
     bool available() const { return m_available; }
 

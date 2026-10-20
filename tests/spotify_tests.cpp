@@ -351,8 +351,8 @@ private slots:
         FakeSpotify fake;
         Spotify::SpotifyPlayerBackend b;
         QCOMPARE(b.deviceName(), QString("spotify-player"));
-        fake.touch(fake.config() + "/app.toml", "client_port = 8080\n[device]\nvolume = 70\nname = \"tetelestai\"\n[layout]\nname = \"no\"\n");
-        QCOMPARE(b.deviceName(), QString("tetelestai"));
+        fake.touch(fake.config() + "/app.toml", "client_port = 8080\n[device]\nvolume = 70\nname = \"desk\"\n[layout]\nname = \"no\"\n");
+        QCOMPARE(b.deviceName(), QString("desk"));
     }
 
     void spotifastIsControlOnly() {

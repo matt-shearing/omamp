@@ -98,8 +98,8 @@ FocusScope {
             keyNavigationEnabled: true
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-            // As many columns of at least 260 px as fit.
-            readonly property int columns: Math.max(1, Math.floor(width / 260))
+            // As many columns of at least 300 px as fit.
+            readonly property int columns: Math.max(1, Math.floor(width / 300))
             cellWidth: Math.floor(width / columns)
             cellHeight: 108
             highlightFollowsCurrentItem: false

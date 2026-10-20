@@ -86,6 +86,30 @@ the library. Omamp sends the cover over MPRIS too, so the Omarchy bar and
 [docs/now-playing.md](docs/now-playing.md) has the details: where covers
 come from, every key, the Hyprland rule, and the styles.
 
+## Internet radio
+
+Every Nightride FM and Rekt Network channel is built in: Nightride FM,
+Chillsynth, Datawave, Spacesynth, Darksynth, Horrorsynth and EBSM, and Rekt,
+Rektory, Rektify and D-Notive. The picker shows each channel's colour, its
+genres and the song it is playing right now, from Nightride's live feed.
+Press `Shift+R` on the deck, or choose **Radio** in the library tree, and
+click a channel or press `Enter`. While a station plays, `[` and `]` change
+channel.
+
+![The Nightride FM channels](docs/radio-channels.png)
+
+A station plays live: the deck shows **LIVE** and the time listened, seeking
+is off, and the song's title and artist show everywhere, the bar's MPRIS
+widget included. **Find stations…** searches radio-browser.info for any
+other station; **Add address…** keeps a stream address of your own. Other
+stations' song names come from the titles inside their streams.
+
+![The deck playing Darksynth](docs/radio-deck-live.png)
+
+Radio never counts as library plays, and radio songs are scrobbled only when
+Settings say so. `omamp radio list|play|search|add` does the same from a
+terminal. [docs/radio.md](docs/radio.md) has the details.
+
 ## Advanced mode: the library
 
 Press `Tab` to switch between the deck and advanced mode. In advanced mode the
@@ -343,6 +367,8 @@ The guide is [docs/sync.md](docs/sync.md).
 | `N` | The big Now Playing view, and back |
 | `F11` | Fullscreen Now Playing; `Esc` leaves it, then the big view |
 | `Shift+V` | Next visualiser style (or click the visualiser) |
+| `Shift+R` | Radio: the channel picker |
+| `[` `]` | Previous or next radio channel, while a station plays |
 | `Shift+L` | Lyrics in the big view on or off |
 | `Ctrl+M` | The mini player, and back |
 | `Ctrl+Shift+M` | The micro player, and back |
@@ -438,6 +464,9 @@ omamp sync create Phone --to /run/media/$USER/PHONE/Music --kind usb \
 omamp sync run Phone --dry-run           # what a sync would copy, convert and delete
 omamp sync run Phone
 omamp report 'rating:5' --out five-stars.csv
+omamp radio list --group nightride       # the Nightride FM channels
+omamp radio play darksynth               # tune the running Omamp in
+omamp radio search 'jazz'                # find stations on radio-browser.info
 ```
 
 A file moved or renamed inside the library keeps its rating, play count,

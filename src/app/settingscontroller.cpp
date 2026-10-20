@@ -27,7 +27,8 @@ bool SettingsController::editable(const QString &key) {
     static const QStringList exact = {"tags.write_ratings", "watch.enabled",  "watch.network_minutes",
                                       "acoustid.key",       "coverart.size",  "scrobble.enabled",
                                       "scrobble.listenbrainz", "scrobble.lastfm",
-                                      "lastfm.api_key",     "lastfm.api_secret"};
+                                      "lastfm.api_key",     "lastfm.api_secret",
+                                      "radio.scrobble"};
     static const QStringList prefixes = {"identify."};
     if (exact.contains(key))
         return true;

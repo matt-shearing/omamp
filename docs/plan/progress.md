@@ -4177,3 +4177,192 @@ column only when there are lyrics.
 - The plugin changes only `Widget.qml`, `Service.qml` and `Model.js`, no new
   files, which the shell hot-reloads. If the panel shows no cover, run
   `omarchy restart shell` and check `journalctl --user --since '2 min ago'`.
+
+## Internet radio (20 October 2026)
+
+Matt asked for internet radio, with Nightride FM and all its channels
+handled well, as MediaMonkey had a Net Radio node. User documentation is
+[docs/radio.md](../radio.md).
+
+### What was built
+
+```
+src/core/radio.{h,cpp}         stations (migration 10), the Nightride catalogue and feed parser, ICY parsing,
+                               station tiles, radio-browser.info search, .pls/.m3u lists
+src/app/radiocontroller.{h,cpp} QML `radio`: tuning, live song, feed subscription, ICY reader for the Qt
+                               engine, favourites, search, add, lists, catalogue refresh, scrobbling
+src/cli/cliradio.cpp           omamp radio list|play|search|add|remove|favourite|unfavourite|import|export|heard
+src/app/RadioView.qml          the channel picker (cards: colour, genres, live song, star)
+src/app/RadioSheet.qml         the picker over the deck (Shift+R)
+src/app/FindStationsSheet.qml, AddStationSheet.qml
+src/app/RadioActions.qml       keys, palette entries (one per station), sheets; kept out of Main.qml
+src/app/LiveBar.qml            the dial that replaces the position bar while a station plays
+tests/radio_tests.cpp, tests/radiohttp.h
+```
+
+- **Schema step 10** (`internet radio stations`): `radio_stations` (key,
+  name, network, JSON list of stream addresses best first, picture, colour,
+  description, tags, country, codec, bitrate, metadata source, Nightride
+  id, built-in, position, favourite, last played, time listened) and
+  `radio_heard` (songs heard, with time heard and whether heard from the
+  start). The Spotify work needs no step, so 10 is the radio's.
+- **The queue holds `radio://<key>`**, never a URL. `StreamResolver` hands
+  radio paths to `RadioController::resolve`, which picks the station's
+  address and falls back along its list.
+- **Live in the engine.** `Streaming::isLive(path)` is true for radio
+  paths. The decoder then opens without the `async:` read-ahead (it hides
+  FFmpeg's HTTP layer), asks for ICY (`icy=1`), turns on
+  `reconnect_streamed` (a live stream has no position to get wrong), reports
+  no length, refuses seeks, and polls `icy_metadata_packet` every 16
+  packets. A changed title travels through the ring as a new `MetaChanged`
+  marker, so the window hears of it with the audio.
+- **Player**: `live` property; `seek` does nothing when live;
+  `setLiveInfo(title, artist, album)` for the radio's song (the queue row
+  keeps the station's name); engine titles are ignored for live rows; a
+  live stream's failure emits `liveStreamFailed` instead of skipping on.
+- **Nightride feed**: `RadioController` reads `<nightride>/meta`
+  (server-sent events) with `QNetworkAccessManager` while a Nightride
+  channel plays or the picker shows, and reconnects with a growing pause
+  (2 s to 60 s). An unknown station id in the feed triggers a catalogue
+  refresh.
+- **ICY for other stations**: from the native engine's metadata; on the Qt
+  engine, a second connection with `Icy-MetaData: 1` that reads only the
+  titles (`Radio::IcyParser`).
+- **MPRIS**: no `mpris:length` and `CanSeek` false for a live station;
+  `xesam:url` is the queue reference; `OpenUri` takes `radio://` and
+  `http(s)` addresses (so `omamp radio play` and `playerctl open` work). The
+  bar plugin already handles a zero length, so it needed no change.
+- **Covers**: `NowPlaying` gives a station its saved favicon (96 px or
+  larger) or a tile in its colour with its name, through the usual sizes
+  and blur.
+- **Tree**: a Radio node with Nightride FM, Rekt Network, Favourites and My
+  stations; choosing one shows the picker in the list's place.
+- **Settings > Scrobbling**: "Send songs heard on the radio too", off by
+  default (`radio.scrobble`).
+
+### Checked against nightride.fm (20 October 2026)
+
+A few requests with `User-Agent: Omamp/0.1`:
+
+- The page lists seven stream channels: nightride, chillsynth, datawave,
+  spacesynth, darksynth, horrorsynth, ebsm (and "archives", which is
+  recorded shows, not a stream).
+- The feed `https://nightride.fm/meta` sends one `data: [{station, title,
+  artist, track_id, at}]` event per channel on connect: the seven above plus
+  rekt, rektory, rektify and d-notive (the Rekt Network the site switches to
+  with its logo). Rows with `live: true` (a DJ) carry no track and the site
+  skips them.
+- Every one of the eleven serves `https://stream.nightride.fm/<id>.mp3`
+  (`audio/mpeg`, 320 kbps, 44.1 kHz, `icy-metaint: 16000`, in-stream titles
+  such as `StreamTitle='Akyut - Heaven's Shadow'`) and `<id>.ogg` (Opus).
+  `<id>.m4a` is 404; the site also has HLS under `/hls/<id>/<id>.m3u8`,
+  which Omamp doesn't use.
+- radio-browser.info: the SRV record `_api._tcp.radio-browser.info` named
+  `de1.api.radio-browser.info`; `all.api.radio-browser.info/json/servers`
+  didn't answer in 10 s, so it is only the second choice.
+
+### Test results
+
+`bin/test` with JOBS=4: **365 passed, 0 failed, 5 skipped** (the existing
+skips). The new class `RadioTests` (`OMAMP_TESTS=radio`) has 14, counting
+initTestCase and cleanupTestCase, and takes about 9 seconds. Nothing reaches
+the internet: `tests/radiohttp.h` serves endless looped MP3 streams with ICY
+titles every 8000 bytes, the Nightride feed (a snapshot on connect, then
+pushed events), radio-browser.info's search and click endpoints, a home
+page and a favicon.
+
+- the eleven channels seed with their keys, names, addresses and groups;
+  seeding again keeps favourites and time listened; finding by key, id,
+  name, full name and part of a name, with ambiguity reported;
+- the feed parser in pieces with CRLF, comments and keepalives; DJ rows
+  skipped; the home page's channel list; ICY titles with apostrophes and
+  Latin-1; the ICY stream parser fed a byte at a time;
+- a new site channel joins Nightride FM, a feed-only one Rekt Network,
+  archives never;
+- adding, de-duplicating by address (Nightride's own address is the
+  built-in channel), refusing non-http addresses and removing built-ins,
+  renaming; PLS and M3U out and in;
+- the decoder on a live stream: no length, no seek, two ICY titles in
+  turn, `Icy-MetaData: 1` and Omamp's User-Agent sent;
+- tuning Darksynth after a local track: it goes in after it; the feed's
+  song as title, artist and album; seeks ignored while the clock runs;
+  MPRIS without a length, with the reference as the address and the
+  station's tile as the picture; a pushed song updates everything and
+  `radio_heard`; `]` and `[` round the group with one radio row; ICY titles
+  stand in on a channel the feed hasn't named; favourites; back to the
+  track; no library plays;
+- an ICY station of one's own on the native engine; a dead first address
+  falling back to the second without a message; every address dead giving
+  "Can't play Gone FM", stopped, still on the station;
+- at 16 times real time, three 35-second songs: none scrobbled while off;
+  turned on, the next whole song queued once; the song playing when tuned
+  in never counts;
+- radio-browser.info search (query and `hidebroken` sent, Nightride's
+  stream marked known), adding with the favicon fetched, the click counted
+  when it plays;
+- the catalogue refreshed from the home page when the feed names a new
+  channel; the feed let go when the picker closes and nothing plays;
+- the CLI: list (JSON, groups), play through a fake launcher, ambiguous and
+  unknown names, search, add, favourite, export, remove, import, an unknown
+  command;
+- the window, in deck mode: no library file until the radio is used; every
+  channel in the palette; `Shift+R` opens the picker with live lines; `R`
+  is still repeat; arrow keys and `Enter` tune in and close it; LIVE and
+  the dial on the deck; `]` and `[`; a palette entry by name; `F` in the
+  picker; Find stations from the palette; and no QML warning from Omamp's
+  files.
+
+### Screenshots
+
+`docs/radio-channels.png` (advanced mode, Radio > Nightride FM, Darksynth
+on air, Nightride FM a favourite), `docs/radio-deck-live.png` and
+`docs/radio-find-stations.png`, in the Night Ride theme, offscreen in
+software, from a pretend nightride.fm and radio-browser.info on
+127.0.0.1 with made-up songs and stations. Looking at them led to the LIVE
+badge moving below the play glyph (it covered the clock), wider cards
+(three columns at 1360 px, so genres and songs fit), the ON AIR badge
+hidden when stopped, and plain plurals.
+
+### Decisions
+
+- **Keys**: `Shift+R` opens the picker (`R` stays repeat, as `Shift+V`
+  sits beside `V`); `[` and `]` change channel, and only while a station
+  plays. `Z` and `B` stay previous and next track.
+- **A station joins the queue after the current track** and plays; another
+  station replaces it. Replacing the whole queue would throw away Now
+  Playing; appending would make channel hopping grow the list.
+- **Stations live in the library database**, as asked for (a migration),
+  so the radio creates the database the first time it is used. Looking at
+  the built-in channels doesn't: they show from memory until then.
+- **MP3 first** for Nightride (what the site plays, 320 kbps), Opus as the
+  fallback.
+- **The feed only while needed**: a Nightride channel playing, or the
+  picker open. Nothing touches the network otherwise.
+- **The catalogue only grows.** A channel missing from the site is kept, so
+  a site hiccup can't delete favourites.
+- **Radio isn't a library play.** Songs heard go to `radio_heard`;
+  scrobbling them is a separate switch, off by default, for songs heard
+  whole (from their start, 30 s or more).
+- **Main.qml edits are grouped**: one `RadioActions` object, a line each in
+  `sheetOpen`, `Component.onCompleted`, `runAction` and `updateActions`, a
+  toast connection, `onOpenRadio` on the deck and the big view, and the
+  help lines. AdvancedView gained the Radio node's view; the tree one node.
+
+### Known gaps
+
+- **Nobody has listened to it.** The real Nightride streams and feed were
+  only looked at with curl; playback, ICY titles and reconnecting were
+  tested against the local server.
+- **The Qt engine's ICY reader downloads the stream twice** (it is the only
+  way to read titles beside QMediaPlayer). The native engine reads them
+  from the one stream. Nightride channels use the feed on either engine.
+- **A live stream has no read-ahead**: the `async:` wrapper would hide the
+  ICY titles. A network stall longer than the half-second ring is heard as
+  a gap (the deck says "Buffering…" in the status, not on the deck).
+- **HLS** (Nightride's `/hls/` streams) and stations that only publish
+  HLS are not supported.
+- **Station pictures for radio-browser stations** are only their favicons;
+  most are small, so most stations get a tile.
+- **The plugin panel wasn't rendered** with a station playing; MPRIS
+  sends what it needs (title, artist, album, artUrl, no length).
+- **Translations**: the new strings are English only.

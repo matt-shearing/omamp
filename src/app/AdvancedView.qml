@@ -276,7 +276,14 @@ FocusScope {
             Row {
                 objectName: "searchScope"
                 visible: view.spotifyScopes
-                spacing: 0
+                spacing: 4
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    rightPadding: 2
+                    text: qsTr("Search in")
+                    font.pixelSize: 12
+                    color: theme.c.light_foreground
+                }
                 Repeater {
                     model: [
                         { id: "local", label: qsTr("Library"), tip: qsTr("Search your library only") },
@@ -297,7 +304,7 @@ FocusScope {
                             color: parent.on ? Qt.alpha(theme.accent, 0.16)
                                  : parent.hovered ? Qt.alpha(theme.c.selection, 0.5) : "transparent"
                             border.width: 1
-                            border.color: parent.on ? Qt.alpha(theme.accent, 0.7) : theme.c.lighter_background
+                            border.color: parent.on ? Qt.alpha(theme.accent, 0.7) : Qt.alpha(theme.c.foreground, 0.25)
                         }
                         ToolTip.visible: hovered
                         ToolTip.delay: 600

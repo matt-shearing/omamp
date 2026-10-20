@@ -4520,3 +4520,162 @@ hidden when stopped, and plain plurals.
 - **The plugin panel wasn't rendered** with a station playing; MPRIS
   sends what it needs (title, artist, album, artUrl, no length).
 - **Translations**: the new strings are English only.
+
+## Menu bar and view switching (20 October 2026)
+
+Matt, using Omamp for real: "We don't really have a menu for Omamp that I
+can see... I really need a menu to this app", and "I can't work out how to
+search for Spotify". He was on the deck and didn't know `Tab` opens the
+library; nearly everything was reachable only by key or through `Ctrl+K`.
+He also saw `Tab` lay the library out small in the top-left corner of his
+tiled window before it filled the tile.
+
+### What was built
+
+- **A menu bar** (`MainMenuBar.qml`, a Qt Quick `MenuBar` in the window's
+  `menuBar` slot, Material style in the Omarchy palette) on the deck and in
+  the library; hidden in the mini and micro players, the big view and party
+  mode's display. Menus: File, Edit, View, Play, Library, Radio, Spotify,
+  Help. Each entry shows its key on the right and a ✓ or ● on the left when
+  it is on (shuffle, the panels, the view, the deck style, the playing
+  station).
+- **One set of action ids.** Every entry calls `win.runAction(id)`, the same
+  function the keys and the palette call. New ids, also in the palette:
+  `view-player`, `view-library`, `library-add-folder`, `open-folder`,
+  `seek-back`, `seek-forward`, `toggle-menu-bar`, `palette`, `about`,
+  `open-website`, `open-mediamonkey-guide`, `spotify-search`,
+  `spotify-section:<playlists|liked|albums|artists>`, `spotify-like`.
+- **Greyed entries.** `updateActions()` now records each action's state in
+  `win.actionStates` as it tells the palette, and every menu works it out
+  again as it opens. `win.actionEnabled(id)` adds party mode: the locks moved
+  from inside `runAction` to `win.actionLocks` and `win.lockFor(id)`, used by
+  both, and gained the ids that were missing (the panels, playlists,
+  reports, radio and Spotify actions, deck styles).
+- **Hiding it.** View → Show the menu bar (remembered in `window.conf`).
+  While it is off, `F10` shows it and opens File, and `Alt` pressed alone
+  shows or hides it.
+- **View switching without the menu.** On the deck, labelled **Library** and
+  **Now Playing** buttons in the title bar beside the mini-player button
+  (`TitleButton` gained a `label`). In the library, an outlined **Player**
+  button at the right of the strip. Tooltips name the keys.
+- **A first-run hint** on the deck: "Press Tab or use View → Library to open
+  your library", with Open library and ✕. It goes for good when closed or
+  when the library opens (`libraryHintDone` in `window.conf`).
+- **Spotify.** Spotify → Search Spotify… works from any view in one click:
+  the library opens on the Spotify node with its search box taking the keys.
+  Switched off, the Spotify menu has one entry, Turn on Spotify…, which opens
+  Settings → Spotify. Beside the library search, **Search in: Library /
+  Spotify / Both** (Both is the existing blend switch; Spotify goes to the
+  Spotify node and searches there). On the Spotify node the library box says
+  "Search Spotify (Enter)" and searches Spotify. Clicking the Spotify node,
+  or `Enter` into it before anything is listed, focuses its search box.
+- **Keys that now work from the deck too**: `/` and `Ctrl+F` (Find, opening
+  the library), `Ctrl+B`, `G`, `I` and `F5`, as their menu entries do.
+- **Help → About Omamp**: the version and the MIT licence.
+
+### Tab into the library
+
+Two causes. The window's `width` and `height` were bound to the mode, so
+switching set the library's remembered 1,360 × 820 even on a tiled window;
+Qt laid the content out at that size until Hyprland answered with the
+tile's size. And the library view was built synchronously on the first
+`Tab`.
+
+- **`WindowPlacement`** (`windowplacement.{h,cpp}`) asks `hyprctl -j
+  clients` in the background, on focus and size changes, whether this
+  process's window is tiled or fullscreen. `win.resizeTo()` changes the size
+  only when it isn't; the bindings are broken once at start-up, so nothing
+  else resizes. The tile's size is never saved as a mode's floating size.
+  Without Hyprland nothing is managed and sizes work as before.
+- **The library view is built 1.5 s after start-up** while the deck sits
+  idle, and an existing library database is opened then too
+  (`LibraryController::hasDatabase()`), so no new file appears for a
+  deck-only user. Built asynchronously, the track list's rows were still
+  being made when the library opened and reset them (hundreds of "Object or
+  context destroyed during incubation"), so it is built in one go: about
+  60 ms once, off the user's path.
+- Measured offscreen in software with the made-up library (35 tracks):
+  `setAdvanced(true)` plus one rendered frame took 54–61 ms on a cold start
+  (every first `Tab` before) and 19–21 ms after the idle build
+  (`MenuTests::tabIsQuickAfterStartUp` prints both). `OMAMP_PROFILE=1`'s
+  "Tab into advanced mode … to the screen" went from 71–103 ms to 24–86 ms
+  with `OMAMP_PROFILE_WAIT=2500` (new: waits before profiling, as a person
+  would); that figure includes the offscreen frame timer, so it is noisy.
+
+### Tests
+
+`tests/menu_tests.cpp` (`OMAMP_TESTS=menu`), offscreen, software, no audio
+device, temporary folders, eleven cases:
+
+- `WindowPlacement` reading `hyprctl` output (tiled, floating, fullscreen
+  as a number and as a boolean, absent, not JSON);
+- every entry of every menu, on the deck and then in the library: its id is
+  in the palette; it is greyed exactly when `actionEnabled` says so; and
+  each enabled one, clicked, runs its action (68 a pass). Entries that would
+  reach the internet, open a file picker or a browser, or quit are checked
+  for being listed and enabled only;
+- View's Player / Library / Now Playing choice and its marks; the bar gone
+  in the big view and the mini and micro players; hidden, `F10` shows it and
+  opens File, `Alt` shows and hides it; the deck's Library and Now Playing
+  buttons and the strip's Player button;
+- party mode (jukebox) greying settings, tags, skipping, volume, organise,
+  rescan, deck styles and the menu bar switch, leaving play, the library,
+  search, party mode and the keys list; `volume-up` refusing too;
+- the Spotify menu off (Turn on Spotify… opens Settings → Spotify) and on
+  (against the fake `spotify_player`): Search Spotify… from the deck opens
+  the Spotify node with its box focused; the scope buttons;
+- the hint shown once (closed, then a new window), and gone after `Tab`;
+- `Ctrl+,` opening Settings from the deck, the track list, the search box
+  and the tree; `Ctrl+K` from the search box; Edit → Find from the deck;
+- a tiled window (a pretend `hyprctl`) keeping its 1,700 × 1,000 through
+  library, mini player and deck, with the floating sizes untouched, and a
+  floating one taking 500 and 1,360;
+- the `Tab` timing above.
+
+### Screenshots
+
+`docs/menu-deck.png` (the deck with the menu bar, the Library and Now
+Playing buttons and the first-run hint), `docs/menu-open.png` (View open),
+`docs/menu-library.png` (the library with Spotify on: Search in, the Player
+button), in Matt's current light theme (OneQode Light Glass), and the same
+three as `*-night-ride.png`; `docs/menu-spotify-search.png` (Search Spotify…
+from the deck). Made-up library from `tests/make-demo-library`, a throwaway
+HOME, a private D-Bus session, the fake `spotify_player`, offscreen in
+software. Looking at them found that Material's menus stay 200 px wide and
+cut long lines off (now as wide as the widest line), that their shadow is a
+GPU effect that leaves them with no background in software (now a plain
+panel with a border), and that the scope buttons' edge vanished in the
+light theme.
+
+### Decisions
+
+- **Shortcuts stay the window's `Shortcut`s**; the menu only shows them, so
+  a key never fires twice. While a menu is open the window's keys are off
+  (`sheetOpen` includes `mainMenu.anyOpen`), so letters go to the menu.
+- **Entries run after the menu closes** (`Qt.callLater`, and no exit
+  transition), so Find and Search Spotify keep the keys they move.
+- **No MediaMonkey import entry under File.** The import is a command-line
+  tool (`omamp import mediamonkey`); Help links to its guide instead of a
+  menu entry for a window that doesn't exist.
+- **Equaliser** opens Settings → Playback, which holds it.
+- **`Alt` toggles a hidden bar** rather than showing it while held, because
+  Qt Quick has no "Alt released alone" event; the root item tracks it.
+- **Pre-opening the library** only when its database already exists, and
+  only after 1.5 s idle; the watcher starts then rather than on the first
+  `Tab`.
+- **The light theme for the README pictures**, since that is Matt's current
+  theme; Night Ride copies sit beside them.
+
+### Known gaps
+
+- **Not seen on Hyprland.** The tiled-window fix was tested with a pretend
+  `hyprctl`; nobody has watched the real switch on Matt's tiled window yet.
+- **Why `Ctrl+,` failed for Matt is unknown.** It works from every focus in
+  the tests, and `StandardKey.Preferences` is empty under his `gtk3`
+  platform theme, so the two sequences can't clash. His `fcitx` input method
+  is untested.
+- **The menu's mnemonics** (`Alt+F` and the rest) come from Qt and were not
+  tested; the underlines always show.
+- **Library-only entries are greyed on the deck** (Edit tags, Organise…)
+  because they need chosen tracks, which only the library has.
+- **Translations**: the new strings are English only.

@@ -17,6 +17,41 @@ reports as CSV or HTML.
 > or a real NAS. Expect rough edges and breaking changes. The plan and a
 > detailed progress log are in [docs/plan/](docs/plan/).
 
+## Getting around
+
+Everything Omamp does is in the **menu bar** across the top of the window:
+File, Edit, View, Play, Library, Radio, Spotify and Help. Each entry shows
+its key, so the menus also teach the shortcuts. An entry is greyed out when
+it can't run yet, for example Edit tags before you have chosen any tracks,
+or anything party mode has locked.
+
+![The deck with the menu bar and the Library button](docs/menu-deck.png)
+
+Omamp has three views, and **View** switches between them:
+
+- **Player** is the Winamp-style deck.
+- **Library** is the MediaMonkey-style library manager.
+- **Now Playing** is the big cover view.
+
+You can also switch without the menu. On the deck, the **Library** and
+**Now Playing** buttons sit in the deck's title bar. In the library, the
+**Player** button at the right of the top strip goes back to the deck. `Tab`
+switches between the deck and the library, and `N` opens Now Playing.
+
+![The View menu open](docs/menu-open.png)
+
+To search Spotify, choose **Spotify → Search Spotify…**. It opens the
+library on Spotify with the search box ready. In the library, the
+**Library**, **Spotify** and **Both** buttons beside the search box choose
+where a search looks.
+
+![The library with the menu bar and the Player button](docs/menu-library.png)
+
+`Ctrl+K` opens the command palette, which finds any command, artist, album or
+track by typing part of its name. `?` lists every key. To hide the menu bar,
+untick **View → Show the menu bar**. `F10` or `Alt` brings it back for a
+moment, and the same View entry turns it back on.
+
 ## Why Omarchy first
 
 Omamp follows the desktop instead of fighting it. Every colour comes from the
@@ -392,7 +427,13 @@ crossfade, the equaliser and the visualiser stay with your own files.
 | `Shift+L` | Lyrics in the big view on or off |
 | `Ctrl+M` | The mini player, and back |
 | `Ctrl+Shift+M` | The micro player, and back |
-| `Tab` | Switch between the deck and advanced mode |
+| `Tab` | Switch between the deck and the library (advanced mode) |
+| `/` or `Ctrl+F` | Search the library (opens it from the deck) |
+| `Ctrl+B` `G` `I` | The column browser, the album grid, the info panel (opens the library from the deck) |
+| `F10` | Open the menu bar's File menu; shows the menu bar if it is hidden |
+| `Alt` | Show or hide a hidden menu bar |
+| `Ctrl+K` | The command palette |
+| `Ctrl+,` | Settings |
 | `?` | Show every key |
 | `Q` | Quit |
 

@@ -28,7 +28,8 @@ pkgbase = omamp
 	optdepends = hyprland: hyprctl, to match the window rounding of the desktop
 	optdepends = quickshell: the Omarchy bar plugin in /usr/share/omamp/omarchy-plugin
 	optdepends = spotify-player: Spotify beside your own music (Settings > Spotify)
+	options = !lto
 	source = omamp-0.3.0.tar.gz::https://github.com/matt-shearing/omamp/archive/refs/tags/v0.3.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 2c021219d17e0b2f225995272525242da407fefb30c56e1bdfc8445c11994e21
 
 pkgname = omamp

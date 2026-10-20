@@ -6,6 +6,8 @@ arch=('x86_64' 'aarch64')
 license=('MIT')
 depends=('qt6-base' 'qt6-declarative' 'qt6-multimedia' 'qt6-wayland' 'xdg-desktop-portal' 'ttf-jetbrains-mono-nerd' 'taglib' 'sqlite' 'ffmpeg')
 makedepends=('gcc' 'make' 'pkgconf' 'cargo')
+# makepkg's default LTO breaks the ring crate's C objects in the Spotify helper.
+options=('!lto')
 source=()
 sha256sums=()
 

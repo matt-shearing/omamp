@@ -307,7 +307,7 @@ Rectangle {
                 cache: true
                 fillMode: Image.PreserveAspectCrop
                 sourceSize: Qt.size(600, 600)
-                source: panel.hasTrack ? (panel.info.artState !== 2 ? "image://omamp-art/track/" + panel.trackId + "/600?v=" + library.revision : "")
+                source: panel.hasTrack ? (panel.info.artState !== 2 ? "image://omamp-art/track/" + panel.trackId + "/600?r=0&v=" + library.revision : "")
                         : panel.playingOutside ? nowPlayingArt.artUrl : ""
             }
             Text {

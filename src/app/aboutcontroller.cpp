@@ -45,8 +45,11 @@ QVariantMap trackFacts(Library &library, qint64 trackId) {
     m["mbReleaseId"] = q.value(10).toString();
     m["mbTrackId"] = q.value(11).toString();
     const QString root = q.value(13).toString();
-    if (q.value(14).toBool() && q.value(15).toString() != QLatin1String("subsonic"))
-        m["folder"] = QFileInfo((root == "/" ? QString() : root) + '/' + q.value(12).toString()).path();
+    // The album's folder, when it can be read now (a volume marked offline
+    // may be back already; a Navidrome track has none).
+    const QString folder = QFileInfo((root == "/" ? QString() : root) + '/' + q.value(12).toString()).path();
+    if (q.value(15).toString() != QLatin1String("subsonic") && QFileInfo(folder).isDir())
+        m["folder"] = folder;
     return m;
 }
 

@@ -69,7 +69,6 @@ FocusScope {
         return w
     }
     function applyWidths(w) {
-        if (table.columns !== defaultWidths.length) { pending = { order: pending ? pending.order : order, widths: w }; return }
         table.clearColumnWidths()
         for (const c in w) {
             const v = visualOf(Number(c))
@@ -80,10 +79,6 @@ FocusScope {
     // Moves columns on screen until they stand in wanted's order.
     property bool applyingOrder: false
     function applyOrder(wanted) {
-        if (table.columns !== defaultWidths.length) {
-            pending = { order: wanted.slice(), widths: pending ? pending.widths : null }
-            return
-        }
         const keep = logicalWidths()
         applyingOrder = true
         table.clearColumnReordering()
@@ -116,18 +111,18 @@ FocusScope {
             // Settings from before the Art column: it joins at the start, once.
             if (h && h.length === defaultWidths.length - 1) h = h.concat([false])
             if (h && h.length === defaultWidths.length) hidden = h
-            applyOrder(validOrder(s.order) ? s.order : defaultOrder)
             // Widths were saved by column; before the Art column moved them,
             // the place and the column were the same.
-            applyWidths(s.widths || {})
+            pending = { order: validOrder(s.order) ? s.order : defaultOrder, widths: s.widths || {} }
+            applyPending()
         } catch (e) { }
         table.forceLayout()
     }
     // Columns, widths and order back to how they start (Reset layout).
     function resetColumns() {
         hidden = [false, false, false, false, false, false, false, false, false, true, false, false]
-        applyOrder(defaultOrder)
-        applyWidths({})
+        pending = { order: defaultOrder, widths: {} }
+        applyPending()
         layoutEdited()
     }
     // Column names in the model's order, for collections.
@@ -283,11 +278,24 @@ FocusScope {
         onColumnsChanged: Qt.callLater(pane.applyPending)
         onWidthChanged: forceLayout()
         // A header dragged to a new place: the order follows it.
-        // (TableView carries a hand-set width along with its column.)
+        // (TableView carries a hand-set width along with its column.) One
+        // move sends a signal for every column that shifts, each with its
+        // new place; the order is read once they have all come.
+        property var placeOf: null
         onColumnMoved: (column, from, to) => {
             if (pane.applyingOrder) return
+            if (!placeOf) {
+                placeOf = {}
+                for (let v = 0; v < pane.order.length; ++v) placeOf[pane.order[v]] = v
+                Qt.callLater(settleMove)
+            }
+            placeOf[column] = to
+        }
+        function settleMove() {
             const o = pane.order.slice()
-            o.splice(to, 0, o.splice(from, 1)[0])
+            for (const c in placeOf) o[placeOf[c]] = Number(c)
+            placeOf = null
+            if (!pane.validOrder(o)) return
             pane.order = o
             forceLayout()
             pane.layoutEdited()

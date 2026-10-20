@@ -119,8 +119,17 @@ FocusScope {
         library.tracks.filter = text
     }
 
+    // The window's settings can arrive after this view is made (when Omamp
+    // starts in the library), so the saved columns are applied when they come.
+    property bool columnsRestored: false
+    function restoreSavedColumns() {
+        if (columnsRestored || columns === "") return
+        columnsRestored = true
+        table.restoreColumns(columns)
+    }
+    onColumnsChanged: restoreSavedColumns()
     Component.onCompleted: {
-        if (columns !== "") table.restoreColumns(columns)
+        restoreSavedColumns()
         // Built in the background while the deck shows: the keys stay there.
         if (visible) focusList()
     }

@@ -8,6 +8,8 @@ FocusScope {
     id: pane
     signal leave()
     signal openBigView()
+    // The Art column (Settings > Appearance > Layout).
+    readonly property int artWidth: appearance.layout.artColumn ? appearance.layout.artPixels + 14 : 0
 
     function clock(ms) {
         const total = Math.floor(ms / 1000)
@@ -89,11 +91,12 @@ FocusScope {
                     height: 1; color: theme.c.lighter_background }
         Row {
             anchors.fill: parent
+            Item { width: pane.artWidth; height: 1 }
             Repeater {
                 model: [[qsTr("#"), 48], [qsTr("Title"), 0.5], [qsTr("Artist"), 0.5], [qsTr("Length"), 70]]
                 Text {
                     required property var modelData
-                    width: modelData[1] > 1 ? modelData[1] : (pane.width - 118) * modelData[1]
+                    width: modelData[1] > 1 ? modelData[1] : (pane.width - 118 - pane.artWidth) * modelData[1]
                     height: header.height
                     leftPadding: 8; rightPadding: 8
                     verticalAlignment: Text.AlignVCenter
@@ -139,19 +142,31 @@ FocusScope {
             required property string title
             required property string artist
             required property var duration
+            required property string path
             readonly property bool playing: index === backend.currentIndex
             width: ListView.view.width
-            height: 24
+            height: appearance.layout.rowPixels
             color: index === list.currentIndex ? (list.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
                  : index % 2 ? Qt.alpha(theme.c.lighter_background, 0.35) : "transparent"
             Row {
                 anchors.fill: parent
+                // The entry's cover: the library's, the file's, a Spotify
+                // track's, or a radio station's tile.
+                Item {
+                    visible: pane.artWidth > 0
+                    width: pane.artWidth; height: item.height
+                    ArtThumb {
+                        anchors.centerIn: parent
+                        size: appearance.layout.artPixels
+                        path: item.path
+                    }
+                }
                 Repeater {
                     model: [[item.number, 48, true], [item.title, 0.5, false], [item.artist, 0.5, false],
                             [item.duration > 0 ? pane.clock(item.duration) : "", 70, true]]
                     Text {
                         required property var modelData
-                        width: modelData[1] > 1 ? modelData[1] : (pane.width - 118) * modelData[1]
+                        width: modelData[1] > 1 ? modelData[1] : (pane.width - 118 - pane.artWidth) * modelData[1]
                         height: item.height
                         leftPadding: 8; rightPadding: 8
                         verticalAlignment: Text.AlignVCenter

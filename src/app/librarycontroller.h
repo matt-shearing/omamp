@@ -28,6 +28,7 @@ class PlayRecorder;
 #include "nascontroller.h"
 #include "devicescontroller.h"
 #include "webcontroller.h"
+#include "aboutcontroller.h"
 class Job;
 class Library;
 #include "watcher.h"
@@ -87,6 +88,8 @@ class LibraryController : public QObject {
     Q_PROPERTY(SettingsController *appSettings READ appSettings CONSTANT)
     // Phases 4 and 5: identify, covers and lyrics; volumes, shares and servers.
     Q_PROPERTY(WebController *web READ web CONSTANT)
+    // The sidebar's About the artist and album (aboutcontroller.h).
+    Q_PROPERTY(AboutController *about READ about CONSTANT)
     Q_PROPERTY(NasController *nas READ nas CONSTANT)
     // Phase 6: device sync profiles.
     Q_PROPERTY(DevicesController *devices READ devices CONSTANT)
@@ -104,6 +107,7 @@ public:
     SettingsController *appSettings() const { return m_settings; }
     PlayRecorder *recorder() const { return m_recorder; }
     WebController *web() const { return m_web; }
+    AboutController *about() const { return m_about; }
     NasController *nas() const { return m_nas; }
     DevicesController *devices() const { return m_devices; }
     // Watching mounts (MountMonitor) checks volumes on a worker thread
@@ -367,6 +371,7 @@ private:
     SettingsController *m_settings = nullptr;
     PlayRecorder *m_recorder = nullptr;
     WebController *m_web = nullptr;
+    AboutController *m_about = nullptr;
     NasController *m_nas = nullptr;
     DevicesController *m_devices = nullptr;
     FolderPicker m_reportPicker;

@@ -14,7 +14,8 @@ HEADERS += \
     $$PWD/coverart.h \
     $$PWD/identify.h \
     $$PWD/lyrics.h \
-    $$PWD/scrobble.h
+    $$PWD/scrobble.h \
+    $$PWD/about.h
 
 SOURCES += \
     $$PWD/http.cpp \
@@ -24,4 +25,5 @@ SOURCES += \
     $$PWD/coverart.cpp \
     $$PWD/identify.cpp \
     $$PWD/lyrics.cpp \
-    $$PWD/scrobble.cpp
+    $$PWD/scrobble.cpp \
+    $$PWD/about.cpp

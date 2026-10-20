@@ -34,7 +34,7 @@ namespace {
 // the application version; tests and libraries that don't fall back to this.
 const char *fallbackVersion = "0.3.0";
 
-constexpr int serviceCount = 7;
+constexpr int serviceCount = 9;
 
 int index(Service s) { return int(s); }
 
@@ -49,12 +49,16 @@ int defaultInterval(Service s) {
     case Service::Lrclib: return 500;
     case Service::ListenBrainz: return 1000;
     case Service::LastFm: return 200;
+    // Wikimedia asks for a User-Agent and serial requests; five a second is
+    // well inside that.
+    case Service::Wikidata: return 200;
+    case Service::Wikipedia: return 200;
     case Service::Other: return 0;
     }
     return 1000;
 }
 
-std::atomic_int intervals[serviceCount] = {-1, -1, -1, -1, -1, -1, -1};
+std::atomic_int intervals[serviceCount] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
 std::atomic_int maxRetriesValue = -1;
 std::atomic_int backoffValue = -1;
 
@@ -118,6 +122,8 @@ QString serviceName(Service service) {
     case Service::Lrclib: return "lrclib";
     case Service::ListenBrainz: return "listenbrainz";
     case Service::LastFm: return "lastfm";
+    case Service::Wikidata: return "wikidata";
+    case Service::Wikipedia: return "wikipedia";
     case Service::Other: return "other";
     }
     return "other";
@@ -138,6 +144,8 @@ QString defaultBaseUrl(Service service) {
     case Service::Lrclib: return "https://lrclib.net/api";
     case Service::ListenBrainz: return "https://api.listenbrainz.org/1";
     case Service::LastFm: return "https://ws.audioscrobbler.com/2.0";
+    case Service::Wikidata: return "https://www.wikidata.org";
+    case Service::Wikipedia: return "https://{lang}.wikipedia.org";
     case Service::Other: return {};
     }
     return {};

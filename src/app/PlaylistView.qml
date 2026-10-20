@@ -39,7 +39,11 @@ FocusScope {
 
     readonly property int numberWidth: 52
     readonly property int lengthWidth: 70
-    readonly property real textWidth: Math.max(120, (list.width - numberWidth - lengthWidth - 12) / 3)
+    // The Art column and the row height (Settings > Appearance > Layout).
+    readonly property bool artShown: appearance.layout.artColumn
+    readonly property int rowH: appearance.layout.rowPixels
+    readonly property int artWidth: artShown ? appearance.layout.artPixels + 14 : 0
+    readonly property real textWidth: Math.max(120, (list.width - numberWidth - lengthWidth - artWidth - 12) / 3)
 
     Rectangle { anchors.fill: parent; color: theme.c.background }
 
@@ -141,6 +145,7 @@ FocusScope {
                         height: 1; color: theme.c.lighter_background }
             Row {
                 anchors.fill: parent
+                Item { width: pane.artWidth; height: 1 }
                 Repeater {
                     model: [[qsTr("#"), pane.numberWidth, true], [qsTr("Title"), pane.textWidth, false],
                             [qsTr("Artist"), pane.textWidth, false], [qsTr("Album"), pane.textWidth, false],
@@ -179,7 +184,7 @@ FocusScope {
 
             Keys.onPressed: (event) => {
                 const t = pane.items
-                const page = Math.max(1, Math.floor(list.height / 24) - 1)
+                const page = Math.max(1, Math.floor(list.height / pane.rowH) - 1)
                 const mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)
                 const alt = event.modifiers & Qt.AltModifier
                 switch (event.key) {
@@ -207,7 +212,7 @@ FocusScope {
                     t.selectAll()
                     break
                 case Qt.Key_Menu:
-                    rowMenu.popup(list, list.width / 3, Math.min(list.height - 40, 24 * (t.currentRow + 1) - list.contentY))
+                    rowMenu.popup(list, list.width / 3, Math.min(list.height - 40, pane.rowH * (t.currentRow + 1) - list.contentY))
                     break
                 default: return
                 }
@@ -228,11 +233,13 @@ FocusScope {
                 required property bool rowSelected
                 required property bool rowCurrent
                 required property bool fromSpotify
+                required property var trackId
+                required property string path
                 readonly property bool spotifyOff: fromSpotify && pane.spotifyOff !== ""
                 readonly property bool playable: availability === "online" || (fromSpotify && !spotifyOff)
 
                 width: ListView.view.width
-                height: 24
+                height: pane.rowH
                 color: rowSelected ? (list.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
                      : index % 2 ? Qt.alpha(theme.c.lighter_background, 0.35) : "transparent"
 
@@ -249,6 +256,16 @@ FocusScope {
 
                 Row {
                     anchors.fill: parent
+                    Item {
+                        visible: pane.artShown
+                        width: pane.artWidth; height: entry.height
+                        ArtThumb {
+                            anchors.centerIn: parent
+                            size: appearance.layout.artPixels
+                            trackId: entry.trackId
+                            path: entry.trackId > 0 ? "" : entry.path
+                        }
+                    }
                     Text {
                         width: pane.numberWidth; height: entry.height
                         leftPadding: 8; rightPadding: 8

@@ -503,6 +503,8 @@ FocusScope {
                         anchors { fill: parent; leftMargin: 12; rightMargin: 14 }
                         spacing: 12
                         Rectangle {
+                            // The Art column's switch covers Spotify's lists too.
+                            visible: appearance.layout.artColumn
                             Layout.preferredWidth: 40
                             Layout.preferredHeight: 40
                             radius: row.kind === "artist" ? 20 : Math.min(4, theme.radius)

@@ -13,7 +13,7 @@ DEFINES += OMAMP_TESTS_DIR=\\\"$$PWD\\\"
 # Where the QML lives, so the palette test can load CommandPalette.qml.
 DEFINES += OMAMP_APP_DIR=\\\"$$PWD/../src/app\\\"
 
-HEADERS += mockhttp.h audiohttp.h ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h fixture_library.h \
+HEADERS += mockhttp.h audiohttp.h spotify_fakes.h ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h fixture_library.h \
            ../src/app/librarycontroller.h ../src/app/librarytree.h ../src/app/tracklistmodel.h \
            ../src/app/columnbrowser.h ../src/app/albumgridmodel.h \
            ../src/app/tageditor.h ../src/app/organisemodel.h ../src/app/tagfromname.h ../src/app/duplicatesmodel.h \
@@ -33,7 +33,7 @@ SOURCES += main.cpp omamp_tests.cpp library_tests.cpp query_tests.cpp palette_te
            ../src/app/webcontroller.cpp ../src/app/nascontroller.cpp ../src/app/streamresolver.cpp \
            ../src/app/devicescontroller.cpp ../src/app/librarycontroller_reports.cpp \
            ../src/app/appearance.cpp ../src/app/nowplaying.cpp ../src/app/visualiser.cpp ../src/app/mpris.cpp \
-           ../src/app/spotifycontroller.cpp spotify_tests.cpp \
+           ../src/app/spotifycontroller.cpp spotify_tests.cpp mixed_tests.cpp \
            ../src/app/radiocontroller.cpp ../src/app/windowplacement.cpp menu_tests.cpp
 
 # The real window, for the keyboard test of advanced mode.

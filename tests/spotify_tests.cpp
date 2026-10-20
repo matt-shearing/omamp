@@ -138,6 +138,13 @@ struct FakeSpotify {
         set("OMAMP_SPOTIFAST", "");
         set("OMAMP_SPOTIFY_OEMBED", "off");
         set("OMAMP_SPOTIFY_TIMEOUT_MS", "5000");
+        set("OMAMP_SPOTIFY_LONG_TIMEOUT_MS", "8000");
+        // Never Matt's real players: no MPRIS by default (a test that wants
+        // one starts its own on a private bus), and no waiting.
+        set("OMAMP_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.omamp_test_absent");
+        set("OMAMP_SPOTIFY_MPRIS_BUS", "");
+        set("OMAMP_SPOTIFY_GAP_MS", "0");
+        set("OMAMP_SPOTIFY_WARMUP_MS", "0");
         set("XDG_CONFIG_HOME", root.filePath("xdg-config"));
         set("XDG_CACHE_HOME", root.filePath("xdg-cache"));
     }
@@ -557,7 +564,12 @@ private slots:
         QCOMPARE(c.account(), QString("Matt Example"));
         QCOMPARE(c.premium(), QString("yes"));
         QVERIFY(c.statusText().contains("Connected as Matt Example"));
+        // The list loads when the view is shown, from the playlists the
+        // status check already read.
+        QCOMPARE(c.items()->count(), 0);
+        c.setViewVisible(true);
         QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000); // the playlists
+        QCOMPARE(fake.calls().filter("user-playlists").size(), 1);
         QCOMPARE(c.ownPlaylists().size(), 3); // Matt's own, not Spotify's or Kai's
 
         c.openRow(0);

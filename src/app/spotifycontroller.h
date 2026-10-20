@@ -15,6 +15,8 @@
 
 #include "handoffengine.h"
 #include "spotify.h"
+#include "spotifympris.h"
+#include "spotifyrequests.h"
 
 #include "palette.h"
 #include "player.h"
@@ -117,8 +119,10 @@ private:
 
 // The handover: a Spotify track's turn in Now Playing. Omamp tells the
 // backend to play it on its Spotify Connect device, pauses its own engine
-// (HandoffEngine does), and polls the backend's playback state to follow
-// the position, a pause from elsewhere and the end of the track.
+// (HandoffEngine does), and follows the position, a pause from elsewhere
+// and the end of the track through the backend's MPRIS service, which costs
+// Spotify nothing. Only when that service isn't there does it read the
+// backend's playback state, a Web API request each time, and then slowly.
 class SpotifyPlayback : public ExternalPlayback {
     Q_OBJECT
 public:
@@ -139,14 +143,25 @@ public:
     QVariantMap metaData() const override;
 
     QString trackId() const { return m_track.id; }
-    // How often the state is read while a track plays, and how long a
-    // start may take before it counts as failed (tests shorten them).
+    // How often the state is read through the backend's command line while
+    // a track plays and MPRIS isn't there, and how long a start may take
+    // before it counts as failed (tests shorten them).
     void setTimings(int pollMs, int startTimeoutMs);
-    // Reads the state now (tests, and after a command).
+    int pollMs() const { return m_pollMs; }
+    // Reads the state now (tests, and after a command): from MPRIS when it
+    // is there, else through the command line.
     void pollNow();
+    // Whether the playing track is followed through MPRIS.
+    bool followsMpris() const;
+    // Whether a playback state shows this track: by id when it has one,
+    // else (spotify_player's MPRIS has none) by title and length.
+    bool isOurs(const Spotify::Playback &p) const;
 
 private:
     void setState(AudioEngine::State state);
+    void onMpris();
+    void startFollowing();
+    void readState();
     void onPolled(const Spotify::Playback &p, const QString &error);
     void fail(const QString &detail);
     void setBase(qint64 ms);
@@ -165,8 +180,13 @@ private:
     qint64 m_base = 0;
     QElapsedTimer m_since;
     QElapsedTimer m_startedAt;
-    QTimer m_poll, m_tick;
-    int m_pollMs = 1000, m_startTimeoutMs = 12000;
+    // m_poll reads the command line (no MPRIS); m_position reads MPRIS's
+    // position now and then, which the bus answers without Spotify.
+    QTimer m_poll, m_tick, m_position;
+    int m_pollMs = 5000, m_startTimeoutMs = 12000;
+    // When following MPRIS, a track with no known name is confirmed by one
+    // command-line read.
+    bool m_askedOnce = false;
     int m_generation = 0;
     // Our own pause, so a paused state isn't taken as the end.
     bool m_pausedByUs = false;
@@ -209,6 +229,26 @@ class SpotifyController : public QObject {
     Q_PROPERTY(QString viewTitle READ viewTitle NOTIFY viewChanged)
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY viewChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    // The list has taken longer than a few seconds.
+    Q_PROPERTY(bool loadingSlow READ loadingSlow NOTIFY loadingChanged)
+    Q_PROPERTY(int loadingSeconds READ loadingSeconds NOTIFY loadingChanged)
+    // Spotify answered "too many requests" lately; Omamp waits retryIn
+    // seconds before it asks again.
+    Q_PROPERTY(bool rateLimited READ rateLimited NOTIFY loadingChanged)
+    Q_PROPERTY(int retryIn READ retryIn NOTIFY loadingChanged)
+    // The list on show is an older copy, being read again.
+    Q_PROPERTY(bool refreshing READ refreshing NOTIFY loadingChanged)
+    // How playback is followed: mpris, polling (the command line, slowly)
+    // or none.
+    Q_PROPERTY(QString followMode READ followMode NOTIFY statusChanged)
+    // The Web API client ID spotify_player uses: own, desktop (Spotify's
+    // own app's ID, set in app.toml), default (ncspot's, built in) or
+    // command (client_id_command).
+    Q_PROPERTY(QString clientIdKind READ clientIdKind NOTIFY clientIdChanged)
+    Q_PROPERTY(QString clientId READ clientId NOTIFY clientIdChanged)
+    Q_PROPERTY(QString appConfigPath READ appConfigPath CONSTANT)
+    Q_PROPERTY(bool clientIdBusy READ clientIdBusy NOTIFY clientIdChanged)
+    Q_PROPERTY(QString clientIdMessage READ clientIdMessage NOTIFY clientIdChanged)
     Q_PROPERTY(QString viewError READ viewError NOTIFY viewChanged)
     Q_PROPERTY(QString searchText READ searchText NOTIFY viewChanged)
     Q_PROPERTY(SpotifyItemsModel *items READ items CONSTANT)
@@ -236,8 +276,16 @@ public:
     SpotifyArt *art() { return &m_art; }
     // How a terminal is opened for signing in (tests capture the command).
     void setTerminalLauncher(std::function<bool(const QStringList &)> launcher) { m_launch = std::move(launcher); }
-    // Waits for the worker threads (tests).
+    // Waits for the queue (tests).
     void waitForIdle();
+    Spotify::Requests *requests() { return &m_requests; }
+    Spotify::MprisWatch *mpris() { return &m_mpris; }
+    // How long lists stay fresh, and how long to leave spotify_player alone
+    // after starting it (it reads the whole library then). Tests shorten.
+    void setCacheTtlMs(int ms) { m_cacheTtlMs = ms; }
+    void setWarmupMs(int ms) { m_warmupMs = ms; }
+    // After how long a list counts as slow to load.
+    void setSlowMs(int ms) { m_slowMs = ms; }
 
     bool enabled() const { return m_settings.enabled; }
     void setEnabled(bool on);
@@ -268,6 +316,17 @@ public:
     QString viewTitle() const;
     bool canGoBack() const { return !m_back.isEmpty(); }
     bool loading() const { return m_loading; }
+    bool loadingSlow() const { return m_loadingSlow; }
+    int loadingSeconds() const { return m_loading && m_loadClock.isValid() ? int(m_loadClock.elapsed() / 1000) : 0; }
+    bool rateLimited() const { return m_rateLimited; }
+    int retryIn() const;
+    bool refreshing() const { return m_loading && m_items.count() > 0; }
+    QString followMode() const;
+    QString clientIdKind() const;
+    QString clientId() const;
+    QString appConfigPath() const;
+    bool clientIdBusy() const { return m_clientIdBusy; }
+    QString clientIdMessage() const { return m_clientIdMessage; }
     QString viewError() const { return m_view.error; }
     QString searchText() const { return m_view.search; }
     SpotifyItemsModel *items() { return &m_items; }
@@ -294,7 +353,15 @@ public:
     Q_INVOKABLE void openRow(int row);
     Q_INVOKABLE void back();
     Q_INVOKABLE void search(const QString &text);
+    // Reads the list on show again, past the cache (the refresh button).
     Q_INVOKABLE void reload();
+    // Stops waiting for the list on show.
+    Q_INVOKABLE void cancelLoad();
+    // Uses your own Spotify app's client ID: writes it into spotify_player's
+    // app.toml (backed up first, nothing else changed), stops the running
+    // spotify_player, and leaves it for you to sign in again, which starts
+    // it. false, with clientIdMessage, when the ID isn't one.
+    Q_INVOKABLE bool useOwnClientId(const QString &id);
     // Whether the view is on screen, so its "playing now" stays fresh.
     Q_INVOKABLE void setViewVisible(bool visible);
 
@@ -326,9 +393,10 @@ public:
     // A track seen in a list, search or the playback state, by id.
     Spotify::Item knownTrack(const QString &id) const { return m_known.value(id); }
     void rememberTracks(const QList<Spotify::Item> &tracks);
-    // Runs work on the playback worker and hands the answer back here.
+    // Queues a command on the control lane (play, pause, seek, state).
     void runControl(std::function<void(Spotify::Backend &)> work);
-    QThreadPool *controlPool() { return &m_control; }
+    void request(Spotify::Requests::Lane lane, const QString &key, Spotify::Requests::Work work,
+                 Spotify::Requests::Done done);
     void setMessage(const QString &message);
     void noteStarted(const Spotify::Playback &p);
     // The backend's playback state, for the view's "playing now".
@@ -345,6 +413,7 @@ signals:
     void nowPlayingChanged();
     void blendChanged();
     void messageChanged();
+    void clientIdChanged();
     void artRevisionChanged();
     // A picture for the playing track arrived (NowPlaying looks again).
     void playingArtChanged();
@@ -365,14 +434,30 @@ private:
         Spotify::Item container; // a playlist, album or artist being shown
         QString search;
         QString error;
+        QString key() const;
+    };
+    struct Cached {
+        QList<Spotify::Item> items;
+        QStringList sections;
+        Spotify::SearchResults search;
+        QElapsedTimer age;
     };
 
     void saveSettings();
     void makeBackend();
-    void load(const View &view);
+    // retry: an automatic retry after a rate limit, which keeps counting.
+    void load(const View &view, bool force = false, bool retry = false);
+    // A list through the cache: from it when fresh, else from the backend.
+    // done gets the list and an error.
+    void fetchList(const View &view, bool force, std::function<void(const Spotify::Result &)> done);
+    int ttlFor(const View &view) const;
+    void checkRateLimit(bool failed, const QString &error);
+    void setRateLimited(bool on, const QDateTime &until = {});
+    void fetchDevicesAndAccount(int generation);
+    void followMpris();
+    void noteMpris();
     void playFrom(SpotifyItemsModel *model, int row, Mode mode);
     void queue(const QList<Spotify::Item> &tracks, int start, Mode mode);
-    void runData(std::function<void(Spotify::Backend &)> work);
     void setLoading(bool on);
     void pollNowPlaying();
     void paletteTextChanged();
@@ -387,28 +472,45 @@ private:
     QPointer<Palette> m_palette;
     SpotifyArt m_art;
     SpotifyItemsModel m_items, m_blend;
+    Spotify::Requests m_requests;
+    Spotify::MprisWatch m_mpris;
     SpotifyPlayback m_playback;
-    QThreadPool m_control, m_data;
     std::function<bool(const QStringList &)> m_launch;
 
     Status m_status;
     bool m_checking = false;
+    int m_statusGeneration = 0;
     QTimer m_signInWait;
     int m_signInChecks = 0;
 
     View m_view;
     QList<View> m_back;
     bool m_loading = false;
+    bool m_loadingSlow = false;
+    QElapsedTimer m_loadClock;
+    QTimer m_loadTick;
     int m_viewGeneration = 0;
+    // The view was asked for while not on screen: it loads when shown.
+    bool m_viewStale = true;
+    QHash<QString, Cached> m_cache;
+    int m_cacheTtlMs = 10 * 60 * 1000;
+    int m_warmupMs = 6000;
+    int m_slowMs = 4000;
+    // Rate limits, read from spotify_player's log.
+    bool m_rateLimited = false;
+    QDateTime m_retryUntil;
+    QString m_logFile;
+    qint64 m_logOffset = 0;
+    int m_autoRetries = 0;
+    QTimer m_retryTimer;
     QList<Spotify::Item> m_playlists;
     QSet<QString> m_liked;
     bool m_likedKnown = false;
     QHash<QString, Spotify::Item> m_known;
 
     QVariantMap m_nowPlaying;
-    QTimer m_viewPoll;
     bool m_viewVisible = false;
-    bool m_nowPolling = false;
+    QElapsedTimer m_nowRead;
 
     QTimer m_blendTimer, m_paletteTimer;
     QString m_blendText, m_blendError, m_paletteText;
@@ -416,6 +518,8 @@ private:
     int m_blendGeneration = 0, m_paletteGeneration = 0;
 
     QString m_message;
+    bool m_clientIdBusy = false;
+    QString m_clientIdMessage;
     int m_artRevision = 0;
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 };

@@ -120,6 +120,21 @@ private slots:
         QVERIFY(theme.colors().contains("darker_background"));
     }
 
+    void lightThemesTintTheChosenRows()
+    {
+        // Matt's light theme: a grey selection too close to the row stripes.
+        QTemporaryDir dir;
+        QDir(dir.path()).mkpath("theme");
+        write(dir.path() + "/theme/colors.toml",
+              "mode = \"light\"\naccent = \"#00b4c8\"\nselection = \"#d8e0e8\"\nbackground = \"#fafcff\"\n"
+              "dark_background = \"#f0f4f8\"\nlighter_background = \"#ffffff\"\n");
+        Theme theme(dir.path());
+        const QColor chosen(theme.listSelection());
+        QVERIFY(chosen != QColor("#d8e0e8"));
+        // A visible teal tint: blue-green clearly above red.
+        QVERIFY2(chosen.green() - chosen.red() > 40, qPrintable(chosen.name()));
+    }
+
     void themeReadsThePalette()
     {
         QTemporaryDir dir;

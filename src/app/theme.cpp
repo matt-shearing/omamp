@@ -105,10 +105,16 @@ QString Theme::listSelection() const {
         return std::sqrt(std::pow(a.red() - b.red(), 2) + std::pow(a.green() - b.green(), 2) +
                          std::pow(a.blue() - b.blue(), 2));
     };
-    if (distance(selection, lighter) >= 28 && distance(selection, background) >= 28)
+    // Lists stripe alternate rows with dark_background, so a chosen row must
+    // stand clear of that too. Light themes' selection greys rarely do (Matt's
+    // #d8e0e8 against #f0f4f8 rows read as unselected), so they always get a
+    // tint of the accent instead.
+    const QColor stripe(m_colors.value("dark_background").toString());
+    if (!m_light && distance(selection, lighter) >= 28 && distance(selection, background) >= 28 &&
+        distance(selection, stripe) >= 28)
         return selection.name();
     const QColor accent(this->accent());
-    const double t = 0.3;
+    const double t = m_light ? 0.28 : 0.3;
     return QColor::fromRgbF(background.redF() * (1 - t) + accent.redF() * t,
                             background.greenF() * (1 - t) + accent.greenF() * t,
                             background.blueF() * (1 - t) + accent.blueF() * t)

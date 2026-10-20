@@ -1,12 +1,14 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
 import "Model.js" as Model
 
-// Omamp in the bar: state glyph and "Artist – Title" while Omamp is running,
-// and a panel with the clock, seek, transport, shuffle, repeat and volume.
+// Omamp in the bar: the cover, the state glyph and "Artist – Title" while
+// Omamp is running, and a panel led by a large cover, with the track, seek,
+// transport, shuffle, repeat and volume.
 //
 //   left click    open the panel (opens Omamp when it is not running)
 //   right click   play or pause
@@ -30,6 +32,9 @@ Panel {
   readonly property bool showClock: setting("showClock", false) === true
   readonly property bool showWhenClosed: setting("showWhenClosed", false) === true
   readonly property string scrollAction: String(setting("scrollAction", "Previous/next track"))
+  readonly property bool showThumbnail: setting("showThumbnail", true) !== false
+  readonly property string coverMode: Model.coverMode(setting("coverSize", "Large"))
+  readonly property bool showLcd: setting("showLcd", false) === true
 
   // ------------------------------------------------------------------- state
   readonly property bool running: service ? service.running : false
@@ -39,11 +44,15 @@ Panel {
   readonly property real length: service ? service.length : 0
   readonly property real position: service ? service.position : 0
   readonly property color green: service ? service.green : Commons.Color.accent
+  readonly property string cover: service && service.cover !== undefined ? service.cover : ""
+  readonly property bool hasTrack: service ? service.hasTrack === true : false
 
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
-  readonly property color dim: Qt.darker(foreground, 1.35)
-  readonly property color dimmer: Qt.darker(foreground, 1.7)
+  // Secondary text fades toward the background, so it reads quieter in light
+  // themes as well as dark ones.
+  readonly property color dim: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.72)
+  readonly property color dimmer: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.52)
   readonly property bool vertical: bar ? bar.vertical : false
   readonly property int barSize: bar ? bar.barSize : Style.bar.sizeHorizontal
 
@@ -56,13 +65,31 @@ Panel {
   visible: shown
   readonly property real labelSlot: labelClip.visible ? labelClip.width + content.spacing : 0
   readonly property real clockSlot: barClock.visible ? barClock.implicitWidth + content.spacing : 0
-  implicitWidth: !shown ? 0 : (vertical ? barSize : Math.round(glyph.implicitWidth + labelSlot + clockSlot + Style.space(12)))
+  readonly property real thumbSlot: thumb.visible ? thumb.width + content.spacing : 0
+  implicitWidth: !shown ? 0 : (vertical ? barSize : Math.round(thumbSlot + glyph.implicitWidth + labelSlot + clockSlot + Style.space(12)))
   implicitHeight: !shown ? 0 : (vertical ? Math.round(glyph.implicitHeight + Style.space(10)) : barSize)
 
   Row {
     id: content
     anchors.centerIn: parent
     spacing: Style.space(6)
+
+    // The cover as a small square, as tall as the bar allows. It stays on the
+    // old picture until the new one has loaded, then fades across.
+    CoverArt {
+      id: thumb
+      readonly property bool wanted: root.showThumbnail && !root.vertical && root.running
+      // A cover that will not load gives its place back to the glyph.
+      visible: wanted && root.cover !== "" && failedSource !== root.cover
+      anchors.verticalCenter: parent.verticalCenter
+      width: Model.thumbSize(root.barSize, Style.space(8))
+      height: width
+      source: wanted ? root.cover : ""
+      radius: Math.max(Style.space(2), Math.min(Style.space(4), Style.cornerRadius))
+      backdrop: "transparent"
+      placeholder: false
+      fadeDuration: Style.duration(200)
+    }
 
     Text {
       id: glyph
@@ -235,7 +262,7 @@ Panel {
     bar: root.bar
     owner: root
     open: root.opened && root.running
-    contentWidth: popup.fittedContentWidth(Style.space(360))
+    contentWidth: popup.fittedContentWidth(Style.space(340))
     contentHeight: popup.fittedContentHeight(column.implicitHeight)
 
     Column {
@@ -245,9 +272,89 @@ Panel {
       anchors.top: parent.top
       spacing: Style.space(12)
 
-      // The LCD: state, a green clock, and the title strip, as in Omamp.
+      // The cover is the centrepiece: a square the width of the panel, from
+      // the picture Omamp sends over MPRIS (mpris:artUrl). Local files,
+      // Spotify, radio station tiles and Navidrome covers all arrive that way.
+      CoverArt {
+        id: bigCover
+        visible: root.coverMode === "large" && root.hasTrack
+        width: parent.width
+        height: Model.panelCoverSize(root.coverMode, parent.width, 0)
+        source: root.cover
+        radius: Math.min(Style.space(8), Style.cornerRadius)
+        backdrop: Qt.darker(Commons.Color.popups.background, 1.35)
+        glyphColor: root.dimmer
+        glyphFamily: root.fontFamily
+        glyphSize: Math.round(width * 0.28)
+        border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+      }
+
+      // The track. Under a large cover, or beside a medium one.
+      Row {
+        width: parent.width
+        spacing: Style.space(12)
+        visible: root.hasTrack
+
+        CoverArt {
+          id: smallCover
+          visible: root.coverMode === "medium"
+          width: visible ? Model.panelCoverSize("medium", parent.width, Style.space(96)) : 0
+          height: width
+          anchors.verticalCenter: parent.verticalCenter
+          source: visible ? root.cover : ""
+          radius: Math.min(Style.space(4), Style.cornerRadius)
+          backdrop: Qt.darker(Commons.Color.popups.background, 1.35)
+          glyphColor: root.dimmer
+          glyphFamily: root.fontFamily
+          glyphSize: Style.font.displayLarge
+          border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+        }
+
+        Column {
+          width: parent.width - (smallCover.visible ? smallCover.width + parent.spacing : 0)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(3)
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.service ? (root.service.title || "Unknown title") : ""
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: root.coverMode === "large" ? Style.font.title : Style.font.subtitle
+            font.bold: true
+            elide: Text.ElideRight
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.service ? root.service.artist : ""
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            elide: Text.ElideRight
+            visible: text !== ""
+          }
+
+          Text {
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.service ? root.service.album : ""
+            color: root.dimmer
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+            visible: text !== ""
+          }
+        }
+      }
+
+      // Omamp's LCD: state, the green clock and the title strip. Off by
+      // default so it does not compete with the cover (setting: showLcd).
       Rectangle {
         id: lcd
+        visible: root.showLcd
         width: parent.width
         height: lcdRow.implicitHeight + Style.space(16)
         radius: Math.min(Style.space(4), Style.cornerRadius)
@@ -339,7 +446,7 @@ Panel {
               font.pixelSize: Style.font.bodySmall
 
               NumberAnimation on x {
-                running: strip.scrolls && popup.visible && !Style.reduceMotion
+                running: strip.scrolls && lcd.visible && popup.visible && !Style.reduceMotion
                 loops: Animation.Infinite
                 from: Style.space(6)
                 to: Style.space(6) - stripMetrics.advanceWidth - stripGap.advanceWidth
@@ -351,88 +458,9 @@ Panel {
         }
       }
 
-      // The cover Omamp sends over MPRIS (mpris:artUrl), and the track
-      // details in the plain theme text beside it.
-      Row {
-        width: parent.width
-        spacing: Style.space(10)
-        visible: root.service && root.service.hasTrack
-
-        Rectangle {
-          id: coverBox
-          width: Style.space(56)
-          height: width
-          radius: Math.min(Style.space(4), Style.cornerRadius)
-          color: Qt.darker(Commons.Color.popups.background, 1.35)
-          border.width: 1
-          border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
-          clip: true
-
-          Image {
-            id: coverImage
-            anchors.fill: parent
-            anchors.margins: 1
-            source: root.service ? Model.coverSource(root.service.artUrl) : ""
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            smooth: true
-            sourceSize: Qt.size(coverBox.width * 2, coverBox.height * 2)
-          }
-
-          Text {
-            anchors.centerIn: parent
-            visible: coverImage.status !== Image.Ready
-            textFormat: Text.PlainText
-            text: Model.GLYPH_MUSIC
-            color: root.dimmer
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.title
-          }
-        }
-
-        Column {
-          width: parent.width - coverBox.width - parent.spacing
-          anchors.verticalCenter: coverBox.verticalCenter
-          spacing: Style.space(3)
-
-          Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            text: root.service ? (root.service.title || "Unknown title") : ""
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.subtitle
-            font.bold: true
-            elide: Text.ElideRight
-          }
-
-          Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            text: root.service ? root.service.artist : ""
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            elide: Text.ElideRight
-            visible: text !== ""
-          }
-
-          Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            text: root.service ? root.service.album : ""
-            color: root.dimmer
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            elide: Text.ElideRight
-            visible: text !== ""
-          }
-        }
-      }
-
       Text {
         width: parent.width
-        visible: root.service && !root.service.hasTrack
+        visible: root.service && !root.hasTrack
         text: "The playlist is empty. Drop files on Omamp, or press O in it to add a folder."
         color: root.dim
         wrapMode: Text.WordWrap
@@ -465,19 +493,33 @@ Panel {
           width: parent.width
           height: elapsedText.implicitHeight
 
+          // Omamp's green clock in small: time played, or time left after
+          // a click, as in Omamp.
           Text {
             id: elapsedText
             anchors.left: parent.left
-            text: Model.clock(seekSlider.dragging ? seekSlider.liveValue : root.position)
-            color: root.dim
+            readonly property real at: seekSlider.dragging ? seekSlider.liveValue : root.position
+            text: root.showRemaining ? "-" + Model.clock(root.length - at) : Model.clock(at)
+            color: root.green
+            opacity: root.playing ? 1 : 0.7
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
+            font.bold: true
+            font.features: { "tnum": 1 }
+
+            MouseArea {
+              anchors.fill: parent
+              anchors.margins: -Style.space(4)
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.showRemaining = !root.showRemaining
+            }
           }
 
           Text {
             anchors.right: parent.right
             text: Model.clock(root.length)
             color: root.dim
+            font.features: { "tnum": 1 }
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
           }
@@ -628,6 +670,179 @@ Panel {
           root.close()
           root.service.raise()
         }
+      }
+    }
+  }
+
+  // A cover that fades from one picture to the next. The new picture loads
+  // behind the old one and fades in only once it is ready, so a track change
+  // never shows a blank square. With no picture, a music note on the theme
+  // background stands in (unless `placeholder` is off). Images are decoded
+  // at the size drawn (SizedImage) and come from Qt's image cache.
+  component CoverArt: Rectangle {
+    id: art
+
+    property string source: ""
+    property bool placeholder: true
+    property color backdrop: "transparent"
+    property color glyphColor: "grey"
+    property string glyphFamily: ""
+    property int glyphSize: 24
+    property int fadeDuration: Style.duration(320)
+
+    // The front layer is the one showing; `shown` is its picture.
+    property int front: 0
+    property string shown: ""
+    // The last picture that failed to load, so a caller can hide the cover.
+    property string failedSource: ""
+    readonly property bool hasPicture: shown !== ""
+
+    color: placeholder ? backdrop : "transparent"
+    border.width: placeholder ? 1 : 0
+    border.color: "transparent"
+    clip: radius <= 0
+
+    function pictureLayer(i) { return i === 0 ? layerA : layerB }
+
+    function load() {
+      var want = String(source)
+      var cur = pictureLayer(front)
+      var back = pictureLayer(1 - front)
+      if (want === "") {
+        shown = ""
+        fadeIn.stop()
+        fadeOut.target = cur
+        fadeOut.start()
+        back.opacity = 0
+        back.url = ""
+        return
+      }
+      if (want === String(cur.url) && cur.status === Image.Ready) {
+        fadeOut.stop()
+        cur.opacity = 1
+        shown = want
+        return
+      }
+      back.z = 2
+      cur.z = 1
+      back.opacity = 0
+      if (String(back.url) === want && back.status === Image.Ready) promote(1 - front)
+      else back.url = want
+    }
+
+    function settled(i) {
+      var l = pictureLayer(i)
+      if (i === front || String(l.url) !== String(source)) return
+      if (l.status === Image.Ready) promote(i)
+      else if (l.status === Image.Error) {
+        // A broken picture: show the stand-in rather than a stale cover.
+        failedSource = String(source)
+        l.url = ""
+        if (String(pictureLayer(front).url) !== String(source)) {
+          shown = ""
+          fadeOut.target = pictureLayer(front)
+          fadeOut.start()
+        }
+      }
+    }
+
+    function promote(i) {
+      var old = pictureLayer(front)
+      pictureLayer(i).z = 2
+      if (old !== pictureLayer(i)) old.z = 1
+      front = i
+      shown = String(source)
+      fadeOut.stop()
+      fadeIn.stop()
+      fadeIn.target = pictureLayer(i)
+      fadeIn.retire = old
+      fadeIn.start()
+    }
+
+    onSourceChanged: load()
+    Component.onCompleted: load()
+
+    Text {
+      anchors.centerIn: parent
+      visible: art.placeholder
+      opacity: art.hasPicture ? 0 : 1
+      textFormat: Text.PlainText
+      text: Model.GLYPH_MUSIC
+      color: art.glyphColor
+      font.family: art.glyphFamily
+      font.pixelSize: art.glyphSize
+      Behavior on opacity { NumberAnimation { duration: art.fadeDuration } }
+    }
+
+    // Rounded corners need a mask; the software renderer cannot run it and
+    // draws the square picture inside the rounded backdrop instead.
+    Item {
+      id: pictures
+      anchors.fill: parent
+      anchors.margins: art.border.width
+      readonly property bool masked: art.radius > 0 && GraphicsInfo.api !== GraphicsInfo.Software
+      layer.enabled: masked
+      layer.smooth: true
+      layer.effect: MultiEffect {
+        maskEnabled: true
+        maskSource: pictureMask
+        maskThresholdMin: 0.5
+        maskSpreadAtMin: 1.0
+      }
+
+      SizedImage {
+        id: layerA
+        anchors.fill: parent
+        crop: true
+        opacity: 0
+        onStatusChanged: art.settled(0)
+      }
+
+      SizedImage {
+        id: layerB
+        anchors.fill: parent
+        crop: true
+        opacity: 0
+        onStatusChanged: art.settled(1)
+      }
+    }
+
+    Rectangle {
+      id: pictureMask
+      anchors.fill: pictures
+      radius: Math.max(0, art.radius - art.border.width)
+      color: "black"
+      visible: false
+      layer.enabled: pictures.masked
+      layer.smooth: true
+    }
+
+    NumberAnimation {
+      id: fadeIn
+      property var retire: null
+      property: "opacity"
+      from: 0
+      to: 1
+      duration: art.fadeDuration
+      easing.type: Easing.InOutQuad
+      onStopped: {
+        if (retire && retire !== art.pictureLayer(art.front)) {
+          retire.opacity = 0
+          retire.url = ""
+        }
+        retire = null
+      }
+    }
+
+    NumberAnimation {
+      id: fadeOut
+      property: "opacity"
+      to: 0
+      duration: art.fadeDuration
+      easing.type: Easing.InOutQuad
+      onStopped: {
+        var l = art.pictureLayer(art.front)
+        if (art.shown === "" && l.opacity === 0) l.url = ""
       }
     }
   }

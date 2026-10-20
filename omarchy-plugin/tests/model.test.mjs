@@ -75,6 +75,43 @@ check("covers: nothing else does", () => {
   assert.equal(M.coverSource("javascript:alert(1)"), "");
 });
 
+const art = "file:///home/u/.cache/omamp/art/ab-600.jpg";
+const art2 = "file:///home/u/.cache/omamp/art/cd-600.jpg";
+check("cover step: a new cover replaces the old at once", () => {
+  assert.deepEqual(M.coverStep(art, art2, true), { cover: art2, hold: false });
+  assert.deepEqual(M.coverStep("", art, true), { cover: art, hold: false });
+});
+check("cover step: a missing cover holds the old one for a moment", () => {
+  assert.deepEqual(M.coverStep(art, "", true), { cover: art, hold: true });
+  assert.deepEqual(M.coverStep(art, "/not/a/url.jpg", true), { cover: art, hold: true });
+});
+check("cover step: nothing to hold, or a closed player, clears it", () => {
+  assert.deepEqual(M.coverStep("", "", true), { cover: "", hold: false });
+  assert.deepEqual(M.coverStep(art, art2, false), { cover: "", hold: false });
+});
+
+check("cover mode: large, medium, hidden, and large for anything else", () => {
+  assert.equal(M.coverMode("Large"), "large");
+  assert.equal(M.coverMode("Medium"), "medium");
+  assert.equal(M.coverMode(" hidden "), "hidden");
+  assert.equal(M.coverMode(undefined), "large");
+  assert.equal(M.coverMode("Huge"), "large");
+});
+check("panel cover size follows the mode", () => {
+  assert.equal(M.panelCoverSize("Large", 320, 96), 320);
+  assert.equal(M.panelCoverSize("Medium", 320, 96), 96);
+  assert.equal(M.panelCoverSize("Medium", 80, 96), 80);
+  assert.equal(M.panelCoverSize("Hidden", 320, 96), 0);
+  assert.equal(M.panelCoverSize("Large", NaN, 96), 0);
+});
+check("bar thumbnail fits the bar", () => {
+  assert.equal(M.thumbSize(26, 8), 18);
+  assert.equal(M.thumbSize(30, 8), 22);
+  assert.equal(M.thumbSize(14, 8), 12);
+  assert.equal(M.thumbSize(60, 8), 28);
+  assert.equal(M.thumbSize(undefined, 8), 18);
+});
+
 check("clamp01", () => { assert.equal(M.clamp01(1.4), 1); assert.equal(M.clamp01(-1), 0); assert.equal(M.clamp01("x"), 0); });
 
 if (failures) { console.log(`\n${failures} failed`); process.exit(1); }

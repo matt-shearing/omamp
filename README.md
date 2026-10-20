@@ -152,8 +152,8 @@ station can be found on radio-browser.info or added by its address.
 
 ### In the Omarchy bar
 
-A bar plugin shows the track and the play state, with a panel for the cover,
-seek, transport, shuffle, repeat and volume.
+A bar plugin shows a small cover, the play state and the track. Click it for a
+panel led by a large cover, with seek, transport, shuffle, repeat and volume.
 
 <p align="center">
   <picture>

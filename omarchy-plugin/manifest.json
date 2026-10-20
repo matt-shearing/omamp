@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "contra.omamp",
   "name": "Omamp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "contra",
   "license": "MIT",
-  "description": "Omamp in the bar: what is playing while Omamp is open, and a panel with the green clock, title strip, seek, transport, stop, shuffle, repeat, Omamp's volume, and a button that brings its window forward.",
+  "description": "Omamp in the bar: the cover and what is playing while Omamp is open, and a panel led by a large cover, with the track, seek, transport, stop, shuffle, repeat, Omamp's volume, and a button that brings its window forward.",
   "keywords": ["omamp", "winamp", "music", "player", "mpris", "now-playing"],
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Omamp",
-    "description": "Now playing in Omamp, with a panel for seek, transport, shuffle, repeat and volume. Hidden while Omamp is closed.",
+    "description": "Now playing in Omamp with a cover thumbnail, and a panel with a large cover, seek, transport, shuffle, repeat and volume. Hidden while Omamp is closed.",
     "category": "Media",
     "aliases": ["omamp", "winamp", "music", "player", "now-playing"],
     "allowMultiple": false,
@@ -23,7 +23,10 @@
       "maxLabelWidth": 220,
       "showClock": false,
       "showWhenClosed": false,
-      "scrollAction": "Previous/next track"
+      "scrollAction": "Previous/next track",
+      "showThumbnail": true,
+      "coverSize": "Large",
+      "showLcd": false
     },
     "schema": [
       {
@@ -35,6 +38,13 @@
         "step": 10,
         "defaultValue": 220,
         "description": "A longer \"Artist – Title\" pans slowly inside this width instead of stretching the bar."
+      },
+      {
+        "key": "showThumbnail",
+        "type": "boolean",
+        "label": "Thumbnail in bar",
+        "defaultValue": true,
+        "description": "A small cover before the play glyph. With no cover, only the glyph shows."
       },
       {
         "key": "showClock",
@@ -56,6 +66,21 @@
         "options": ["Previous/next track", "Volume", "Nothing"],
         "defaultValue": "Previous/next track",
         "description": "Previous/next matches Omarchy's own media widget. Volume changes Omamp's volume, not the system's."
+      },
+      {
+        "key": "coverSize",
+        "type": "enum",
+        "label": "Cover size in panel",
+        "options": ["Large", "Medium", "Hidden"],
+        "defaultValue": "Large",
+        "description": "Large fills the top of the panel. Medium puts a smaller cover beside the track. Hidden shows the track alone."
+      },
+      {
+        "key": "showLcd",
+        "type": "boolean",
+        "label": "Show Omamp's clock and title strip in the panel",
+        "defaultValue": false,
+        "description": "The green clock and scrolling title from Omamp's main window, under the track."
       }
     ]
   }

@@ -125,3 +125,44 @@ function coverSource(url) {
   var s = String(url || "")
   return /^(file|https?):\/\//.test(s) || s.indexOf("data:image/") === 0 ? s : ""
 }
+
+// What the bar and panel show while the cover changes. A new cover replaces
+// the old at once. When the cover goes away, the old one is held for a
+// moment (`hold`), because a player can send a new track's details before
+// its picture, and the bar should not drop the thumbnail and then put it
+// back. A closed player clears it at once.
+function coverStep(current, incoming, running) {
+  var next = coverSource(incoming)
+  if (!running) return { cover: "", hold: false }
+  if (next !== "") return { cover: next, hold: false }
+  if (String(current || "") === "") return { cover: "", hold: false }
+  return { cover: String(current), hold: true }
+}
+
+// The panel's cover setting: "large" (the default), "medium" or "hidden".
+// Anything unknown reads as large.
+function coverMode(value) {
+  var v = String(value || "").trim().toLowerCase()
+  if (v === "medium" || v === "hidden") return v
+  return "large"
+}
+
+// The cover's side in the panel: the full content width when large, a
+// thumbnail beside the details when medium, nothing when hidden.
+function panelCoverSize(mode, contentWidth, mediumSize) {
+  var m = coverMode(mode)
+  var w = Math.max(0, Math.round(Number(contentWidth) || 0))
+  if (m === "hidden") return 0
+  if (m === "medium") return Math.min(w, Math.max(0, Math.round(Number(mediumSize) || 0)))
+  return w
+}
+
+// The bar thumbnail's side: the bar's height less a little padding, kept
+// between 12 and 28 px so a very thin or very tall bar still looks right.
+function thumbSize(barSize, padding) {
+  var b = Number(barSize)
+  if (!isFinite(b) || b <= 0) b = 26
+  var p = Number(padding)
+  if (!isFinite(p) || p < 0) p = 0
+  return Math.max(12, Math.min(28, Math.round(b - p)))
+}

@@ -32,6 +32,26 @@ Item {
   readonly property string album: running ? String(player.trackAlbum || "") : ""
   // The cover, as Omamp sends it over MPRIS (mpris:artUrl, a file:// URL).
   readonly property string artUrl: running ? String(player.trackArtUrl || "") : ""
+  // The cover the bar and panel draw: artUrl when it is a picture, held for a
+  // moment when it goes away so a track change does not blink the thumbnail.
+  // Kept here once, so every monitor's widget agrees.
+  property string cover: ""
+  onArtUrlChanged: root.updateCover()
+  onRunningChanged: root.updateCover()
+  Component.onCompleted: root.updateCover()
+
+  function updateCover() {
+    var step = Model.coverStep(root.cover, root.artUrl, root.running)
+    root.cover = step.cover
+    if (step.hold) coverHold.restart()
+    else coverHold.stop()
+  }
+
+  Timer {
+    id: coverHold
+    interval: 1500
+    onTriggered: if (Model.coverSource(root.artUrl) === "") root.cover = ""
+  }
   readonly property string line: Model.trackLine(artist, title)
   readonly property bool hasTrack: title !== "" || artist !== ""
 
@@ -191,6 +211,7 @@ Item {
       artist: root.artist,
       album: root.album,
       artUrl: root.artUrl,
+      cover: root.cover,
       position: Math.round(root.position),
       length: Math.round(root.length),
       volume: Math.round(root.volume * 100),

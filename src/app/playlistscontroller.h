@@ -1,13 +1,16 @@
 #pragma once
 
 #include <QObject>
+#include <QPointer>
 #include <QVariantList>
 #include <QVariantMap>
 
+#include "playlist.h"
 #include "playlistitemsmodel.h"
 #include "portal.h"
 
 class LibraryController;
+class SpotifyController;
 
 // Playlists, auto-playlists, playlist folders and collections for the
 // window: what the tree's context menu, the palette, the playlist view and
@@ -27,6 +30,9 @@ public:
     int revision() const { return m_revision; }
     // After the library opens.
     void attach();
+    // Spotify, for mixed playlists: whether its tracks can play now, what
+    // it knows of them, and the tracks its views add to Omamp playlists.
+    void setSpotify(SpotifyController *spotify);
 
     // Each returns the new id, or 0 with a message in a toast.
     Q_INVOKABLE qint64 createPlaylist(const QString &name, qint64 parentId = 0);
@@ -49,6 +55,9 @@ public:
 
     // Adds library tracks to a static playlist at a position (-1: the end).
     Q_INVOKABLE int addTracks(qint64 id, const QVariantList &trackIds, int at = -1);
+    // Adds Spotify tracks, as SpotifyController::entryFor maps
+    // ({path: spotify://track/<id>, title, artist, album, art, durationMs}).
+    Q_INVOKABLE int addSpotifyTracks(qint64 id, const QVariantList &entries, int at = -1);
     // Replaces Now Playing with the playlist and plays it, or queues it
     // after the current track, or adds it at the end.
     Q_INVOKABLE int play(qint64 id, int fromRow = 0);
@@ -104,8 +113,16 @@ private:
     void touched();
     bool fail(const QString &error);
     QString pathOf(qint64 id) const;
+    // What can play of these entries, in order: local files that are
+    // online, and Spotify tracks while Spotify can play. *skipped counts
+    // the Spotify tracks left out. rows gets each one's index.
+    QList<Playlist::Track> playable(const QList<Playlists::Item> &items, QList<int> *rows = nullptr,
+                                    int *skipped = nullptr);
+    // Says once, after a play, that Spotify tracks were left out and why.
+    void noteSkipped(int skipped);
 
     LibraryController *m_controller;
+    QPointer<SpotifyController> m_spotify;
     PlaylistItemsModel m_items;
     FolderPicker m_importPicker, m_exportPicker;
     qint64 m_exporting = 0;

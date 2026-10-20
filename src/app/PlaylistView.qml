@@ -5,7 +5,9 @@ import QtQuick.Layouts
 
 // One playlist in its own order: a static playlist's entries, duplicates and
 // entries that match no library track included, or an auto-playlist's
-// tracks as its query gives them now.
+// tracks as its query gives them now. A static playlist can mix Spotify
+// tracks with local files: they carry Spotify's mark, and are greyed (and
+// left out when the playlist plays) while Spotify can't play them.
 //
 // Up and Down move, Shift selects a range, Enter plays from the cursor,
 // Alt+Up and Alt+Down move the selected entries, Delete takes them out,
@@ -17,6 +19,8 @@ FocusScope {
     // Party mode can lock editing.
     property bool locked: false
     readonly property bool canEdit: items.editable && !locked
+    // Why Spotify entries can't play now, or empty.
+    readonly property string spotifyOff: spotify.unavailableReason
     signal leave()
     // A command run by the window (edit-tags, edit-autoplaylist, export-playlist...).
     signal action(string id)
@@ -71,6 +75,9 @@ FocusScope {
                         let parts = [qsTr("%n entries", "", pane.items.count)]
                         if (pane.items.totalMs > 0) parts.push(pane.clock(pane.items.totalMs))
                         if (pane.items.duplicates > 0) parts.push(qsTr("%n repeated", "", pane.items.duplicates))
+                        if (pane.items.spotifyCount > 0) parts.push(pane.spotifyOff !== ""
+                            ? qsTr("%n from Spotify (off)", "", pane.items.spotifyCount)
+                            : qsTr("%n from Spotify", "", pane.items.spotifyCount))
                         if (pane.items.unmatched > 0) parts.push(qsTr("%n not in the library", "", pane.items.unmatched))
                         if (pane.items.kind === "auto") parts.push(qsTr("auto-playlist: %1").arg(pane.items.query || qsTr("every track")))
                         return parts.join("  ·  ")
@@ -220,7 +227,9 @@ FocusScope {
                 required property bool duplicate
                 required property bool rowSelected
                 required property bool rowCurrent
-                readonly property bool playable: availability === "online"
+                required property bool fromSpotify
+                readonly property bool spotifyOff: fromSpotify && pane.spotifyOff !== ""
+                readonly property bool playable: availability === "online" || (fromSpotify && !spotifyOff)
 
                 width: ListView.view.width
                 height: 24
@@ -251,10 +260,21 @@ FocusScope {
                     }
                     Item {
                         width: pane.textWidth; height: entry.height
+                        // Spotify's mark before a Spotify track's title.
+                        Text {
+                            id: spotifyMark
+                            objectName: "spotifyMark"
+                            visible: entry.fromSpotify
+                            anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
+                            text: String.fromCodePoint(0xF04C7)
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 13
+                            color: entry.spotifyOff ? theme.c.muted : theme.c.green
+                        }
                         Text {
                             id: titleText
-                            anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
-                            width: Math.min(implicitWidth, parent.width - 16 - (badge.visible ? badge.width + 6 : 0))
+                            anchors { left: parent.left; leftMargin: spotifyMark.visible ? 26 : 8; verticalCenter: parent.verticalCenter }
+                            width: Math.min(implicitWidth, parent.width - anchors.leftMargin - 8 - (badge.visible ? badge.width + 6 : 0))
                             elide: Text.ElideRight
                             text: entry.title
                             font.pixelSize: 13
@@ -266,7 +286,7 @@ FocusScope {
                         // or that no longer matches a track.
                         Rectangle {
                             id: badge
-                            visible: entry.duplicate || entry.availability !== "online"
+                            visible: entry.duplicate || (entry.availability !== "online" && !entry.fromSpotify)
                             anchors { left: titleText.right; leftMargin: 6; verticalCenter: parent.verticalCenter }
                             width: badgeText.implicitWidth + 10
                             height: 16
@@ -314,6 +334,12 @@ FocusScope {
                         color: theme.c.muted
                     }
                 }
+
+                // Why a greyed Spotify entry won't play, on hover.
+                HoverHandler { id: entryHover; enabled: entry.spotifyOff }
+                ToolTip.visible: entryHover.hovered
+                ToolTip.delay: 500
+                ToolTip.text: pane.spotifyOff
 
                 MouseArea {
                     anchors.fill: parent
@@ -365,7 +391,7 @@ FocusScope {
         wrapMode: Text.WordWrap
         text: pane.items.kind === "folder" ? qsTr("Choose a playlist inside this folder.")
             : pane.items.kind === "auto" ? (pane.items.error !== "" ? pane.items.error : qsTr("No tracks match this auto-playlist's query."))
-            : qsTr("This playlist is empty. Drag tracks from the library onto it in the tree, or use Add to playlist in a track's menu.")
+            : qsTr("This playlist is empty. Drag tracks from the library or from Spotify onto it in the tree, or use Add to playlist in a track's menu.")
         font.pixelSize: 13
         color: theme.c.muted
     }

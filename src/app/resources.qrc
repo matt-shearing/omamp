@@ -63,5 +63,6 @@
         <file alias="SpotifyView.qml">SpotifyView.qml</file>
         <file alias="SpotifyBlendStrip.qml">SpotifyBlendStrip.qml</file>
         <file alias="SpotifyHooks.qml">SpotifyHooks.qml</file>
+        <file alias="SpotifyAddMenu.qml">SpotifyAddMenu.qml</file>
     </qresource>
 </RCC>

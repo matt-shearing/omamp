@@ -76,9 +76,18 @@ private:
 
 // One list of Spotify items for QML: a library section, a playlist's or
 // album's tracks, or search results with section headings.
+//
+// Rows are chosen as in the library's track list: a click chooses one,
+// Shift+click a range from the last plain or Ctrl click, Ctrl+click adds or
+// takes away one; Shift+Up/Down extends, Ctrl+A chooses every row, Esc
+// clears. The current row is the keyboard cursor.
 class SpotifyItemsModel : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    Q_PROPERTY(int currentRow READ currentRow WRITE setCurrentRow NOTIFY currentRowChanged)
+    Q_PROPERTY(int selectedCount READ selectedCount NOTIFY selectionChanged)
+    // Tracks among the chosen rows (the current row when none are chosen).
+    Q_PROPERTY(int chosenTrackCount READ chosenTrackCount NOTIFY selectionChanged)
 public:
     enum Roles {
         KindRole = Qt::UserRole + 1,
@@ -93,6 +102,8 @@ public:
         SectionRole,
         ArtRole,
         DetailRole,
+        SelectedRole, // "rowSelected", as the library's track list
+        CurrentRole,  // "rowCurrent"
     };
     explicit SpotifyItemsModel(SpotifyArt *art, QObject *parent = nullptr);
 
@@ -113,13 +124,35 @@ public:
     Q_INVOKABLE void wantArt(int row);
     void artArrived(const QString &key);
 
+    // Choosing rows, as TrackListModel does for the library.
+    int currentRow() const { return m_current; }
+    void setCurrentRow(int row);
+    int selectedCount() const { return m_selected.size(); }
+    int chosenTrackCount() const;
+    Q_INVOKABLE void select(int row, int modifiers = 0);
+    Q_INVOKABLE void moveCurrent(int delta, int modifiers = 0);
+    Q_INVOKABLE void selectAll();
+    Q_INVOKABLE void clearSelection();
+    Q_INVOKABLE bool isSelected(int row) const { return m_selected.contains(row); }
+    // The chosen rows in list order; the current row when none are chosen.
+    Q_INVOKABLE QList<int> chosenRows() const;
+    QList<Spotify::Item> chosenItems() const;
+    // The tracks among them, in list order.
+    QList<Spotify::Item> chosenTracks() const;
+
 signals:
     void countChanged();
+    void currentRowChanged();
+    void selectionChanged();
 
 private:
+    void selectionDataChanged();
+
     SpotifyArt *m_art;
     QList<Spotify::Item> m_items;
     QStringList m_sections;
+    QSet<int> m_selected;
+    int m_current = -1, m_anchor = -1;
 };
 
 // The handover: a Spotify track's turn in Now Playing. Omamp tells the
@@ -298,6 +331,12 @@ class SpotifyController : public QObject {
     Q_PROPERTY(QString blendError READ blendError NOTIFY blendChanged)
     Q_PROPERTY(QString message READ message NOTIFY messageChanged)
     Q_PROPERTY(int artRevision READ artRevision NOTIFY artRevisionChanged)
+    // Why Spotify tracks can't play now ("Spotify is off — …"), or empty
+    // when they can. Playlists dim and skip their Spotify entries then.
+    Q_PROPERTY(QString unavailableReason READ unavailableReason NOTIFY availabilityChanged)
+    // Whether the backend can make a new Spotify playlist
+    // (spotify_player's `playlist new`).
+    Q_PROPERTY(bool canCreatePlaylists READ canCreatePlaylists NOTIFY settingsChanged)
 
 public:
     // settingsPath: spotify.conf (empty: ~/.config/omamp/spotify.conf).
@@ -386,6 +425,8 @@ public:
     QString blendError() const { return m_blendError; }
     QString message() const { return m_message; }
     int artRevision() const { return m_artRevision; }
+    QString unavailableReason() const;
+    bool canCreatePlaylists() const { return m_settings.enabled && m_backend->caps().playlists; }
 
     // Status: installed, signed in, running, devices, account; starts the
     // daemon when that is switched on.
@@ -435,6 +476,26 @@ public:
     // Lists a restricted playlist's tracks after all, slowly.
     Q_INVOKABLE void showRestrictedTracks();
     Q_INVOKABLE void addBlendRowToPlaylist(int row, const QString &playlistId);
+
+    // The chosen rows of a list (the view's or the search strip's). One
+    // row acts as that row does (a playlist or album row plays all of its
+    // tracks); several rows act on the tracks among them.
+    // how: play, next or append.
+    Q_INVOKABLE void playChosen(SpotifyItemsModel *model, const QString &how);
+    // Adds the chosen rows to one of your Spotify playlists.
+    Q_INVOKABLE void addChosenToSpotifyPlaylist(SpotifyItemsModel *model, const QString &playlistId);
+    // Makes a Spotify playlist (spotify_player's `playlist new`) and adds
+    // the chosen rows to it.
+    Q_INVOKABLE void addChosenToNewSpotifyPlaylist(SpotifyItemsModel *model, const QString &name);
+    // Asks for the chosen tracks to go into an Omamp playlist: emits
+    // omampEntriesReady with them, at once for track rows, or once an
+    // album's or playlist's tracks are read. false when there is nothing.
+    Q_INVOKABLE bool addChosenToOmampPlaylist(SpotifyItemsModel *model, qint64 playlistId);
+    // The chosen rows' open.spotify.com links, one a line, put on the
+    // clipboard; returns the text.
+    Q_INVOKABLE QString copyChosenLinks(SpotifyItemsModel *model);
+    // A playlist entry's map for a track: {path, title, artist, album, art, durationMs}.
+    static QVariantMap entryFor(const Spotify::Item &track);
     // Liked Songs for the playing Spotify track.
     Q_INVOKABLE void setPlayingLiked(bool liked);
     Q_INVOKABLE void dismissMessage() { setMessage({}); }
@@ -478,10 +539,16 @@ signals:
     // The window should show the Spotify view (a palette choice opened it).
     void showRequested();
     void settingsRequested();
+    void availabilityChanged();
+    // Spotify tracks to add to an Omamp playlist (entryFor maps), which
+    // PlaylistsController stores.
+    void omampEntriesReady(qint64 playlistId, const QVariantList &entries);
 
 private:
     enum Mode { Play, Next, Append };
     struct Status {
+        // known: the status has been read since Spotify was switched on.
+        bool known = false;
         bool installed = false, signedIn = false, running = false;
         QString account, premium = "unknown", device, deviceName;
         QVariantList devices;

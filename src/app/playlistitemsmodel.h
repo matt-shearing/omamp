@@ -27,6 +27,8 @@ class PlaylistItemsModel : public QAbstractListModel {
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(qint64 totalMs READ totalMs NOTIFY countChanged)
     Q_PROPERTY(int unmatched READ unmatched NOTIFY countChanged)
+    // Spotify tracks in the playlist (a mixed playlist).
+    Q_PROPERTY(int spotifyCount READ spotifyCount NOTIFY countChanged)
     Q_PROPERTY(int duplicates READ duplicates NOTIFY countChanged)
     Q_PROPERTY(QString error READ error NOTIFY countChanged)
     Q_PROPERTY(int currentRow READ currentRow WRITE setCurrentRow NOTIFY currentRowChanged)
@@ -41,11 +43,12 @@ public:
         ArtistRole,
         AlbumRole,
         DurationRole,
-        AvailabilityRole, // online, offline, missing, unmatched
+        AvailabilityRole, // online, offline, missing, unmatched, spotify
         DuplicateRole,    // the track is in the list more than once
         SelectedRole,
         CurrentRole,
         PathRole,
+        SpotifyRole, // a Spotify track: plays on Spotify
     };
 
     explicit PlaylistItemsModel(QObject *parent = nullptr);
@@ -66,6 +69,7 @@ public:
     int count() const { return m_items.size(); }
     qint64 totalMs() const { return m_totalMs; }
     int unmatched() const { return m_unmatched; }
+    int spotifyCount() const { return m_spotify; }
     int duplicates() const { return m_duplicates; }
     QString error() const { return m_error; }
     int currentRow() const { return m_current; }
@@ -111,10 +115,11 @@ private:
     Playlists::Playlist m_playlist;
     QList<Playlists::Item> m_items;
     QHash<qint64, int> m_trackUses;
+    QHash<QString, int> m_spotifyUses;
     QSet<int> m_selected;
     int m_current = -1, m_anchor = -1;
     qint64 m_totalMs = 0;
-    int m_unmatched = 0, m_duplicates = 0;
+    int m_unmatched = 0, m_duplicates = 0, m_spotify = 0;
     bool m_locked = false;
     QString m_error;
 };

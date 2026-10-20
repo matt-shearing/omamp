@@ -7,6 +7,7 @@
 #include "playlists.h"
 #include "query.h"
 #include "rulebuilder.h"
+#include "spotifycontroller.h"
 #include "stats.h"
 
 #include <QDir>
@@ -15,24 +16,6 @@
 #include <QLocale>
 
 namespace {
-
-QList<Playlist::Track> playable(const QList<Playlists::Item> &items, QList<int> *rows = nullptr) {
-    QList<Playlist::Track> out;
-    for (int i = 0; i < items.size(); ++i) {
-        const Playlists::Item &it = items[i];
-        if (it.path.isEmpty() || it.availability != QLatin1String("online"))
-            continue;
-        Playlist::Track t;
-        t.path = it.path;
-        t.title = it.title.isEmpty() ? QFileInfo(it.path).completeBaseName() : it.title;
-        t.artist = it.artist;
-        t.durationMs = it.durationMs;
-        out << t;
-        if (rows)
-            rows->append(i);
-    }
-    return out;
-}
 
 QStringList toStrings(const QJsonArray &a) {
     QStringList out;
@@ -95,6 +78,83 @@ PlaylistsController::PlaylistsController(LibraryController *library) : QObject(l
 }
 
 Library *PlaylistsController::lib() const { return m_controller->library(); }
+
+void PlaylistsController::setSpotify(SpotifyController *spotify) {
+    if (m_spotify)
+        disconnect(m_spotify, nullptr, this, nullptr);
+    m_spotify = spotify;
+    if (spotify)
+        connect(spotify, &SpotifyController::omampEntriesReady, this,
+                [this](qint64 id, const QVariantList &entries) { addSpotifyTracks(id, entries); });
+}
+
+// A Spotify entry's track as Omamp's Spotify side knows tracks, so the
+// handover has its name, length and album (for the cover) without asking.
+static Spotify::Item spotifyItemOf(const Playlists::Item &it) {
+    Spotify::Item t;
+    t.kind = "track";
+    t.id = it.path.mid(QStringLiteral("spotify://track/").size());
+    t.name = it.title;
+    if (!it.artist.isEmpty())
+        t.artists = it.artist.split(", ");
+    t.album = it.album;
+    if (it.art.startsWith("http"))
+        t.imageUrl = it.art;
+    else
+        t.albumId = it.art;
+    t.durationMs = it.durationMs;
+    return t;
+}
+
+QList<Playlist::Track> PlaylistsController::playable(const QList<Playlists::Item> &items, QList<int> *rows,
+                                                     int *skipped) {
+    const bool spotifyOk = m_spotify && m_spotify->unavailableReason().isEmpty();
+    QList<Playlist::Track> out;
+    QList<Spotify::Item> known;
+    int left = 0;
+    for (int i = 0; i < items.size(); ++i) {
+        const Playlists::Item &it = items[i];
+        if (it.isSpotify()) {
+            if (!spotifyOk) {
+                ++left;
+                continue;
+            }
+            known << spotifyItemOf(it);
+        } else if (it.path.isEmpty() || it.availability != QLatin1String("online")) {
+            continue;
+        }
+        Playlist::Track t;
+        t.path = it.path;
+        t.title = it.title.isEmpty() ? (it.isSpotify() ? tr("Spotify track") : QFileInfo(it.path).completeBaseName())
+                                     : it.title;
+        t.artist = it.artist;
+        t.durationMs = it.durationMs;
+        t.trackId = it.trackId;
+        out << t;
+        if (rows)
+            rows->append(i);
+    }
+    // Only what Omamp hasn't seen in a Spotify list already: a list's copy
+    // is fresher.
+    if (m_spotify) {
+        QList<Spotify::Item> unseen;
+        for (const Spotify::Item &t : std::as_const(known))
+            if (!m_spotify->knownTrack(t.id).isValid())
+                unseen << t;
+        m_spotify->rememberTracks(unseen);
+    }
+    if (skipped)
+        *skipped = left;
+    return out;
+}
+
+void PlaylistsController::noteSkipped(int skipped) {
+    if (skipped <= 0)
+        return;
+    const QString why = m_spotify ? m_spotify->unavailableReason()
+                                  : tr("Spotify is off — turn it on in Settings → Spotify");
+    emit m_controller->toast(tr("Left out %n Spotify tracks. %1", "", skipped).arg(why));
+}
 
 void PlaylistsController::attach() { m_items.setLibrary(lib()); }
 
@@ -278,6 +338,40 @@ int PlaylistsController::addTracks(qint64 id, const QVariantList &trackIds, int 
     return added;
 }
 
+int PlaylistsController::addSpotifyTracks(qint64 id, const QVariantList &maps, int at) {
+    if (!lib())
+        return 0;
+    QList<Playlists::Entry> entries;
+    for (const QVariant &v : maps) {
+        const QVariantMap m = v.toMap();
+        Playlists::Entry e;
+        e.path = Playlists::spotifyTrackPath(m.value("path").toString());
+        if (e.path.isEmpty())
+            continue;
+        e.title = m.value("title").toString();
+        e.artist = m.value("artist").toString();
+        e.album = m.value("album").toString();
+        e.art = m.value("art").toString();
+        e.durationMs = m.value("durationMs").toLongLong();
+        entries << e;
+    }
+    if (entries.isEmpty())
+        return 0;
+    QString error;
+    const int added = Playlists::addEntries(*lib(), id, entries, at, &error);
+    if (added < 0) {
+        fail(error);
+        return 0;
+    }
+    if (m_items.playlistId() == id)
+        m_items.reload();
+    touched();
+    Playlists::Playlist p;
+    Playlists::get(*lib(), id, &p);
+    emit m_controller->toast(tr("Added %n Spotify tracks to %1", "", added).arg(p.name));
+    return added;
+}
+
 int PlaylistsController::play(qint64 id, int fromRow) {
     Player *player = m_controller->player();
     if (!lib() || !player)
@@ -289,12 +383,17 @@ int PlaylistsController::play(qint64 id, int fromRow) {
         fromRow -= first;
     }
     QList<int> rows;
-    const QList<Playlist::Track> tracks = playable(items, &rows);
-    if (tracks.isEmpty())
+    int skipped = 0;
+    const QList<Playlist::Track> tracks = playable(items, &rows, &skipped);
+    if (tracks.isEmpty()) {
+        if (skipped > 0)
+            return fail(m_spotify ? m_spotify->unavailableReason() : tr("Nothing in that playlist can play")), 0;
         return fail(tr("Nothing in that playlist can play")), 0;
+    }
     int start = 0;
     while (start < rows.size() && rows[start] < fromRow)
         ++start;
+    noteSkipped(skipped);
     return player->playTracks(tracks, qMin(start, int(tracks.size()) - 1));
 }
 
@@ -302,8 +401,11 @@ int PlaylistsController::queueNext(qint64 id) {
     Player *player = m_controller->player();
     if (!lib() || !player)
         return 0;
-    const int n = player->queueNext(playable(Playlists::items(*lib(), id).mid(0, LibraryController::maxPlayNow)));
+    int skipped = 0;
+    const int n =
+        player->queueNext(playable(Playlists::items(*lib(), id).mid(0, LibraryController::maxPlayNow), nullptr, &skipped));
     emit m_controller->toast(tr("%n tracks will play next", "", n));
+    noteSkipped(skipped);
     return n;
 }
 
@@ -311,8 +413,11 @@ int PlaylistsController::append(qint64 id) {
     Player *player = m_controller->player();
     if (!lib() || !player)
         return 0;
-    const int n = player->appendTracks(playable(Playlists::items(*lib(), id).mid(0, LibraryController::maxPlayNow)));
+    int skipped = 0;
+    const int n = player->appendTracks(
+        playable(Playlists::items(*lib(), id).mid(0, LibraryController::maxPlayNow), nullptr, &skipped));
     emit m_controller->toast(tr("%n tracks added to Now Playing", "", n));
+    noteSkipped(skipped);
     return n;
 }
 
@@ -325,7 +430,10 @@ int PlaylistsController::playSelection() {
     QList<Playlists::Item> chosen;
     for (int r : rows)
         chosen << m_items.items().at(r);
-    return m_controller->player()->playTracks(playable(chosen), 0);
+    int skipped = 0;
+    const QList<Playlist::Track> tracks = playable(chosen, nullptr, &skipped);
+    noteSkipped(skipped);
+    return tracks.isEmpty() ? 0 : m_controller->player()->playTracks(tracks, 0);
 }
 
 int PlaylistsController::queueSelection() {
@@ -335,8 +443,10 @@ int PlaylistsController::queueSelection() {
     QList<Playlists::Item> chosen;
     for (int r : rows)
         chosen << m_items.items().at(r);
-    const int n = m_controller->player()->queueNext(playable(chosen));
+    int skipped = 0;
+    const int n = m_controller->player()->queueNext(playable(chosen, nullptr, &skipped));
     emit m_controller->toast(tr("%n tracks will play next", "", n));
+    noteSkipped(skipped);
     return n;
 }
 
@@ -359,6 +469,11 @@ qint64 PlaylistsController::saveNowPlaying(const QString &name) {
         e.title = t.title;
         e.artist = t.artist;
         e.durationMs = t.durationMs;
+        if (Playlists::isSpotifyPath(t.path) && m_spotify) {
+            const Spotify::Item known = m_spotify->knownTrack(t.path.mid(QStringLiteral("spotify://track/").size()));
+            e.album = known.album;
+            e.art = !known.albumId.isEmpty() ? known.albumId : known.imageUrl;
+        }
         entries << e;
     }
     Playlists::addEntries(*lib(), id, entries, -1, &error);

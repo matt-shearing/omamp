@@ -25,6 +25,7 @@
 #include "player.h"
 #include "playrecorder.h"
 #include "portal.h"
+#include "playlistscontroller.h"
 #include "spotifycontroller.h"
 #include "radiocontroller.h"
 #include "streamresolver.h"
@@ -140,6 +141,8 @@ int main(int argc, char *argv[]) {
 
     // Spotify in the palette, the tree and the deck's cover.
     spotify.setPalette(library.palette());
+    // Mixed playlists: Spotify tracks in Omamp playlists.
+    library.playlists()->setSpotify(&spotify);
     NowPlaying::setReferenceArt([&spotify](const QString &path) { return spotify.art()->fileForPath(path); });
     auto spotifyNode = [&] { library.tree()->setExtraNode("spotify", QObject::tr("Spotify"), spotify.enabled()); };
     QObject::connect(&spotify, &SpotifyController::settingsChanged, &library, spotifyNode);

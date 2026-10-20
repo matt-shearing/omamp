@@ -216,6 +216,11 @@ FocusScope {
                 if (!(event.modifiers & Qt.ControlModifier)) return
                 t.selectAll()
                 break
+            case Qt.Key_Escape:
+                // Esc lets go of the chosen rows, as in the Spotify lists.
+                if (t.selectedCount === 0) return
+                t.clearSelection()
+                break
             case Qt.Key_Space:
                 // Ctrl+Space picks the row under the cursor; plain Space is play/pause.
                 if (!(event.modifiers & Qt.ControlModifier)) return

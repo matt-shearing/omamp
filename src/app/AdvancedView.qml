@@ -466,6 +466,10 @@ FocusScope {
                         anchors.fill: parent
                         visible: view.spotifyNode
                         onLeave: view.focusTree()
+                        onAction: (id) => view.action(id)
+                        // Chosen Spotify tracks dragged onto an Omamp playlist in the tree.
+                        onTracksDragged: (pos) => tree.dragOver(pos)
+                        onTracksDropped: (pos) => tree.dropSpotifyAt(pos, spotify.items)
                     }
                     RadioView {
                         id: radioView
@@ -487,6 +491,7 @@ FocusScope {
                 // Spotify's answers to the search, under the track list.
                 SpotifyBlendStrip {
                     id: blendStrip
+                    onAction: (id) => view.action(id)
                     visible: spotify.enabled && spotify.blendSearch && spotify.canBrowse && !view.special
                              && library.tracks.filter.trim().length >= 2
                     SplitView.preferredHeight: 196

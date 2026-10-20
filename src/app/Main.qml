@@ -1008,7 +1008,7 @@ ApplicationWindow {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 48
         }
-        SpotifyHooks { id: spotifyHooks; window: win; settings: settingsSheet; toast: toast }
+        SpotifyHooks { id: spotifyHooks; window: win; settings: settingsSheet; toast: toast; nameSheet: nameSheet }
         Connections {
             target: library
             function onToast(text) { toast.show(text) }

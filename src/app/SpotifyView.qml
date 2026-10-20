@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
@@ -8,18 +9,31 @@ import QtQuick.Layouts
 // pasted Spotify link; the chosen list on the right, with a button for
 // each thing a row can do. What Spotify is playing shows along the top.
 //
+// Rows are chosen as in the library's track list: click, Shift+click for a
+// range, Ctrl+click for one more; Shift+Up/Down extends, Ctrl+A chooses
+// all, Esc clears. The buttons and the row menu act on the chosen rows.
 // Enter or a double-click plays a track (the list from it, as the library
 // does) or opens a playlist, album or artist; Backspace goes back; Left
-// returns to the tree.
+// returns to the tree. Chosen tracks can be dragged onto an Omamp playlist
+// in the tree.
 FocusScope {
     id: view
     objectName: "spotifyView"
     signal leave()
     signal openSettings()
+    // A command run by the window (spotify-new-omamp-playlist:view…).
+    signal action(string id)
+    // Chosen tracks dragged out of the list: where the pointer is in the
+    // window, and where they were let go.
+    signal tracksDragged(point scenePos)
+    signal tracksDropped(point scenePos)
 
-    readonly property var current: list.currentIndex >= 0 && list.currentIndex < spotify.items.count
-                                   ? spotify.items.get(list.currentIndex) : null
+    readonly property var rows: spotify.items
+    readonly property int currentRow: rows.currentRow
+    readonly property var current: { void rows.count; return currentRow >= 0 && currentRow < rows.count ? rows.get(currentRow) : null }
     readonly property bool currentIsTrack: current !== null && current.kind === "track"
+    // More than one row chosen: the actions take the chosen tracks.
+    readonly property bool several: rows.selectedCount > 1
 
     // The list, or the search box while there is no list yet.
     function focusList() {
@@ -41,6 +55,8 @@ FocusScope {
         if (item.kind === "track") spotify.playRow(row)
         else spotify.openRow(row)
     }
+    function showRow(row) { if (row >= 0) list.positionViewAtIndex(row, ListView.Contain) }
+    function openRowMenu(x, y) { rowMenu.popup(list, x, y) }
 
     onVisibleChanged: spotify.setViewVisible(visible)
     Component.onCompleted: spotify.setViewVisible(visible)
@@ -216,6 +232,13 @@ FocusScope {
                     font.bold: true
                     color: theme.c.bright_foreground
                 }
+                Text {
+                    objectName: "spotifySelectedCount"
+                    visible: view.several
+                    text: qsTr("%Ln selected", "", view.rows.selectedCount)
+                    font.pixelSize: 12
+                    color: theme.c.light_foreground
+                }
                 BusyIndicator { visible: spotify.loading; running: visible; implicitWidth: 28; implicitHeight: 28 }
                 Button {
                     objectName: "spotifyRefresh"
@@ -232,33 +255,33 @@ FocusScope {
                 }
                 Button {
                     objectName: "spotifyPlay"
-                    text: view.currentIsTrack ? qsTr("Play") : qsTr("Play all")
+                    text: view.several || view.currentIsTrack ? qsTr("Play") : qsTr("Play all")
                     enabled: view.current !== null
                     font.pixelSize: 12
-                    onClicked: spotify.playRow(list.currentIndex)
+                    onClicked: spotify.playChosen(view.rows, "play")
                 }
                 Button {
                     objectName: "spotifyPlayNext"
                     text: qsTr("Play next")
                     enabled: view.current !== null
                     font.pixelSize: 12
-                    onClicked: spotify.playNextRow(list.currentIndex)
+                    onClicked: spotify.playChosen(view.rows, "next")
                 }
                 Button {
                     objectName: "spotifyEnqueue"
                     text: qsTr("Add to Now Playing")
                     enabled: view.current !== null
                     font.pixelSize: 12
-                    onClicked: spotify.enqueueRow(list.currentIndex)
+                    onClicked: spotify.playChosen(view.rows, "append")
                 }
                 Button {
                     id: addButton
                     objectName: "spotifyAddToPlaylist"
                     text: qsTr("Add to playlist ▾")
-                    enabled: view.current !== null && (view.current.kind === "track" || view.current.kind === "album")
-                             && spotify.ownPlaylists.length > 0
+                    enabled: view.current !== null && (view.several ? view.rows.chosenTrackCount > 0
+                             : view.current.kind === "track" || view.current.kind === "album")
                     font.pixelSize: 12
-                    onClicked: playlistMenu.popup(addButton, 0, addButton.height)
+                    onClicked: addMenu.popup(addButton, 0, addButton.height)
                 }
             }
 
@@ -394,7 +417,9 @@ FocusScope {
                 clip: true
                 focus: true
                 model: spotify.items
-                currentIndex: count > 0 ? 0 : -1
+                currentIndex: view.currentRow
+                keyNavigationEnabled: false
+                highlightMoveDuration: 0
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
                 section.property: "section"
@@ -410,13 +435,45 @@ FocusScope {
                     font.bold: true
                     color: theme.c.muted
                 }
-                Keys.onReturnPressed: view.activate(currentIndex)
-                Keys.onEnterPressed: view.activate(currentIndex)
-                Keys.onUpPressed: decrementCurrentIndex()
-                Keys.onDownPressed: incrementCurrentIndex()
-                Keys.onLeftPressed: view.leave()
+                // The library's keys (TrackTable.qml), plus Backspace for back.
                 Keys.onPressed: (event) => {
-                    if (event.key === Qt.Key_Backspace) { spotify.back(); event.accepted = true }
+                    const t = view.rows
+                    const page = Math.max(1, Math.floor(list.height / 52) - 1)
+                    const mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)
+                    switch (event.key) {
+                    case Qt.Key_Up: t.moveCurrent(-1, mods); break
+                    case Qt.Key_Down: t.moveCurrent(1, mods); break
+                    case Qt.Key_PageUp: t.moveCurrent(-page, mods); break
+                    case Qt.Key_PageDown: t.moveCurrent(page, mods); break
+                    case Qt.Key_Home: t.moveCurrent(-t.count, mods); break
+                    case Qt.Key_End: t.moveCurrent(t.count, mods); break
+                    case Qt.Key_Left: view.leave(); break
+                    case Qt.Key_Backspace: spotify.back(); break
+                    case Qt.Key_Return:
+                    case Qt.Key_Enter:
+                        if (view.several) spotify.playChosen(t, "play")
+                        else if (t.currentRow >= 0) view.activate(t.currentRow)
+                        break
+                    case Qt.Key_A:
+                        if (!(event.modifiers & Qt.ControlModifier)) return
+                        t.selectAll()
+                        break
+                    case Qt.Key_Escape:
+                        if (t.selectedCount === 0) return
+                        t.clearSelection()
+                        break
+                    case Qt.Key_Space:
+                        // Ctrl+Space picks the row under the cursor; plain Space is play/pause.
+                        if (!(event.modifiers & Qt.ControlModifier)) return
+                        t.select(t.currentRow, Qt.ControlModifier)
+                        break
+                    case Qt.Key_Menu:
+                        view.openRowMenu(list.width / 3, Math.min(list.height - 40, 52 * (t.currentRow + 1) - list.contentY))
+                        break
+                    default: return
+                    }
+                    if (event.key !== Qt.Key_Menu) view.showRow(t.currentRow)
+                    event.accepted = true
                 }
 
                 delegate: Rectangle {
@@ -427,12 +484,20 @@ FocusScope {
                     required property string detail
                     required property string duration
                     required property string art
+                    required property bool rowSelected
+                    required property bool rowCurrent
                     width: ListView.view.width
                     height: 52
-                    color: ListView.isCurrentItem ? theme.listSelection
-                         : hover.hovered ? Qt.alpha(theme.listSelection, 0.4) : "transparent"
+                    color: rowSelected ? (list.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
+                         : hover.hovered ? Qt.alpha(theme.listSelection, 0.3) : "transparent"
                     Component.onCompleted: spotify.items.wantArt(index)
                     HoverHandler { id: hover }
+
+                    // The keyboard cursor: a line above and below the row, as in the library.
+                    Rectangle { visible: row.rowCurrent && list.activeFocus; color: theme.accent; height: 1
+                                anchors { left: parent.left; right: parent.right; top: parent.top } }
+                    Rectangle { visible: row.rowCurrent && list.activeFocus; color: theme.accent; height: 1
+                                anchors { left: parent.left; right: parent.right; bottom: parent.bottom } }
 
                     RowLayout {
                         anchors { fill: parent; leftMargin: 12; rightMargin: 14 }
@@ -474,11 +539,10 @@ FocusScope {
                             Text {
                                 Layout.fillWidth: true
                                 visible: text !== ""
-                                text: row.kind === "track" ? row.detail
-                                    : row.detail !== "" ? row.detail : ""
+                                text: row.detail
                                 elide: Text.ElideRight
                                 font.pixelSize: 12
-                                color: theme.c.muted
+                                color: row.rowSelected ? theme.c.light_foreground : theme.c.muted
                             }
                         }
                         Text {
@@ -498,15 +562,78 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        onClicked: (mouse) => {
-                            list.currentIndex = row.index
+                        preventStealing: true
+                        property point pressedAt
+                        property bool deferred: false
+                        onPressed: (mouse) => {
                             list.forceActiveFocus()
-                            if (mouse.button === Qt.RightButton) rowMenu.popup()
+                            pressedAt = Qt.point(mouse.x, mouse.y)
+                            deferred = false
+                            if (mouse.button === Qt.RightButton) {
+                                if (!view.rows.isSelected(row.index)) view.rows.select(row.index, 0)
+                                const p = mapToItem(list, mouse.x, mouse.y)
+                                view.openRowMenu(p.x, p.y)
+                                return
+                            }
+                            const mods = mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)
+                            // A press on a chosen row keeps the selection until the
+                            // release, so several tracks can be dragged together.
+                            if (mods === 0 && row.rowSelected && view.rows.selectedCount > 1) deferred = true
+                            else view.rows.select(row.index, mods)
                         }
-                        onDoubleClicked: view.activate(row.index)
+                        // Dragging tracks onto an Omamp playlist in the tree.
+                        onPositionChanged: (mouse) => {
+                            if (!pressed || !(pressedButtons & Qt.LeftButton)) return
+                            if (!dragProxy.active) {
+                                if (Math.abs(mouse.x - pressedAt.x) + Math.abs(mouse.y - pressedAt.y) < 10) return
+                                dragProxy.start(view.rows.chosenTrackCount)
+                                if (!dragProxy.active) return
+                            }
+                            const p = mapToItem(dragProxy.parent, mouse.x, mouse.y)
+                            dragProxy.x = p.x + 12
+                            dragProxy.y = p.y + 4
+                            view.tracksDragged(mapToItem(null, mouse.x, mouse.y))
+                        }
+                        onReleased: (mouse) => {
+                            if (dragProxy.active) {
+                                dragProxy.active = false
+                                view.tracksDropped(mapToItem(null, mouse.x, mouse.y))
+                            }
+                            else if (deferred) view.rows.select(row.index, 0)
+                            deferred = false
+                        }
+                        onDoubleClicked: (mouse) => { if (mouse.button === Qt.LeftButton) view.activate(row.index) }
                     }
                 }
             }
+        }
+    }
+
+    // What is being dragged: the chosen tracks, under the pointer.
+    Rectangle {
+        id: dragProxy
+        objectName: "spotifyDragProxy"
+        property int tracks: 0
+        property bool active: false
+        function start(n) {
+            tracks = n
+            parent = view.Window.contentItem
+            active = n > 0
+        }
+        visible: active
+        z: 1000
+        width: dragText.implicitWidth + 20
+        height: 26
+        radius: Math.min(4, theme.radius)
+        color: theme.c.dark_background
+        border.width: 1
+        border.color: theme.accent
+        Text {
+            id: dragText
+            anchors.centerIn: parent
+            text: qsTr("%n Spotify tracks", "", dragProxy.tracks)
+            font.pixelSize: 12
+            color: theme.c.bright_foreground
         }
     }
 
@@ -535,23 +662,32 @@ FocusScope {
 
     Menu {
         id: rowMenu
-        MenuItem { text: view.currentIsTrack ? qsTr("Play from here") : qsTr("Play all"); onTriggered: spotify.playRow(list.currentIndex) }
-        MenuItem { text: qsTr("Play next"); onTriggered: spotify.playNextRow(list.currentIndex) }
-        MenuItem { text: qsTr("Add to Now Playing"); onTriggered: spotify.enqueueRow(list.currentIndex) }
-        MenuItem { text: qsTr("Open"); visible: !view.currentIsTrack; height: visible ? implicitHeight : 0
-                   onTriggered: spotify.openRow(list.currentIndex) }
-        MenuItem { text: qsTr("Add to playlist…"); enabled: addButton.enabled
-                   onTriggered: playlistMenu.popup() }
-    }
-    Menu {
-        id: playlistMenu
-        Repeater {
-            model: spotify.ownPlaylists
-            MenuItem {
-                required property var modelData
-                text: modelData.name
-                onTriggered: spotify.addRowToPlaylist(list.currentIndex, modelData.id)
-            }
+        objectName: "spotifyRowMenu"
+        Material.roundedScale: theme.radius
+        MenuItem { text: view.several ? qsTr("Play") : view.currentIsTrack ? qsTr("Play from here") : qsTr("Play all")
+                   onTriggered: spotify.playChosen(view.rows, "play") }
+        MenuItem { text: qsTr("Play next"); onTriggered: spotify.playChosen(view.rows, "next") }
+        MenuItem { text: qsTr("Add to Now Playing"); onTriggered: spotify.playChosen(view.rows, "append") }
+        MenuItem { text: qsTr("Open"); visible: !view.several && !view.currentIsTrack; height: visible ? implicitHeight : 0
+                   onTriggered: spotify.openRow(view.currentRow) }
+        SpotifyAddMenu {
+            id: rowAddMenu
+            objectName: "spotifyRowAddMenu"
+            rows: view.rows
+            source: "view"
+            enabled: addButton.enabled
+            onAction: (id) => view.action(id)
         }
+        MenuSeparator { }
+        MenuItem { objectName: "spotifyCopyLinks"
+                   text: view.several ? qsTr("Copy Spotify links") : qsTr("Copy Spotify link")
+                   onTriggered: spotify.copyChosenLinks(view.rows) }
+    }
+    SpotifyAddMenu {
+        id: addMenu
+        objectName: "spotifyAddMenu"
+        rows: view.rows
+        source: "view"
+        onAction: (id) => view.action(id)
     }
 }

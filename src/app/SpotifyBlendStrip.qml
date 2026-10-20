@@ -6,14 +6,19 @@ import QtQuick.Layouts
 // Spotify's answers to the library search, under the track list: a row of
 // tiles for tracks, albums, artists and playlists. Double-click a track to
 // play it next, or anything else to open it in the Spotify view; the
-// buttons do the same for the chosen tile.
+// buttons do the same for the chosen tile. Tiles are chosen as rows are in
+// the track lists: Shift+click for a range, Ctrl+click for one more.
 Rectangle {
     id: strip
     objectName: "spotifyBlendStrip"
     color: theme.c.dark_background
+    // A command run by the window (spotify-new-omamp-playlist:blend…).
+    signal action(string id)
     readonly property string query: library.tracks.filter
-    readonly property var current: tiles.currentIndex >= 0 && tiles.currentIndex < spotify.blendResults.count
-                                   ? spotify.blendResults.get(tiles.currentIndex) : null
+    readonly property var rows: spotify.blendResults
+    readonly property bool several: rows.selectedCount > 1
+    readonly property var current: { void rows.count; return rows.currentRow >= 0 && rows.currentRow < rows.count
+                                   ? rows.get(rows.currentRow) : null }
     onQueryChanged: spotify.blendQuery(query)
     Component.onCompleted: spotify.blendQuery(query)
 
@@ -41,13 +46,20 @@ Rectangle {
                 font.bold: true
                 color: spotify.blendError !== "" ? theme.c.yellow : theme.c.bright_foreground
             }
+            Text {
+                objectName: "blendSelectedCount"
+                visible: strip.several
+                text: qsTr("%Ln selected", "", strip.rows.selectedCount)
+                font.pixelSize: 12
+                color: theme.c.light_foreground
+            }
             Button {
-                text: strip.current && strip.current.kind === "track" ? qsTr("Play next") : qsTr("Open")
+                text: strip.several || (strip.current && strip.current.kind === "track") ? qsTr("Play next") : qsTr("Open")
                 enabled: strip.current !== null
                 flat: true
                 font.pixelSize: 12
                 implicitHeight: 32; topInset: 0; bottomInset: 0
-                onClicked: spotify.openBlendRow(tiles.currentIndex)
+                onClicked: strip.several ? spotify.playChosen(strip.rows, "next") : spotify.openBlendRow(strip.rows.currentRow)
             }
             Button {
                 text: qsTr("Add to Now Playing")
@@ -55,7 +67,18 @@ Rectangle {
                 flat: true
                 font.pixelSize: 12
                 implicitHeight: 32; topInset: 0; bottomInset: 0
-                onClicked: spotify.enqueueBlendRow(tiles.currentIndex)
+                onClicked: spotify.playChosen(strip.rows, "append")
+            }
+            Button {
+                id: blendAdd
+                objectName: "blendAddToPlaylist"
+                text: qsTr("Add to playlist ▾")
+                enabled: strip.current !== null && (strip.several ? strip.rows.chosenTrackCount > 0
+                         : strip.current.kind === "track" || strip.current.kind === "album")
+                flat: true
+                font.pixelSize: 12
+                implicitHeight: 32; topInset: 0; bottomInset: 0
+                onClicked: blendMenu.popup(blendAdd, 0, blendAdd.height)
             }
         }
 
@@ -68,7 +91,28 @@ Rectangle {
             spacing: 10
             clip: true
             model: spotify.blendResults
-            currentIndex: count > 0 ? 0 : -1
+            currentIndex: strip.rows.currentRow
+            keyNavigationEnabled: false
+            highlightMoveDuration: 0
+            Keys.onPressed: (event) => {
+                const t = strip.rows
+                const mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)
+                switch (event.key) {
+                case Qt.Key_Left: t.moveCurrent(-1, mods); break
+                case Qt.Key_Right: t.moveCurrent(1, mods); break
+                case Qt.Key_A:
+                    if (!(event.modifiers & Qt.ControlModifier)) return
+                    t.selectAll()
+                    break
+                case Qt.Key_Escape:
+                    if (t.selectedCount === 0) return
+                    t.clearSelection()
+                    break
+                default: return
+                }
+                tiles.positionViewAtIndex(t.currentRow, ListView.Contain)
+                event.accepted = true
+            }
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.horizontal: ScrollBar {}
             delegate: Rectangle {
@@ -78,10 +122,13 @@ Rectangle {
                 required property string name
                 required property string detail
                 required property string art
+                required property bool rowSelected
                 width: 128
                 height: ListView.view.height - 8
                 radius: Math.min(6, theme.radius)
-                color: ListView.isCurrentItem ? theme.listSelection : tileHover.hovered ? Qt.alpha(theme.listSelection, 0.4) : "transparent"
+                color: rowSelected ? theme.listSelection : tileHover.hovered ? Qt.alpha(theme.listSelection, 0.3) : "transparent"
+                border.width: ListView.isCurrentItem && tiles.activeFocus ? 1 : 0
+                border.color: theme.accent
                 Component.onCompleted: spotify.blendResults.wantArt(index)
                 HoverHandler { id: tileHover }
                 ColumnLayout {
@@ -130,10 +177,43 @@ Rectangle {
                 }
                 MouseArea {
                     anchors.fill: parent
-                    onClicked: tiles.currentIndex = tile.index
-                    onDoubleClicked: spotify.openBlendRow(tile.index)
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onPressed: (mouse) => {
+                        tiles.forceActiveFocus()
+                        if (mouse.button === Qt.RightButton) {
+                            if (!strip.rows.isSelected(tile.index)) strip.rows.select(tile.index, 0)
+                            const p = mapToItem(strip, mouse.x, mouse.y)
+                            tileMenu.popup(strip, p.x, p.y)
+                            return
+                        }
+                        strip.rows.select(tile.index, mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier))
+                    }
+                    onDoubleClicked: (mouse) => { if (mouse.button === Qt.LeftButton) spotify.openBlendRow(tile.index) }
                 }
             }
         }
+    }
+
+    Menu {
+        id: tileMenu
+        Material.roundedScale: theme.radius
+        MenuItem { text: qsTr("Play next"); onTriggered: spotify.playChosen(strip.rows, "next") }
+        MenuItem { text: qsTr("Add to Now Playing"); onTriggered: spotify.playChosen(strip.rows, "append") }
+        SpotifyAddMenu {
+            rows: strip.rows
+            source: "blend"
+            enabled: blendAdd.enabled
+            onAction: (id) => strip.action(id)
+        }
+        MenuSeparator { }
+        MenuItem { text: strip.several ? qsTr("Copy Spotify links") : qsTr("Copy Spotify link")
+                   onTriggered: spotify.copyChosenLinks(strip.rows) }
+    }
+    SpotifyAddMenu {
+        id: blendMenu
+        objectName: "blendAddMenu"
+        rows: strip.rows
+        source: "blend"
+        onAction: (id) => strip.action(id)
     }
 }

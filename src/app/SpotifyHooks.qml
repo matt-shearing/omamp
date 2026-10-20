@@ -10,6 +10,8 @@ Item {
     required property var window
     required property var settings
     required property var toast
+    // Asks for a new playlist's name.
+    required property var nameSheet
     // Settings → Spotify's tab.
     property int settingsPage: 5
 
@@ -35,6 +37,25 @@ Item {
         case "spotify-search": searchSpotify(""); return true
         case "spotify-like":
             if (spotify.nowPlaying.active) spotify.setPlayingLiked(spotify.nowPlaying.liked !== true)
+            return true
+        }
+        // A new playlist for the chosen rows of the Spotify view (:view) or
+        // the search strip (:blend).
+        if (id.startsWith("spotify-new-omamp-playlist:") || id.startsWith("spotify-new-spotify-playlist:")) {
+            const rows = id.endsWith(":blend") ? spotify.blendResults : spotify.items
+            if (id.startsWith("spotify-new-omamp-playlist:")) {
+                if (!window.guard("edit-playlists")) return true
+                nameSheet.ask(qsTr("New Omamp playlist"), qsTr("Name"), qsTr("New playlist"), qsTr("Create"), (name) => {
+                    const made = library.playlists.createPlaylist(name, 0)
+                    if (made > 0) spotify.addChosenToOmampPlaylist(rows, made)
+                    return made > 0
+                })
+            } else {
+                nameSheet.ask(qsTr("New Spotify playlist"), qsTr("Name"), qsTr("New playlist"), qsTr("Create"), (name) => {
+                    spotify.addChosenToNewSpotifyPlaylist(rows, name)
+                    return true
+                })
+            }
             return true
         }
         if (id.startsWith("spotify-section:")) {

@@ -12,7 +12,8 @@ QHash<int, QByteArray> PlaylistItemsModel::roleNames() const {
     return {{ItemIdRole, "itemId"},     {TrackIdRole, "trackId"},           {NumberRole, "number"},
             {TitleRole, "title"},       {ArtistRole, "artist"},             {AlbumRole, "album"},
             {DurationRole, "duration"}, {AvailabilityRole, "availability"}, {DuplicateRole, "duplicate"},
-            {SelectedRole, "rowSelected"}, {CurrentRole, "rowCurrent"},     {PathRole, "path"}};
+            {SelectedRole, "rowSelected"}, {CurrentRole, "rowCurrent"},     {PathRole, "path"},
+            {SpotifyRole, "fromSpotify"}};
 }
 
 QVariant PlaylistItemsModel::data(const QModelIndex &index, int role) const {
@@ -34,7 +35,9 @@ QVariant PlaylistItemsModel::data(const QModelIndex &index, int role) const {
     case AlbumRole: return it.album;
     case DurationRole: return it.durationMs;
     case AvailabilityRole: return it.availability;
-    case DuplicateRole: return it.trackId > 0 && m_trackUses.value(it.trackId) > 1;
+    case DuplicateRole:
+        return it.trackId > 0 ? m_trackUses.value(it.trackId) > 1 : it.isSpotify() && m_spotifyUses.value(it.path) > 1;
+    case SpotifyRole: return it.isSpotify();
     case SelectedRole: return m_selected.contains(index.row());
     case CurrentRole: return index.row() == m_current;
     case PathRole: return it.path;
@@ -77,20 +80,28 @@ void PlaylistItemsModel::load() {
     beginResetModel();
     m_items.clear();
     m_trackUses.clear();
+    m_spotifyUses.clear();
     m_totalMs = 0;
-    m_unmatched = m_duplicates = 0;
+    m_unmatched = m_duplicates = m_spotify = 0;
     m_error.clear();
     m_playlist = Playlists::Playlist();
     if (m_library && m_id > 0 && Playlists::get(*m_library, m_id, &m_playlist) && m_playlist.kind != "folder")
         m_items = Playlists::items(*m_library, m_id, &m_error);
     for (const Playlists::Item &it : std::as_const(m_items)) {
         m_totalMs += qMax<qint64>(0, it.durationMs);
-        if (it.trackId > 0)
+        if (it.trackId > 0) {
             ++m_trackUses[it.trackId];
-        else
+        } else if (it.isSpotify()) {
+            ++m_spotify;
+            ++m_spotifyUses[it.path];
+        } else {
             ++m_unmatched;
+        }
     }
     for (auto it = m_trackUses.cbegin(); it != m_trackUses.cend(); ++it)
+        if (it.value() > 1)
+            m_duplicates += it.value() - 1;
+    for (auto it = m_spotifyUses.cbegin(); it != m_spotifyUses.cend(); ++it)
         if (it.value() > 1)
             m_duplicates += it.value() - 1;
     endResetModel();

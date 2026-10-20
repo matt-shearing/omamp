@@ -75,6 +75,14 @@ FocusScope {
         return row >= 0 && library.tree.kind(row) === "playlist" && !pane.locked ? row : -1
     }
     function dragOver(scenePos) { dropRow = playlistRowAt(scenePos) }
+    // The chosen tracks of a Spotify list (a SpotifyItemsModel) dropped on
+    // a playlist: they go in as Spotify entries of a mixed playlist.
+    function dropSpotifyAt(scenePos, rows) {
+        const row = playlistRowAt(scenePos)
+        dropRow = -1
+        if (row < 0) return false
+        return spotify.addChosenToOmampPlaylist(rows, library.tree.value(row))
+    }
     // Returns true when the tracks went into a playlist.
     function dropAt(scenePos, ids) {
         const row = playlistRowAt(scenePos)

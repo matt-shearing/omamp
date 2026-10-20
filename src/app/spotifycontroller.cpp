@@ -1,7 +1,9 @@
 #include "spotifycontroller.h"
 
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
+#include <QGuiApplication>
 #include <QFileInfo>
 #include <QImage>
 #include <QJsonDocument>
@@ -11,6 +13,7 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QUrlQuery>
+#include <algorithm>
 
 #include "palette.h"
 #include "player.h"
@@ -232,7 +235,8 @@ SpotifyItemsModel::SpotifyItemsModel(SpotifyArt *art, QObject *parent) : QAbstra
 QHash<int, QByteArray> SpotifyItemsModel::roleNames() const {
     return {{KindRole, "kind"},       {ItemIdRole, "itemId"}, {UriRole, "uri"},         {NameRole, "name"},
             {ArtistsRole, "artists"}, {AlbumRole, "album"},   {DurationRole, "duration"}, {YearRole, "year"},
-            {OwnerRole, "owner"},     {SectionRole, "section"}, {ArtRole, "art"},        {DetailRole, "detail"}};
+            {OwnerRole, "owner"},     {SectionRole, "section"}, {ArtRole, "art"},        {DetailRole, "detail"},
+            {SelectedRole, "rowSelected"}, {CurrentRole, "rowCurrent"}};
 }
 
 QVariant SpotifyItemsModel::data(const QModelIndex &index, int role) const {
@@ -253,19 +257,129 @@ QVariant SpotifyItemsModel::data(const QModelIndex &index, int role) const {
     case SectionRole: return m_sections.value(index.row());
     case ArtRole: return m_art ? fileUrl(m_art->cachedFile(i)) : QString();
     case DetailRole: return detailOf(i);
+    case SelectedRole: return m_selected.contains(index.row());
+    case CurrentRole: return index.row() == m_current;
     }
     return {};
 }
 
 void SpotifyItemsModel::setItems(const QList<Spotify::Item> &items, const QStringList &sections) {
+    // A fresh copy of the same list (a refresh) keeps what was chosen.
+    bool same = items.size() == m_items.size();
+    for (int i = 0; same && i < items.size(); ++i)
+        same = items.at(i).kind == m_items.at(i).kind && items.at(i).id == m_items.at(i).id;
     beginResetModel();
     const bool changed = items.size() != m_items.size();
     m_items = items;
     m_sections = sections;
+    if (!same) {
+        m_selected.clear();
+        m_current = m_anchor = items.isEmpty() ? -1 : 0;
+    }
     endResetModel();
     if (changed)
         emit countChanged();
+    if (!same) {
+        emit currentRowChanged();
+        emit selectionChanged();
+    }
 }
+
+void SpotifyItemsModel::selectionDataChanged() {
+    if (!m_items.isEmpty())
+        emit dataChanged(index(0), index(m_items.size() - 1), {SelectedRole, CurrentRole});
+    emit selectionChanged();
+}
+
+void SpotifyItemsModel::setCurrentRow(int row) {
+    if (row == m_current || row < -1 || row >= m_items.size())
+        return;
+    const int old = m_current;
+    m_current = row;
+    if (old >= 0 && old < m_items.size())
+        emit dataChanged(index(old), index(old), {CurrentRole});
+    if (row >= 0)
+        emit dataChanged(index(row), index(row), {CurrentRole});
+    emit currentRowChanged();
+}
+
+// The same rules as TrackListModel::select, so the Spotify lists and the
+// library's track list behave alike.
+void SpotifyItemsModel::select(int row, int modifiers) {
+    if (row < 0 || row >= m_items.size())
+        return;
+    const bool shift = modifiers & Qt::ShiftModifier;
+    const bool ctrl = modifiers & Qt::ControlModifier;
+    if (shift && m_anchor >= 0 && m_anchor < m_items.size()) {
+        if (!ctrl)
+            m_selected.clear();
+        for (int i = qMin(m_anchor, row); i <= qMax(m_anchor, row); ++i)
+            m_selected.insert(i);
+    } else if (ctrl) {
+        if (!m_selected.remove(row))
+            m_selected.insert(row);
+        m_anchor = row;
+    } else {
+        m_selected.clear();
+        m_selected.insert(row);
+        m_anchor = row;
+    }
+    setCurrentRow(row);
+    selectionDataChanged();
+}
+
+void SpotifyItemsModel::moveCurrent(int delta, int modifiers) {
+    if (m_items.isEmpty())
+        return;
+    const int row = qBound(0, (m_current < 0 ? (delta > 0 ? -1 : int(m_items.size())) : m_current) + delta,
+                           int(m_items.size()) - 1);
+    // Ctrl moves the cursor without changing the selection, as in the library.
+    if ((modifiers & Qt::ControlModifier) && !(modifiers & Qt::ShiftModifier))
+        setCurrentRow(row);
+    else
+        select(row, modifiers & Qt::ShiftModifier);
+}
+
+void SpotifyItemsModel::selectAll() {
+    m_selected.clear();
+    for (int i = 0; i < m_items.size(); ++i)
+        m_selected.insert(i);
+    if (m_current < 0 && !m_items.isEmpty())
+        setCurrentRow(0);
+    selectionDataChanged();
+}
+
+void SpotifyItemsModel::clearSelection() {
+    if (m_selected.isEmpty())
+        return;
+    m_selected.clear();
+    selectionDataChanged();
+}
+
+QList<int> SpotifyItemsModel::chosenRows() const {
+    QList<int> rows(m_selected.cbegin(), m_selected.cend());
+    std::sort(rows.begin(), rows.end());
+    if (rows.isEmpty() && m_current >= 0 && m_current < m_items.size())
+        rows << m_current;
+    return rows;
+}
+
+QList<Spotify::Item> SpotifyItemsModel::chosenItems() const {
+    QList<Spotify::Item> out;
+    for (int r : chosenRows())
+        out << m_items.at(r);
+    return out;
+}
+
+QList<Spotify::Item> SpotifyItemsModel::chosenTracks() const {
+    QList<Spotify::Item> out;
+    for (const Spotify::Item &i : chosenItems())
+        if (i.kind == "track")
+            out << i;
+    return out;
+}
+
+int SpotifyItemsModel::chosenTrackCount() const { return chosenTracks().size(); }
 
 QVariantMap SpotifyItemsModel::get(int row) const {
     QVariantMap m = m_items.value(row).toMap();
@@ -777,6 +891,8 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
             emit playingArtChanged();
     });
 
+    connect(this, &SpotifyController::settingsChanged, this, &SpotifyController::availabilityChanged);
+    connect(this, &SpotifyController::statusChanged, this, &SpotifyController::availabilityChanged);
     connect(&m_mpris, &Spotify::MprisWatch::changed, this, &SpotifyController::noteMpris);
     connect(&m_mpris, &Spotify::MprisWatch::availableChanged, this, &SpotifyController::statusChanged);
 
@@ -1163,6 +1279,7 @@ void SpotifyController::refreshStatus() {
             if (generation != m_statusGeneration)
                 return;
             Status s;
+            s.known = true;
             s.installed = r.extra.value("installed").toBool();
             s.signedIn = r.extra.value("signedIn").toBool();
             s.running = r.extra.value("running").toBool();
@@ -1986,6 +2103,199 @@ void SpotifyController::addToPlaylist(const Spotify::Item &item, const QString &
 }
 
 void SpotifyController::addRowToPlaylist(int row, const QString &playlistId) { addToPlaylist(m_items.at(row), playlistId); }
+
+QString SpotifyController::unavailableReason() const {
+    if (!m_settings.enabled)
+        return tr("Spotify is off — turn it on in Settings → Spotify");
+    // Until the status is read, Spotify counts as there.
+    if (!m_status.known)
+        return {};
+    if (!m_status.installed)
+        return tr("%1 isn't installed — see Settings → Spotify").arg(m_backend->name());
+    if (!m_status.signedIn)
+        return m_backend->id() == "spotifast" ? tr("Spotifast isn't open — open it to play Spotify tracks")
+                                              : tr("Spotify isn't signed in — sign in in Settings → Spotify");
+    return {};
+}
+
+QVariantMap SpotifyController::entryFor(const Spotify::Item &t) {
+    return {{"path", t.queuePath()},
+            {"title", t.name},
+            {"artist", t.artistText()},
+            {"album", t.album},
+            {"art", !t.albumId.isEmpty() ? t.albumId : t.imageUrl},
+            {"durationMs", t.durationMs}};
+}
+
+void SpotifyController::playChosen(SpotifyItemsModel *model, const QString &how) {
+    if (!model || !m_settings.enabled)
+        return;
+    const Mode mode = how == "next" ? Next : how == "append" ? Append : Play;
+    const QList<int> rows = model->chosenRows();
+    if (rows.size() == 1) {
+        playFrom(model, rows.first(), mode);
+        return;
+    }
+    const QList<Spotify::Item> tracks = model->chosenTracks();
+    if (tracks.isEmpty()) {
+        setMessage(tr("Choose tracks to play several at once"));
+        return;
+    }
+    queue(tracks, 0, mode);
+}
+
+void SpotifyController::addChosenToSpotifyPlaylist(SpotifyItemsModel *model, const QString &playlistId) {
+    if (!model || playlistId.isEmpty())
+        return;
+    const QList<int> rows = model->chosenRows();
+    const QList<Spotify::Item> items = rows.size() == 1 ? model->chosenItems() : model->chosenTracks();
+    if (items.size() == 1) {
+        addToPlaylist(items.first(), playlistId);
+        return;
+    }
+    QString name = playlistId;
+    for (const Spotify::Item &p : m_playlists)
+        if (p.id == playlistId)
+            name = p.name;
+    // One command per track, in order, on the data lane; one message at the end.
+    request(
+        Spotify::Requests::Data, {},
+        [items, playlistId](Spotify::Backend &b, Spotify::Result &r) {
+            int added = 0;
+            for (const Spotify::Item &i : items) {
+                QString error;
+                if (b.addToPlaylist(playlistId, i, &error))
+                    ++added;
+                else if (r.error.isEmpty())
+                    r.error = error;
+            }
+            r.extra = {{"added", added}};
+        },
+        [this, name, playlistId, items](const Spotify::Result &r) {
+            if (r.cancelled)
+                return;
+            const int added = r.extra.value("added").toInt();
+            if (added > 0)
+                m_cache.remove("tracks:playlist:" + playlistId);
+            setMessage(added == items.size() ? tr("Added %n tracks to %1", "", added).arg(name)
+                                             : tr("Added %1 of %2 tracks to %3: %4")
+                                                   .arg(added)
+                                                   .arg(items.size())
+                                                   .arg(name, r.error));
+        });
+}
+
+void SpotifyController::addChosenToNewSpotifyPlaylist(SpotifyItemsModel *model, const QString &given) {
+    const QString name = given.trimmed();
+    if (!model || name.isEmpty() || !canCreatePlaylists())
+        return;
+    const QList<int> rows = model->chosenRows();
+    const QList<Spotify::Item> items = rows.size() == 1 ? model->chosenItems() : model->chosenTracks();
+    request(
+        Spotify::Requests::Data, {},
+        [name, items](Spotify::Backend &b, Spotify::Result &r) {
+            // spotify_player's `playlist new` doesn't say the new id for
+            // certain, so the list of playlists is read again and the
+            // newest one with that name is it.
+            QList<Spotify::Item> before = b.library("playlists", nullptr);
+            QSet<QString> old;
+            for (const Spotify::Item &p : before)
+                old.insert(p.id);
+            if (!b.createPlaylist(name, &r.error))
+                return;
+            QString id;
+            for (const Spotify::Item &p : b.library("playlists", &r.error))
+                if (p.name == name && !old.contains(p.id)) {
+                    id = p.id;
+                    break;
+                }
+            if (id.isEmpty()) {
+                if (r.error.isEmpty())
+                    r.error = QObject::tr("Spotify made the playlist but didn't list it yet; add the tracks in a minute");
+                return;
+            }
+            r.error.clear();
+            int added = 0;
+            for (const Spotify::Item &i : items)
+                if (b.addToPlaylist(id, i, nullptr))
+                    ++added;
+            r.extra = {{"id", id}, {"added", added}};
+        },
+        [this, name](const Spotify::Result &r) {
+            if (r.cancelled)
+                return;
+            if (!r.ok()) {
+                setMessage(r.error);
+                return;
+            }
+            // Your playlists, read again, so the new one is in the menus
+            // (and in the list, when it is on show).
+            if (m_view.section == "playlists") {
+                load(m_view, true);
+            } else {
+                View v;
+                v.section = "playlists";
+                fetchList(v, true, [](const Spotify::Result &) {});
+            }
+            setMessage(tr("Made the Spotify playlist %1 with %n tracks", "", r.extra.value("added").toInt()).arg(name));
+        });
+}
+
+bool SpotifyController::addChosenToOmampPlaylist(SpotifyItemsModel *model, qint64 playlistId) {
+    if (!model || playlistId <= 0)
+        return false;
+    const QList<int> rows = model->chosenRows();
+    if (rows.size() == 1 && model->at(rows.first()).kind != "track") {
+        // One album or playlist: its tracks, read first.
+        const Spotify::Item item = model->at(rows.first());
+        if (item.kind == "artist" || isRestricted(item)) {
+            setMessage(tr("Open it and choose its tracks to put them in an Omamp playlist"));
+            return false;
+        }
+        View v;
+        v.section = "tracks";
+        v.container = item;
+        fetchList(v, false, [this, playlistId](const Spotify::Result &r) {
+            if (r.cancelled)
+                return;
+            if (!r.ok()) {
+                setMessage(r.error);
+                return;
+            }
+            rememberTracks(r.items);
+            QVariantList entries;
+            for (const Spotify::Item &t : r.items)
+                if (t.kind == "track")
+                    entries << entryFor(t);
+            emit omampEntriesReady(playlistId, entries);
+        });
+        return true;
+    }
+    const QList<Spotify::Item> tracks = model->chosenTracks();
+    if (tracks.isEmpty())
+        return false;
+    rememberTracks(tracks);
+    QVariantList entries;
+    for (const Spotify::Item &t : tracks)
+        entries << entryFor(t);
+    emit omampEntriesReady(playlistId, entries);
+    return true;
+}
+
+QString SpotifyController::copyChosenLinks(SpotifyItemsModel *model) {
+    if (!model)
+        return {};
+    QStringList links;
+    for (const Spotify::Item &i : model->chosenItems())
+        links << i.webUrl();
+    const QString text = links.join('\n');
+    if (text.isEmpty())
+        return {};
+    if (auto *app = qobject_cast<QGuiApplication *>(QCoreApplication::instance()))
+        app->clipboard()->setText(text);
+    setMessage(tr("Copied %n Spotify links", "", links.size()));
+    return text;
+}
 void SpotifyController::addBlendRowToPlaylist(int row, const QString &playlistId) {
     addToPlaylist(m_blend.at(row), playlistId);
 }

@@ -15,7 +15,12 @@
         <file alias="AdvancedView.qml">AdvancedView.qml</file>
         <file alias="AlbumGrid.qml">AlbumGrid.qml</file>
         <file alias="BrowserPanes.qml">BrowserPanes.qml</file>
-        <file alias="InfoPanel.qml">InfoPanel.qml</file>
+        <file alias="SidePanel.qml">SidePanel.qml</file>
+        <file alias="SideSection.qml">SideSection.qml</file>
+        <file alias="SectionOrder.qml">SectionOrder.qml</file>
+        <file alias="BigBar.qml">BigBar.qml</file>
+        <file alias="ArtThumb.qml">ArtThumb.qml</file>
+        <file alias="LayoutSettings.qml">LayoutSettings.qml</file>
         <file alias="Analyser.qml">Analyser.qml</file>
         <file alias="CommandPalette.qml">CommandPalette.qml</file>
         <file alias="DeckStrip.qml">DeckStrip.qml</file>

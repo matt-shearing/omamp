@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <QVariantMap>
 
+#include "layoutprefs.h"
+
 class Theme;
 
 // How the player's chrome looks: the deck style, the visualiser, whether
@@ -30,6 +32,9 @@ class Appearance : public QObject {
     Q_PROPERTY(QVariantMap plain READ plain NOTIFY paletteChanged)
     Q_PROPERTY(QStringList deckStyles READ deckStyles CONSTANT)
     Q_PROPERTY(QStringList visualisers READ visualisers CONSTANT)
+    // The library window's layout (layoutprefs.h): the Art column, the
+    // sidebar's sections and the now playing bar.
+    Q_PROPERTY(LayoutPrefs *layout READ layout CONSTANT)
 
 public:
     // settingsPath: the window.conf file; empty keeps everything in memory
@@ -46,6 +51,8 @@ public:
     void setBigBackground(const QString &kind);
     bool bigLyrics() const { return m_bigLyrics; }
     void setBigLyrics(bool on);
+
+    LayoutPrefs *layout() const { return m_layout; }
 
     QVariantMap deck() const { return m_deck; }
     QVariantMap plain() const { return m_plain; }
@@ -81,4 +88,5 @@ private:
     QString m_bigBackground = "blur";
     bool m_bigLyrics = true;
     QVariantMap m_deck, m_plain;
+    LayoutPrefs *m_layout = nullptr;
 };

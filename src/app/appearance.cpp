@@ -1,5 +1,6 @@
 #include "appearance.h"
 
+#include "layoutprefs.h"
 #include "theme.h"
 
 #include <QColor>
@@ -23,7 +24,7 @@ QString alpha(const QString &colour, double a) {
 } // namespace
 
 Appearance::Appearance(const QString &settingsPath, Theme *theme, QObject *parent)
-    : QObject(parent), m_path(settingsPath), m_theme(theme) {
+    : QObject(parent), m_path(settingsPath), m_theme(theme), m_layout(new LayoutPrefs(settingsPath, this)) {
     if (!m_path.isEmpty()) {
         QSettings s(m_path, QSettings::IniFormat);
         s.beginGroup("appearance");

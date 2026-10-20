@@ -28,7 +28,7 @@ same list, and look in the menu bar: every entry shows its key beside it.
 | `Shift+R` | Radio: the channel picker |
 | `[` `]` | Previous or next radio channel, while a station plays |
 | `/` or `Ctrl+F` | Search the library (opens it from the deck) |
-| `Ctrl+B` `G` `I` | The column browser, the album grid, the info panel (opens the library from the deck) |
+| `Ctrl+B` `G` `I` | The column browser, the album grid, the sidebar (opens the library from the deck) |
 | `Ctrl+K` | The command palette: any command, artist, album or track by name |
 | `Ctrl+J` | Auto-DJ on or off |
 | `Ctrl+,` | Settings |
@@ -71,7 +71,7 @@ instead of the playlist, and these keys work too.
 | `F5` | Rescan the library |
 | `Ctrl+B` | Show or hide the column browser (`B` stays Winamp's next track) |
 | `G` | Album covers instead of the track list, and back |
-| `I` | Show or hide the info panel |
+| `I` | Show or hide the sidebar |
 | `Ctrl+E` | Edit the tags of the selected tracks (in the grid, the chosen album's) |
 | `F2` | Edit the title of the track under the cursor; `Enter` saves, `Esc` leaves it |
 | `Ctrl+Shift+O` | Organise files: rename and move the selected tracks by a mask |

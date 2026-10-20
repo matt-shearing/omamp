@@ -30,9 +30,10 @@ class QNetworkAccessManager;
 // own); the rate limits and the cache are shared.
 namespace Net {
 
-enum class Service { MusicBrainz, AcoustId, CoverArt, Lrclib, ListenBrainz, LastFm, Other };
+enum class Service { MusicBrainz, AcoustId, CoverArt, Lrclib, ListenBrainz, LastFm, Wikidata, Wikipedia, Other };
 
-// "musicbrainz", "acoustid", "coverart", "lrclib", "listenbrainz", "lastfm".
+// "musicbrainz", "acoustid", "coverart", "lrclib", "listenbrainz", "lastfm",
+// "wikidata", "wikipedia".
 QString serviceName(Service service);
 
 // "Omamp/0.3.0 ( https://github.com/matt-shearing/omamp )", as MusicBrainz
@@ -42,8 +43,10 @@ QString version();
 
 // Where a service lives. The environment (OMAMP_MUSICBRAINZ_URL,
 // OMAMP_ACOUSTID_URL, OMAMP_COVERART_URL, OMAMP_LRCLIB_URL,
-// OMAMP_LISTENBRAINZ_URL, OMAMP_LASTFM_URL) wins, then the library setting
-// net.url.<service>, then the public address. No trailing slash.
+// OMAMP_LISTENBRAINZ_URL, OMAMP_LASTFM_URL, OMAMP_WIKIDATA_URL,
+// OMAMP_WIKIPEDIA_URL) wins, then the library setting net.url.<service>,
+// then the public address. No trailing slash. Wikipedia's address holds
+// "{lang}", which the caller replaces with the language's code.
 QString baseUrl(Service service, const Library *library = nullptr);
 QString defaultBaseUrl(Service service);
 

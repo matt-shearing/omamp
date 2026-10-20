@@ -292,6 +292,20 @@ ArtworkCache::Picture ArtworkCache::readSource(const QString &source) {
 // gives the path at the size asked for. The image is decoded once, scaled
 // down already by the decoder where the format allows (JPEG does), and
 // resized on the CPU.
+QByteArray ArtworkCache::pictureFormat(const QByteArray &b) {
+    if (b.startsWith("\xFF\xD8\xFF"))
+        return "jpeg";
+    if (b.startsWith("\x89PNG\r\n\x1A\n"))
+        return "png";
+    if (b.size() >= 12 && b.startsWith("RIFF") && b.mid(8, 4) == "WEBP")
+        return "webp";
+    if (b.startsWith("GIF87a") || b.startsWith("GIF89a"))
+        return "gif";
+    if (b.startsWith("BM"))
+        return "bmp";
+    return {};
+}
+
 qint64 ArtworkCache::store(const Picture &picture, int size, QString *path) {
     const QString hash =
         QString::fromLatin1(QCryptographicHash::hash(picture.bytes, QCryptographicHash::Sha1).toHex().left(32));
@@ -307,10 +321,16 @@ qint64 ArtworkCache::store(const Picture &picture, int size, QString *path) {
             m_error = QString("Can't create %1").arg(m_dir);
             return 0;
         }
+        const QByteArray kind = pictureFormat(picture.bytes);
+        if (kind.isEmpty()) {
+            m_error = QString("Not a picture Omamp reads (JPEG, PNG, WebP, GIF or BMP)");
+            return 0;
+        }
         QBuffer buffer;
         buffer.setData(picture.bytes);
         buffer.open(QIODevice::ReadOnly);
-        QImageReader reader(&buffer);
+        QImageReader reader(&buffer, kind);
+        reader.setDecideFormatFromContent(false);
         reader.setAutoTransform(true);
         const QSize original = reader.size();
         format = QString::fromLatin1(reader.format());

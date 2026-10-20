@@ -63,7 +63,7 @@ ApplicationWindow {
         property string browserArtistMode: "albumartist"
         property int browserHeight: 214
         property bool infoVisible: false
-        property int infoWidth: 290
+        property int infoWidth: 340
         property bool gridVisible: false
         // The menu bar (View → Show the menu bar), and whether the hint
         // that says how to open the library has been seen.
@@ -195,6 +195,21 @@ ApplicationWindow {
 
     // Now playing: the big view, fullscreen, and the mini and micro players.
     NowPlayingModes { id: modes; window: win; prefs: prefs }
+
+    // Layout (Settings > Appearance > Layout): the sidebar's switch, which
+    // the window keeps with its panes, and Reset layout.
+    Binding { target: appearance.layout; property: "sidebarShown"; value: prefs.infoVisible }
+    Connections {
+        target: appearance.layout
+        function onSidebarToggleRequested() { win.toggleInfo() }
+        function onResetRequested() {
+            prefs.infoVisible = false
+            prefs.infoWidth = 340
+            prefs.browserVisible = false
+            prefs.gridVisible = false
+            prefs.treeWidth = 250
+        }
+    }
     onAdvancedChanged: if (advanced) library.activate()
 
     // ---- The command palette (Ctrl+K) ------------------------------------

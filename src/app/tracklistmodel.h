@@ -32,7 +32,9 @@ class TrackListModel : public QAbstractTableModel {
     Q_PROPERTY(QString playingPath READ playingPath WRITE setPlayingPath NOTIFY playingPathChanged)
 
 public:
-    enum Column { Number, Title, Artist, Album, Year, Genre, Length, Rating, Plays, Added, Format, ColumnCount };
+    // Art is last in the model so the other numbers stay as they were; the
+    // view shows it first (TrackTable.qml keeps the order on screen).
+    enum Column { Number, Title, Artist, Album, Year, Genre, Length, Rating, Plays, Added, Format, Art, ColumnCount };
     Q_ENUM(Column)
     enum Roles {
         RatingRole = Qt::UserRole + 1, // 0..100, or -1 when unrated
@@ -44,6 +46,7 @@ public:
         NumericRole,                   // the column holds a number: right-aligned
         RemoteRole,                    // mirrored from a Navidrome / Subsonic server
         OfflineNoteRole,               // why the track can't play ("On nas, which isn't connected"), or ""
+        ArtRole,                       // "image://omamp-art/album/<id>/96?v=<n>", or "" when it has no picture
     };
 
     // One track as the list shows it.
@@ -55,6 +58,8 @@ public:
         int year = 0, trackNo = 0, discNo = 0, bitrate = 0, plays = 0;
         int rating = -1;
         qint64 durationMs = 0, added = 0;
+        qint64 albumId = 0, artworkId = 0;
+        bool artMissing = false; // the album was searched and has no picture
     };
 
     // db is a connection on the calling thread; the model never opens one.
@@ -169,6 +174,7 @@ private:
     void selectionDataChanged();
     void visibleDataChanged(int role);
     QVariant display(const Row &r, int column) const;
+    static QString artUrl(const Row &r);
 
     QSqlDatabase m_db;
     QString m_scopeWhere = "1";

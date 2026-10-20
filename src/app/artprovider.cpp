@@ -2,15 +2,34 @@
 
 #include "artwork.h"
 #include "library.h"
+#include "nowplaying.h"
 #include "remote.h"
 
 #include <QImage>
+#include <QPainter>
+#include <QPainterPath>
+#include <QUrlQuery>
+#include <atomic>
 #include <QSqlQuery>
 #include <QThread>
 #include <map>
 #include <memory>
 
 namespace {
+
+std::atomic_int requests{0};
+std::atomic_int cancelled{0};
+
+// "r=4" from "album/12/96?v=3&r=4", or -1.
+int radiusFrom(const QString &id) {
+    const int q = int(id.indexOf('?'));
+    if (q < 0)
+        return -1;
+    const QUrlQuery query(id.mid(q + 1));
+    bool ok = false;
+    const int r = query.queryItemValue("r").toInt(&ok);
+    return ok ? qMax(0, r) : -1;
+}
 
 // One library connection per pool thread and database, opened on first use
 // and closed when the thread ends (a connection belongs to its thread).
@@ -49,10 +68,25 @@ public:
     // Runs on a pool thread. Posting finished() is the last thing it does:
     // the engine may delete the response as soon as it arrives.
     void run() {
+        // Scrolled past before a thread was free: nothing to make.
+        if (m_cancelled.load()) {
+            ++cancelled;
+            m_error = "Cancelled";
+            QMetaObject::invokeMethod(this, [this] { emit finished(); }, Qt::QueuedConnection);
+            return;
+        }
         QString kind;
         qint64 number = 0;
         int size = 0;
-        if (!ArtImageProvider::parseId(m_id, &kind, &number, &size)) {
+        QString entry;
+        if (ArtImageProvider::parseEntry(m_id, &entry, &size)) {
+            if (size <= 0 && m_requested.isValid())
+                size = qMax(m_requested.width(), m_requested.height());
+            const NowPlaying::Art art = NowPlaying::resolve(entry, 0, m_db, m_dir);
+            const QString path = size > 256 ? art.large : size > 96 ? art.medium : art.small;
+            if (path.isEmpty() || !m_image.load(path))
+                m_error = art.error.isEmpty() ? QString("No picture") : art.error;
+        } else if (!ArtImageProvider::parseId(m_id, &kind, &number, &size)) {
             m_error = QString("Not a picture: %1 (use album/<id>/<size> or track/<id>/<size>)").arg(m_id);
         } else {
             if (size <= 0 && m_requested.isValid())
@@ -80,6 +114,20 @@ public:
                 m_error = "The library could not be opened";
             }
         }
+        const int radius = radiusFrom(m_id);
+        // A list's thumbnail with no picture: a clear square, so the row's
+        // own placeholder shows through and nothing is logged per row.
+        if (radius >= 0 && m_image.isNull() && m_error != QLatin1String("Cancelled")) {
+            const int side = m_requested.isValid() && m_requested.width() > 0 ? m_requested.width() : 8;
+            m_image = QImage(side, side, QImage::Format_ARGB32_Premultiplied);
+            m_image.fill(Qt::transparent);
+            m_error.clear();
+        } else if (radius >= 0 && !m_image.isNull()) {
+            const int side = m_requested.isValid() && m_requested.width() > 0
+                                 ? qMax(m_requested.width(), m_requested.height())
+                                 : qMin(m_image.width(), m_image.height());
+            m_image = ArtImageProvider::rounded(m_image, side, radius);
+        }
         // Delivered on the thread that asked (the one the response lives in),
         // never before the caller has had a chance to connect.
         QMetaObject::invokeMethod(this, [this] { emit finished(); }, Qt::QueuedConnection);
@@ -89,8 +137,12 @@ public:
         return QQuickTextureFactory::textureFactoryForImage(m_image);
     }
     QString errorString() const override { return m_error; }
+    // The view no longer wants it (the row scrolled away): a request still
+    // waiting for a thread is dropped. finished() is still sent.
+    void cancel() override { m_cancelled = true; }
 
 private:
+    std::atomic_bool m_cancelled{false};
     QString m_id;
     QSize m_requested;
     QString m_db, m_dir, m_error;
@@ -128,7 +180,53 @@ bool ArtImageProvider::parseId(const QString &id, QString *kind, qint64 *number,
     return true;
 }
 
+bool ArtImageProvider::parseEntry(const QString &id, QString *path, int *size) {
+    const QStringList parts = id.section('?', 0, 0).split('/', Qt::SkipEmptyParts);
+    if (parts.size() < 2 || parts.size() > 3 || parts[0] != "entry")
+        return false;
+    // Qt.btoa gives standard base64, whose "/" would split the id: accept
+    // the URL-safe alphabet and percent-encoded slashes too.
+    QByteArray encoded = QUrl::fromPercentEncoding(parts[1].toLatin1()).toLatin1();
+    encoded.replace('-', '+').replace('_', '/');
+    *path = QString::fromUtf8(QByteArray::fromBase64(encoded));
+    if (path->isEmpty())
+        return false;
+    *size = 0;
+    if (parts.size() == 3) {
+        bool ok = false;
+        *size = parts[2].toInt(&ok);
+        if (!ok)
+            return false;
+    }
+    return true;
+}
+
+QImage ArtImageProvider::rounded(const QImage &image, int side, int radius) {
+    if (image.isNull() || side <= 0)
+        return image;
+    // The middle square of the picture, scaled once to the side asked for.
+    const int crop = qMin(image.width(), image.height());
+    const QImage square = image.copy((image.width() - crop) / 2, (image.height() - crop) / 2, crop, crop)
+                              .scaled(side, side, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    QImage out(side, side, QImage::Format_ARGB32_Premultiplied);
+    out.fill(Qt::transparent);
+    QPainter p(&out);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    QPainterPath path;
+    const qreal r = qMin<qreal>(radius, side / 2.0);
+    path.addRoundedRect(QRectF(0, 0, side, side), r, r);
+    p.setClipPath(path);
+    p.drawImage(0, 0, square);
+    p.end();
+    return out;
+}
+
+int ArtImageProvider::requestCount() { return requests.load(); }
+int ArtImageProvider::cancelledCount() { return cancelled.load(); }
+
 QQuickImageResponse *ArtImageProvider::requestImageResponse(const QString &id, const QSize &requestedSize) {
+    ++requests;
     auto *response = new ArtResponse(id, requestedSize, m_db, m_dir);
     m_pool.start([response] { response->run(); });
     return response;

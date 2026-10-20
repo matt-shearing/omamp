@@ -229,8 +229,39 @@ MenuBar {
                 markStyle: "check"; marked: bar.window.advanced && bar.prefs.browserVisible }
         Entry { objectName: "menuGrid"; text: qsTr("Album grid"); command: "grid"; keys: "G"
                 markStyle: "check"; marked: bar.window.advanced && bar.prefs.gridVisible }
-        Entry { objectName: "menuInfo"; text: qsTr("Info panel"); command: "info"; keys: "I"
+        Entry { objectName: "menuInfo"; text: qsTr("Sidebar"); command: "info"; keys: "I"
                 markStyle: "check"; marked: bar.window.advanced && bar.prefs.infoVisible }
+        // The library's layout (appearance.layout), switched at once.
+        Entry { objectName: "menuArtColumn"; text: qsTr("Art column")
+                markStyle: "check"; marked: appearance.layout.artColumn
+                onTriggered: appearance.layout.artColumn = !appearance.layout.artColumn }
+        BarMenu {
+            id: layoutBarMenu
+            host: bar.window
+            objectName: "nowPlayingBarMenu"
+            title: qsTr("Now playing bar")
+            Entry { objectName: "menuBarCompact"; text: qsTr("Compact strip"); markStyle: "radio"
+                    marked: appearance.layout.barSize === "compact"; onTriggered: appearance.layout.barSize = "compact" }
+            Entry { objectName: "menuBarLarge"; text: qsTr("Large"); markStyle: "radio"
+                    marked: appearance.layout.barSize === "large"; onTriggered: appearance.layout.barSize = "large" }
+            Line {}
+            Entry { objectName: "menuBarTop"; text: qsTr("At the top"); markStyle: "radio"
+                    marked: appearance.layout.barPosition === "top"; onTriggered: appearance.layout.barPosition = "top" }
+            Entry { objectName: "menuBarBottom"; text: qsTr("At the bottom"); markStyle: "radio"
+                    marked: appearance.layout.barPosition === "bottom"; onTriggered: appearance.layout.barPosition = "bottom" }
+        }
+        BarMenu {
+            id: rowHeightMenu
+            host: bar.window
+            objectName: "rowHeightMenu"
+            title: qsTr("Row height")
+            Entry { text: qsTr("Compact"); markStyle: "radio"; marked: appearance.layout.rowHeight === "compact"
+                    onTriggered: appearance.layout.rowHeight = "compact" }
+            Entry { text: qsTr("Comfortable"); markStyle: "radio"; marked: appearance.layout.rowHeight === "comfortable"
+                    onTriggered: appearance.layout.rowHeight = "comfortable" }
+            Entry { text: qsTr("Large"); markStyle: "radio"; marked: appearance.layout.rowHeight === "large"
+                    onTriggered: appearance.layout.rowHeight = "large" }
+        }
         Entry { text: qsTr("Lyrics"); command: "lyrics" }
         Entry { text: qsTr("Time left instead of time played"); command: "time"; keys: "T"
                 markStyle: "check"; marked: bar.window.showRemaining }

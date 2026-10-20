@@ -33,6 +33,7 @@ QHash<int, QByteArray> TrackListModel::roleNames() const {
     names[PlayingRole] = "playing";
     names[TrackIdRole] = "trackId";
     names[NumericRole] = "numeric";
+    names[ArtRole] = "art";
     return names;
 }
 
@@ -49,6 +50,7 @@ QString TrackListModel::columnName(int column) const {
     case Plays: return tr("Plays");
     case Added: return tr("Added");
     case Format: return tr("Format");
+    case Art: return tr("Art");
     }
     return {};
 }
@@ -124,6 +126,7 @@ QVariant TrackListModel::data(const QModelIndex &index, int role) const {
     case AvailableRole: return r->availability == QLatin1String("online") && !r->path.isEmpty();
     case PlayingRole: return !m_playingPath.isEmpty() && r->path == m_playingPath;
     case RemoteRole: return r->volumeKind == QLatin1String("subsonic");
+    case ArtRole: return artUrl(*r);
     case OfflineNoteRole:
         if (r->availability == QLatin1String("missing"))
             return tr("The file is missing; a rescan found it gone");
@@ -133,6 +136,17 @@ QVariant TrackListModel::data(const QModelIndex &index, int role) const {
         return QString();
     }
     return {};
+}
+
+// The album's picture when the track is on an album, so a page of an
+// album's tracks asks for one picture; the version is the artwork row, so a
+// new cover is a new address. An album searched and found bare asks for nothing.
+QString TrackListModel::artUrl(const Row &r) {
+    if (r.id <= 0 || r.artMissing)
+        return QString();
+    if (r.albumId > 0)
+        return QString("image://omamp-art/album/%1/96?v=%2").arg(r.albumId).arg(r.artworkId);
+    return QString("image://omamp-art/track/%1/96?v=%2").arg(r.id).arg(r.artworkId);
 }
 
 const TrackListModel::Row *TrackListModel::rowAt(int row) const {
@@ -179,8 +193,11 @@ QVector<TrackListModel::Row> TrackListModel::fetch(const QVector<qint64> &ids) c
     q.setForwardOnly(true);
     if (!q.exec("SELECT t.id, v.root_path, v.online, t.rel_path, t.title, t.artist, t.album, t.genre, t.format, "
                 "t.availability, t.file_name, t.year, t.track_no, t.disc_no, t.bitrate, t.play_count, t.rating, "
-                "t.duration_ms, t.added, v.kind, coalesce(nullif(v.label, ''), v.root_path) "
-                "FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.id IN (" +
+                "t.duration_ms, t.added, v.kind, coalesce(nullif(v.label, ''), v.root_path), t.album_id, "
+                "coalesce(t.artwork_id, al.artwork_id, 0), "
+                "al.art_checked IS NOT NULL AND t.artwork_id IS NULL AND al.artwork_id IS NULL AND NOT t.has_embedded_art "
+                "FROM tracks t JOIN volumes v ON v.id = t.volume_id LEFT JOIN albums al ON al.id = t.album_id "
+                "WHERE t.id IN (" +
                 list.join(',') + ')')) {
         qWarning("Track list: %s", qPrintable(q.lastError().text()));
         return out;
@@ -213,6 +230,9 @@ QVector<TrackListModel::Row> TrackListModel::fetch(const QVector<qint64> &ids) c
         r.added = q.value(18).toLongLong();
         r.volumeKind = q.value(19).toString();
         r.volumeName = q.value(20).toString();
+        r.albumId = q.value(21).toLongLong();
+        r.artworkId = q.value(22).toLongLong();
+        r.artMissing = q.value(23).toBool();
     }
     return out;
 }
@@ -251,7 +271,8 @@ QString TrackListModel::orderBy() const {
     case Number: key = QString("t.disc_no%1, t.track_no%1").arg(dir); break;
     case Title: key = "coalesce(nullif(t.title, ''), t.file_name) COLLATE NOCASE" + dir; break;
     case Artist: key = "t.artist COLLATE NOCASE" + dir; break;
-    case Album: return "t.album COLLATE NOCASE" + dir + ", " + libraryWithoutAlbum;
+    case Album:
+    case Art: return "t.album COLLATE NOCASE" + dir + ", " + libraryWithoutAlbum;
     case Year: key = "t.year" + dir; break;
     case Genre: key = "t.genre COLLATE NOCASE" + dir; break;
     case Length: key = "t.duration_ms" + dir; break;

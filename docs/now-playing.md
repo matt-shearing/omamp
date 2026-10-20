@@ -46,7 +46,7 @@ in Now Playing. The view fills the window with:
 - the transport, shuffle, repeat and volume;
 - the next five tracks in the list. Double-click one to play it;
 - timed lyrics, scrolling with the song, when the track has them (from a
-  `.lrc` file, its tags, or LRCLIB once fetched in the info panel);
+  `.lrc` file, its tags, or LRCLIB once fetched in the sidebar);
 - a visualiser along the bottom.
 
 | Key | Does |

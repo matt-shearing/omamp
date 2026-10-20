@@ -41,7 +41,9 @@ HEADERS += \
     src/app/streamresolver.h \
     src/app/spotifycontroller.h \
     src/app/radiocontroller.h \
-    src/app/windowplacement.h
+    src/app/windowplacement.h \
+    src/app/layoutprefs.h \
+    src/app/aboutcontroller.h
 
 SOURCES += \
     src/app/albumgridmodel.cpp \
@@ -77,6 +79,8 @@ SOURCES += \
     src/app/streamresolver.cpp \
     src/app/spotifycontroller.cpp \
     src/app/radiocontroller.cpp \
-    src/app/windowplacement.cpp
+    src/app/windowplacement.cpp \
+    src/app/layoutprefs.cpp \
+    src/app/aboutcontroller.cpp
 
 RESOURCES += src/app/resources.qrc

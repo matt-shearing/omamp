@@ -78,6 +78,7 @@ LibraryController::LibraryController(const QString &databasePath, QObject *paren
     m_settings = new SettingsController(this);
     m_recorder = new PlayRecorder(m_path, this);
     m_web = new WebController(this);
+    m_about = new AboutController(this);
     m_nas = new NasController(this);
     m_devices = new DevicesController(this);
     connect(m_devices, &DevicesController::message, this, &LibraryController::toast);

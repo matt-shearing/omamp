@@ -11,11 +11,29 @@ import QtQuick.Controls.Material
 FocusScope {
     id: pane
     property var tracks: library.tracks
+    // The layout choices (Settings > Appearance > Layout): the Art column and the row height.
+    readonly property var layoutPrefs: appearance.layout
+    readonly property int rowH: layoutPrefs ? layoutPrefs.rowPixels : 24
+    readonly property int artSize: layoutPrefs ? layoutPrefs.artPixels : 20
+    readonly property bool artShown: layoutPrefs ? layoutPrefs.artColumn : false
+    // The model's columns (TrackListModel::Column); Art is last in the model
+    // and first on screen.
+    readonly property int artColumn: 11
     // Column layout, saved by the window: which are hidden, and widths set by hand.
-    // Added starts hidden, so the rest fit a 1360-pixel window.
-    property var hidden: [false, false, false, false, false, false, false, false, false, true, false]
+    // Added starts hidden, so the rest fit a 1360-pixel window. Art's own
+    // switch is layoutPrefs.artColumn, so its place here stays false.
+    property var hidden: [false, false, false, false, false, false, false, false, false, true, false, false]
     property var widths: ({})
-    readonly property var defaultWidths: [46, 180, 170, 180, 56, 110, 64, 80, 56, 88, 124]
+    readonly property var defaultWidths: [46, 180, 170, 180, 56, 110, 64, 80, 56, 88, 124, 34]
+    // Model columns in the order they show, left to right. Drag a header to
+    // move a column.
+    readonly property var defaultOrder: [11, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    // What the table shows now. Until the table has its columns, the order
+    // and widths wanted wait in pending.
+    property var order: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    property var pending: ({ order: defaultOrder, widths: null })
+    // The Art column's width follows the thumbnail.
+    function naturalWidth(c) { return c === artColumn ? artSize + 14 : defaultWidths[c] }
     signal leave() // to the tree
     signal layoutEdited()
     // A command from the menu, run by the window: edit-tags, tag-from-filename, organise.
@@ -39,31 +57,84 @@ FocusScope {
         titleInput.selectAll()
     }
 
-    function columnState() {
+    // TableView keeps hand-set widths by place on screen, not by column, so
+    // they are read and written through the order.
+    function visualOf(column) { return order.indexOf(column) }
+    function logicalWidths() {
         const w = {}
-        for (let c = 0; c < defaultWidths.length; ++c) {
-            const width = table.explicitColumnWidth(c)
-            if (width > 0) w[c] = Math.round(width)
+        for (let v = 0; v < order.length; ++v) {
+            const width = table.explicitColumnWidth(v)
+            if (width > 0) w[order[v]] = Math.round(width)
         }
-        return JSON.stringify({ hidden: hidden, widths: w })
+        return w
+    }
+    function applyWidths(w) {
+        table.clearColumnWidths()
+        for (const c in w) {
+            const v = visualOf(Number(c))
+            if (v >= 0) table.setColumnWidth(v, w[c])
+        }
+        table.forceLayout()
+    }
+    // Moves columns on screen until they stand in wanted's order.
+    property bool applyingOrder: false
+    function applyOrder(wanted) {
+        const keep = logicalWidths()
+        applyingOrder = true
+        table.clearColumnReordering()
+        let now = defaultOrder.map((c, i) => i)   // after clearing, place = model column
+        for (let v = 0; v < wanted.length; ++v) {
+            const at = now.indexOf(wanted[v])
+            if (at !== v && at >= 0) {
+                table.moveColumn(at, v)
+                now.splice(v, 0, now.splice(at, 1)[0])
+            }
+        }
+        order = wanted.slice()
+        applyingOrder = false
+        applyWidths(keep)
+    }
+    function validOrder(o) {
+        if (!o || o.length !== defaultWidths.length) return false
+        for (let c = 0; c < defaultWidths.length; ++c) if (o.indexOf(c) < 0) return false
+        return true
+    }
+
+    function columnState() {
+        if (pending) return JSON.stringify({ hidden: hidden, widths: pending.widths || {}, order: pending.order })
+        return JSON.stringify({ hidden: hidden, widths: logicalWidths(), order: order })
     }
     function restoreColumns(json) {
         try {
             const s = JSON.parse(json)
-            if (s.hidden && s.hidden.length === defaultWidths.length) hidden = s.hidden
-            for (const c in s.widths) table.setColumnWidth(Number(c), s.widths[c])
+            let h = s.hidden
+            // Settings from before the Art column: it joins at the start, once.
+            if (h && h.length === defaultWidths.length - 1) h = h.concat([false])
+            if (h && h.length === defaultWidths.length) hidden = h
+            // Widths were saved by column; before the Art column moved them,
+            // the place and the column were the same.
+            pending = { order: validOrder(s.order) ? s.order : defaultOrder, widths: s.widths || {} }
+            applyPending()
         } catch (e) { }
         table.forceLayout()
     }
+    // Columns, widths and order back to how they start (Reset layout).
+    function resetColumns() {
+        hidden = [false, false, false, false, false, false, false, false, false, true, false, false]
+        pending = { order: defaultOrder, widths: {} }
+        applyPending()
+        layoutEdited()
+    }
     // Column names in the model's order, for collections.
     readonly property var columnNames: ["number", "title", "artist", "album", "year", "genre", "length", "rating",
-                                        "plays", "added", "format"]
-    function visibleNames() { return columnNames.filter((n, i) => !hidden[i]) }
+                                        "plays", "added", "format", "art"]
+    function visibleNames() { return columnNames.filter((n, i) => !hidden[i] && n !== "art") }
     function showOnly(names) {
-        hidden = columnNames.map((n) => n !== "title" && names.indexOf(n) < 0)
+        hidden = columnNames.map((n) => n !== "title" && n !== "art" && names.indexOf(n) < 0)
         table.forceLayout()
     }
     function setHidden(column, hide) {
+        if (column === artColumn) { layoutPrefs.artColumn = !hide; return }
         const h = hidden.slice()
         h[column] = hide
         // Title stays: a list with no titles reads as nothing.
@@ -101,19 +172,24 @@ FocusScope {
         function onAboutToRefresh() {
             const top = Math.max(0, table.topRow)
             pane.keepTop = pane.tracks.count > 0
-                ? { id: pane.tracks.trackId(top), row: top, offset: table.contentY - top * 24 } : null
+                ? { id: pane.tracks.trackId(top), row: top, offset: table.contentY - top * pane.rowH } : null
         }
         function onModelAboutToBeReset() { table.contentY = 0 }
+        // Qt 6.12 sizes its row order once a column has been moved and
+        // never grows it: a list that gets longer would read past its end
+        // (std::out_of_range). Rows are never moved here, so drop it.
+        function onModelReset() { table.clearRowReordering() }
+        function onRowsInserted() { table.clearRowReordering() }
         function onReloaded() {
             const keep = pane.keepTop
             pane.keepTop = null
             if (keep) {
                 const row = pane.tracks.rowOfTrack(keep.id)
                 if (row >= 0) {
-                    // Rows are all 24 pixels, so the place is a sum. (A
+                    // Rows are all one height, so the place is a sum. (A
                     // positionViewAtRow() here is lost in the rebuild that
                     // follows the reset.)
-                    table.contentY = row * 24 + Math.max(0, keep.offset)
+                    table.contentY = row * pane.rowH + Math.max(0, keep.offset)
                     return
                 }
             }
@@ -128,6 +204,8 @@ FocusScope {
         syncView: table
         clip: true
         resizableColumns: true
+        // Drag a header sideways to move its column.
+        movableColumns: true
         boundsBehavior: Flickable.StopAtBounds
         delegate: Rectangle {
             id: head
@@ -146,7 +224,10 @@ FocusScope {
                 horizontalAlignment: head.column === 0 || head.column === 4 || head.column === 6 || head.column === 8
                                      ? Text.AlignRight : Text.AlignLeft
                 elide: Text.ElideRight
-                text: head.model.display !== undefined ? head.model.display : ""
+                // The Art column's header is a small picture, not a word.
+                text: head.column === pane.artColumn ? String.fromCodePoint(0xF02E9)
+                      : head.model.display !== undefined ? head.model.display : ""
+                font.family: head.column === pane.artColumn ? "JetBrainsMono Nerd Font" : Qt.application.font.family
                 font.pixelSize: 12
                 font.bold: pane.tracks.sortColumn === head.column
                 color: pane.tracks.sortColumn === head.column ? theme.c.bright_foreground : theme.c.light_foreground
@@ -175,21 +256,50 @@ FocusScope {
         keyNavigationEnabled: false
         pointerNavigationEnabled: false
         reuseItems: true
-        columnWidthProvider: function (column) {
-            if (pane.hidden[column]) return 0
-            const w = explicitColumnWidth(column)
+        // Asked by place on screen; pane.order says which column stands there.
+        columnWidthProvider: function (place) {
+            const column = pane.order[place]
+            if (column === undefined) return 0
+            if (column === pane.artColumn ? !pane.artShown : pane.hidden[column]) return 0
+            const w = explicitColumnWidth(place)
             if (w > 0) return w
-            if (column !== 1) return pane.defaultWidths[column]
+            if (column !== 1) return pane.naturalWidth(column)
             // Title takes the room the other columns leave, until resized by hand.
             let others = 0
-            for (let c = 0; c < pane.defaultWidths.length; ++c) {
-                if (c === 1 || pane.hidden[c]) continue
-                const e = explicitColumnWidth(c)
-                others += e > 0 ? e : pane.defaultWidths[c]
+            for (let v = 0; v < pane.order.length; ++v) {
+                const c = pane.order[v]
+                if (c === 1 || (c === pane.artColumn ? !pane.artShown : pane.hidden[c])) continue
+                const e = explicitColumnWidth(v)
+                others += e > 0 ? e : pane.naturalWidth(c)
             }
             return Math.max(pane.defaultWidths[1], table.width - others - 12)
         }
+        rowHeightProvider: function (row) { return pane.rowH }
+        onColumnsChanged: Qt.callLater(pane.applyPending)
         onWidthChanged: forceLayout()
+        // A header dragged to a new place: the order follows it.
+        // (TableView carries a hand-set width along with its column.) One
+        // move sends a signal for every column that shifts, each with its
+        // new place; the order is read once they have all come.
+        property var placeOf: null
+        onColumnMoved: (column, from, to) => {
+            if (pane.applyingOrder) return
+            if (!placeOf) {
+                placeOf = {}
+                for (let v = 0; v < pane.order.length; ++v) placeOf[pane.order[v]] = v
+                Qt.callLater(settleMove)
+            }
+            placeOf[column] = to
+        }
+        function settleMove() {
+            const o = pane.order.slice()
+            for (const c in placeOf) o[placeOf[c]] = Number(c)
+            placeOf = null
+            if (!pane.validOrder(o)) return
+            pane.order = o
+            forceLayout()
+            pane.layoutEdited()
+        }
         onTopRowChanged: pane.tracks.setVisibleRows(topRow, bottomRow)
         onBottomRowChanged: pane.tracks.setVisibleRows(topRow, bottomRow)
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -197,7 +307,7 @@ FocusScope {
 
         Keys.onPressed: (event) => {
             const t = pane.tracks
-            const page = Math.max(1, Math.floor(table.height / 24) - 1)
+            const page = Math.max(1, Math.floor(table.height / pane.rowH) - 1)
             const mods = event.modifiers & (Qt.ShiftModifier | Qt.ControlModifier)
             switch (event.key) {
             case Qt.Key_Up: t.moveCurrent(-1, mods); break
@@ -227,7 +337,7 @@ FocusScope {
                 t.select(t.currentRow, Qt.ControlModifier)
                 break
             case Qt.Key_Menu:
-                pane.openMenu(pane.width / 3, Math.min(pane.height - 40, header.height + 24 * (t.currentRow + 1) - table.contentY))
+                pane.openMenu(pane.width / 3, Math.min(pane.height - 40, header.height + pane.rowH * (t.currentRow + 1) - table.contentY))
                 break
             default: return
             }
@@ -248,10 +358,12 @@ FocusScope {
             required property var playing
             required property var remote
             required property var offlineNote
+            required property var art
             readonly property bool isRating: column === 7
+            readonly property bool isArt: column === pane.artColumn
             readonly property int ratingValue: rating !== undefined ? rating : -1
 
-            implicitHeight: 24
+            implicitHeight: pane.rowH
             color: rowSelected ? (table.activeFocus ? theme.listSelection : Qt.alpha(theme.listSelection, 0.6))
                  : row % 2 ? Qt.alpha(theme.c.lighter_background, 0.35) : "transparent"
 
@@ -271,8 +383,39 @@ FocusScope {
                 font.pixelSize: 12
                 color: cell.available !== false ? theme.c.cyan : theme.c.muted
             }
+            // The Art column: the album's cover, small and square, made
+            // rounded by the picture provider (no clipping effect needed).
+            Rectangle {
+                id: artBox
+                visible: cell.isArt
+                anchors.centerIn: parent
+                width: pane.artSize
+                height: pane.artSize
+                radius: Math.min(4, theme.radius)
+                // Under the picture: shown while it loads, or when there is
+                // none (the provider then sends a clear square).
+                color: theme.c.lighter_background
+                Text {
+                    anchors.centerIn: parent
+                    text: String.fromCodePoint(0xF075A) // a music note
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: Math.round(pane.artSize * 0.5)
+                    color: theme.c.muted
+                }
+                Image {
+                    id: thumb
+                    objectName: "artThumb"
+                    anchors.fill: parent
+                    asynchronous: true
+                    cache: true
+                    smooth: true
+                    readonly property int px: Math.round(pane.artSize * Screen.devicePixelRatio)
+                    sourceSize: Qt.size(px, px)
+                    source: cell.isArt && pane.artShown && cell.art ? cell.art + "&r=" + Math.round(Math.min(4, theme.radius) * Screen.devicePixelRatio) : ""
+                }
+            }
             Text {
-                visible: !cell.isRating
+                visible: !cell.isRating && !cell.isArt
                 anchors { fill: parent; leftMargin: cloud.visible ? 26 : 8; rightMargin: 8 }
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: cell.numeric ? Text.AlignRight : Text.AlignLeft
@@ -437,10 +580,15 @@ FocusScope {
         z: 5
         // Placed only while open: asking the table for column widths while a
         // header edge is dragged would fight the resize.
-        x: visible ? (pane.hidden[0] ? 0 : table.columnWidth(0)) - table.contentX : 0
-        y: visible ? header.height + row * 24 - table.contentY : 0
-        width: visible ? Math.max(160, table.columnWidth(1)) : 0
-        height: 24
+        x: {
+            if (!visible) return 0
+            let left = 0
+            for (let v = 0; v < pane.visualOf(1); ++v) left += table.columnWidth(v)
+            return left - table.contentX
+        }
+        y: visible ? header.height + row * pane.rowH - table.contentY : 0
+        width: visible ? Math.max(160, table.columnWidth(pane.visualOf(1))) : 0
+        height: pane.rowH
         color: theme.c.darker_background
         border.width: 1
         border.color: theme.accent
@@ -474,18 +622,38 @@ FocusScope {
         id: columnMenu
         Material.roundedScale: theme.radius
         Instantiator {
-            model: pane.defaultWidths.length
+            // In the order they show.
+            model: pane.order
             delegate: MenuItem {
-                required property int index
-                text: pane.tracks.columnName(index)
+                required property int modelData
+                objectName: "columnItem_" + pane.columnNames[modelData]
+                text: pane.tracks.columnName(modelData)
                 checkable: true
-                checked: !pane.hidden[index]
-                enabled: index !== 1
-                onTriggered: pane.setHidden(index, !checked)
+                checked: modelData === pane.artColumn ? pane.artShown : !pane.hidden[modelData]
+                enabled: modelData !== 1
+                onTriggered: pane.setHidden(modelData, !checked)
             }
             onObjectAdded: (index, object) => columnMenu.insertItem(index, object)
             onObjectRemoved: (index, object) => columnMenu.removeItem(object)
         }
+    }
+
+    // The Art column starts first on screen; the window's saved layout,
+    // when there is one, puts the columns where they were.
+    function applyPending() {
+        if (!pending || table.columns !== defaultWidths.length) return
+        const p = pending
+        pending = null
+        applyOrder(p.order)
+        if (p.widths) applyWidths(p.widths)
+    }
+    Component.onCompleted: applyPending()
+
+    // Settings > Appearance > Layout: Reset layout.
+    Connections {
+        target: pane.layoutPrefs
+        function onResetRequested() { pane.resetColumns() }
+        function onChanged() { table.forceLayout() }
     }
 
     function openColumns(item) {

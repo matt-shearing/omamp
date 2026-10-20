@@ -36,8 +36,9 @@ public:
     static QString keyFor(const Spotify::Item &item);
     // The cached picture's path, or empty. Safe from any thread.
     QString cachedFile(const Spotify::Item &item) const;
-    // The picture of a queue entry (spotify://track/<id>), for the deck and
-    // MPRIS. Safe from any thread.
+    // The picture of a queue entry (spotify://track/<id>, or a whole
+    // playlist, album or artist), for the deck and MPRIS. Safe from any
+    // thread.
     QString fileForPath(const QString &path) const;
     // Remembers a track's album, so its queue entry finds the album cover.
     void remember(const Spotify::Item &item);
@@ -45,6 +46,9 @@ public:
     void want(const Spotify::Item &item);
     // Where the oEmbed lookups go; "off" turns them off.
     static QString oembedBase();
+    // The title Spotify's public oEmbed page gives a link (an artist's name,
+    // say), or empty; done runs on this object's thread.
+    void lookUpTitle(const QString &webUrl, std::function<void(const QString &)> done);
 
 signals:
     void artReady(const QString &key);
@@ -143,6 +147,10 @@ public:
     QVariantMap metaData() const override;
 
     QString trackId() const { return m_track.id; }
+    // Whether the entry is a whole playlist, album or artist that Spotify
+    // plays as one (spotify://playlist/<id>), and which.
+    bool isContext() const { return m_context; }
+    Spotify::Item context() const { return m_contextItem; }
     // How often the state is read through the backend's command line while
     // a track plays and MPRIS isn't there, and how long a start may take
     // before it counts as failed (tests shorten them).
@@ -167,9 +175,20 @@ private:
     void setBase(qint64 ms);
     void finishTrack();
 
+    // A context entry's current track changed: show it.
+    void takeTrack(const Spotify::Playback &p);
+
     SpotifyController *m_c;
     QString m_path;
     Spotify::Item m_track;
+    // A context entry: Spotify plays the playlist, album or artist itself,
+    // and m_track is whichever of its tracks plays now.
+    bool m_context = false;
+    bool m_shuffle = false;
+    Spotify::Item m_contextItem;
+    // What MPRIS showed before the start, so the start is seen as a change.
+    QString m_beforeTitle;
+    bool m_beforePlaying = false;
     AudioEngine::State m_state = AudioEngine::Stopped;
     // Set once Spotify was told to play this track, until it is unloaded.
     bool m_started = false;
@@ -250,6 +269,17 @@ class SpotifyController : public QObject {
     Q_PROPERTY(bool clientIdBusy READ clientIdBusy NOTIFY clientIdChanged)
     Q_PROPERTY(QString clientIdMessage READ clientIdMessage NOTIFY clientIdChanged)
     Q_PROPERTY(QString viewError READ viewError NOTIFY viewChanged)
+    // The kind of thing the view shows (playlist, album, artist), or empty
+    // for a library section or a search.
+    Q_PROPERTY(QString viewKind READ viewKind NOTIFY viewChanged)
+    // A playlist whose tracks Spotify won't let your app read quickly: it
+    // plays as a whole, and its tracks are listed only when asked for.
+    Q_PROPERTY(bool viewRestricted READ viewRestricted NOTIFY viewChanged)
+    // A sentence on why the view looks as it does, or empty.
+    Q_PROPERTY(QString viewNote READ viewNote NOTIFY viewChanged)
+    // What Spotify refused your client ID today, learned from
+    // spotify_player's log ("artist-top-tracks", "playlist:<id>", …).
+    Q_PROPERTY(QStringList refused READ refused NOTIFY refusedChanged)
     Q_PROPERTY(QString searchText READ searchText NOTIFY viewChanged)
     Q_PROPERTY(SpotifyItemsModel *items READ items CONSTANT)
     Q_PROPERTY(QVariantList ownPlaylists READ ownPlaylists NOTIFY playlistsChanged)
@@ -328,6 +358,14 @@ public:
     bool clientIdBusy() const { return m_clientIdBusy; }
     QString clientIdMessage() const { return m_clientIdMessage; }
     QString viewError() const { return m_view.error; }
+    QString viewKind() const { return m_view.section == "tracks" ? m_view.container.kind : QString(); }
+    bool viewRestricted() const { return m_view.restricted && !m_view.showTracks; }
+    QString viewNote() const;
+    QStringList refused() const { return m_refusals.keys(); }
+    Spotify::Refusals *refusals() { return &m_refusals; }
+    // Whether a playlist's tracks are out of quick reach: Spotify made it,
+    // or Spotify refused your client ID for it today.
+    bool isRestricted(const Spotify::Item &item) const;
     QString searchText() const { return m_view.search; }
     SpotifyItemsModel *items() { return &m_items; }
     QVariantList ownPlaylists() const;
@@ -379,6 +417,13 @@ public:
     // opens. Returns "played", "opened" or "" (not a Spotify link).
     Q_INVOKABLE QString activateUri(const QString &text);
     Q_INVOKABLE void addRowToPlaylist(int row, const QString &playlistId);
+    // The playlist or artist on show, as one Now Playing entry that Spotify
+    // plays (shuffled or not), without reading its tracks.
+    Q_INVOKABLE void playView(bool shuffle);
+    // Adds it after the playing entry (next) or at the end.
+    Q_INVOKABLE void enqueueView(bool next);
+    // Lists a restricted playlist's tracks after all, slowly.
+    Q_INVOKABLE void showRestrictedTracks();
     Q_INVOKABLE void addBlendRowToPlaylist(int row, const QString &playlistId);
     // Liked Songs for the playing Spotify track.
     Q_INVOKABLE void setPlayingLiked(bool liked);
@@ -392,6 +437,8 @@ public:
     std::shared_ptr<Spotify::Backend> backend() const { return m_backend; }
     // A track seen in a list, search or the playback state, by id.
     Spotify::Item knownTrack(const QString &id) const { return m_known.value(id); }
+    // A playlist, album or artist seen in a list, by kind and id.
+    Spotify::Item knownContext(const QString &kind, const QString &id) const;
     void rememberTracks(const QList<Spotify::Item> &tracks);
     // Queues a command on the control lane (play, pause, seek, state).
     void runControl(std::function<void(Spotify::Backend &)> work);
@@ -415,6 +462,7 @@ signals:
     void messageChanged();
     void clientIdChanged();
     void artRevisionChanged();
+    void refusedChanged();
     // A picture for the playing track arrived (NowPlaying looks again).
     void playingArtChanged();
     // The window should show the Spotify view (a palette choice opened it).
@@ -434,6 +482,10 @@ private:
         Spotify::Item container; // a playlist, album or artist being shown
         QString search;
         QString error;
+        // A playlist out of quick reach, and whether its tracks were asked
+        // for anyway.
+        bool restricted = false;
+        bool showTracks = false;
         QString key() const;
     };
     struct Cached {
@@ -458,6 +510,14 @@ private:
     void noteMpris();
     void playFrom(SpotifyItemsModel *model, int row, Mode mode);
     void queue(const QList<Spotify::Item> &tracks, int start, Mode mode);
+    void queueContext(const Spotify::Item &context, Mode mode, bool shuffle);
+    void rememberNames(const QList<Spotify::Item> &items);
+    // Fills in an artist's name from what Omamp has seen.
+    Spotify::Item withName(Spotify::Item item) const;
+    // Opens a playlist, album or artist in the view, looking up an
+    // artist's name first when it isn't known.
+    void openContainer(const Spotify::Item &item, bool keepBack);
+    void learnRefusals(const Spotify::LogNews &news);
     void setLoading(bool on);
     void pollNowPlaying();
     void paletteTextChanged();
@@ -507,6 +567,9 @@ private:
     QSet<QString> m_liked;
     bool m_likedKnown = false;
     QHash<QString, Spotify::Item> m_known;
+    // Playlists, albums and artists seen, by "<kind>:<id>".
+    QHash<QString, Spotify::Item> m_contexts;
+    Spotify::Refusals m_refusals;
 
     QVariantMap m_nowPlaying;
     bool m_viewVisible = false;

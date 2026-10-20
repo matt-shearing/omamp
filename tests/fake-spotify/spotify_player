@@ -14,6 +14,20 @@
 #   ratelimit           writes spotify_player's rate-limit warning, with the
 #                       file's number as retry_after_secs, to a log in
 #                       $OMAMP_SPOTIFY_PLAYER_CACHE, as the real one does
+#
+# Spotify's limits for apps made after November 2024, as spotify_player
+# 0.25.1 meets them with your own client ID:
+#   get item … artist   always: top-tracks and related-artists are refused
+#                       (403) and the album list too (400); each refusal is
+#                       logged, then ncspot's shared ID is rate-limited, so
+#                       the answer comes late (slow-refused seconds, 2)
+#   restricted          playlist ids, one a line, whose details and tracks
+#                       your ID is refused (404), as for Spotify's own
+#                       playlists; `get item` on one logs that and answers
+#                       late (slow-refused seconds, 2)
+#   playback start context --id <id> <kind> [--shuffle]
+#                       plays context-track (a track id), when the test made
+#                       one, with the context's uri in playback.json
 set -u
 D=${FAKE_SPOTIFY_DIR:?FAKE_SPOTIFY_DIR is not set}
 printf '%s\n' "$*" >> "$D/calls.log"
@@ -36,6 +50,16 @@ if [ -f "$D/fail-$1" ]; then
     exit 1
 fi
 
+LOG="${OMAMP_SPOTIFY_PLAYER_CACHE:-$D}/spotify-player-26-10-20-00-00.log"
+now() { date -u +%Y-%m-%dT%H:%M:%S.000000Z; }
+# spotify_player's line for a request your client ID was refused, then the
+# rate limit its retry through ncspot's ID meets.
+refuse() {
+    printf '%s  WARN socket_request{request=Get}: spotify_player::client::spotify: Custom Spotify Web API request failed; retrying with ncspot client method="GET" url="%s" status=%s\n' "$(now)" "$1" "$2" >> "$LOG"
+    printf '%s  WARN socket_request{request=Get}: spotify_player::client::middleware: Spotify Web API rate limit encountered method=GET url=https://api.spotify.com/v1/%s retry_after_secs=20\n' "$(now)" "$1" >> "$LOG"
+}
+late() { if [ -f "$D/slow-refused" ]; then sleep "$(cat "$D/slow-refused")"; else sleep 2; fi; }
+
 answer() { if [ -f "$D/$1" ]; then cat "$D/$1"; else echo null; fi; }
 
 case "$1" in
@@ -53,6 +77,16 @@ get)
         esac
     else
         # get item --id <id> <kind>
+        if [ "$5" = artist ]; then
+            refuse "artists/$4/top-tracks" "403 Forbidden"
+            refuse "artists/$4/related-artists" "403 Forbidden"
+            refuse "artists/$4/albums?include_groups=album,single" "400 Bad Request"
+            late
+        elif [ "$5" = playlist ] && [ -f "$D/restricted" ] && grep -qx "$4" "$D/restricted"; then
+            refuse "playlists/$4" "404 Not Found"
+            refuse "playlists/$4/items" "404 Not Found"
+            late
+        fi
         f="$D/items/$5-$4.json"
         if [ -f "$f" ]; then cat "$f"; else echo "Bad request: Cannot find $5 with id='$4'" >&2; exit 1; fi
     fi ;;
@@ -68,9 +102,17 @@ playback)
     start)
         # playback start track --id <id>, or context --id <id> <kind>
         [ -f "$D/free" ] && exit 0
+        context=null
         if [ "$3" = track ]; then
-            item=$(cat "$D/tracks/full-$5.json")
-            printf '{"device":{"id":"d1f00dfeedbeef0000000000000000000000000a","is_active":true,"is_private_session":false,"is_restricted":false,"name":"spotify-player","type":"Speaker","volume_percent":70},"repeat_state":"off","shuffle_state":false,"context":null,"timestamp":1760000000000,"progress_ms":0,"is_playing":true,"item":%s,"currently_playing_type":"track","actions":{"disallows":{}}}\n' "$item" > "$D/playback.json.new"
+            track=$5
+        elif [ "$3" = context ]; then
+            # The track a test names; otherwise the state stays as it was.
+            track=$(cat "$D/context-track" 2>/dev/null || true)
+            context=$(printf '{"type":"%s","href":"","external_urls":{},"uri":"spotify:%s:%s"}' "$6" "$6" "$5")
+        fi
+        if [ -n "${track:-}" ]; then
+            item=$(cat "$D/tracks/full-$track.json")
+            printf '{"device":{"id":"d1f00dfeedbeef0000000000000000000000000a","is_active":true,"is_private_session":false,"is_restricted":false,"name":"spotify-player","type":"Speaker","volume_percent":70},"repeat_state":"off","shuffle_state":false,"context":%s,"timestamp":1760000000000,"progress_ms":0,"is_playing":true,"item":%s,"currently_playing_type":"track","actions":{"disallows":{}}}\n' "$context" "$item" > "$D/playback.json.new"
             mv "$D/playback.json.new" "$D/playback.json"
         fi ;;
     pause) [ -f "$D/playback.json" ] && sed -i 's/"is_playing":true/"is_playing":false/' "$D/playback.json" ;;

@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include <QDateTime>
+#include <QHash>
 #include <QVariantMap>
 #include <atomic>
 #include <memory>
@@ -40,6 +41,7 @@ struct Item {
     qint64 durationMs = 0;
     QString year;      // an album's release year
     QString owner;     // a playlist owner's display name
+    QString ownerId;   // and their Spotify user id ("spotify" for Spotify's own)
     QString imageUrl;  // only the playback state carries one
     bool explicitContent = false;
 
@@ -49,11 +51,26 @@ struct Item {
     // The Now Playing entry for a track: spotify://track/<id>.
     QString queuePath() const { return queuePathFor(kind, id); }
     QString artistText() const { return artists.join(", "); }
+    // A playlist Spotify itself made: "This Is …", the Daily Mixes, Discover
+    // Weekly and the editorial lists. Spotify lets only its own apps read
+    // their tracks; an app made after November 2024 is refused, so
+    // spotify_player falls back to a shared client ID that is nearly always
+    // rate-limited. Spotify-made playlists are owned by the user "spotify"
+    // and their ids begin with 37i9dQZF1.
+    bool spotifyMade() const;
     QVariantMap toMap() const;
     QJsonObject toJson() const;
 
     static QString queuePathFor(const QString &kind, const QString &id) { return "spotify://" + kind + '/' + id; }
 };
+
+// A Now Playing entry for a whole playlist, album or artist
+// (spotify://playlist/<id>, with "?shuffle=1" to start it shuffled): Spotify
+// plays it on its device, and Omamp follows whatever track it is on. Used
+// where Omamp may not read the tracks (Spotify's own playlists) or need not.
+QString contextQueuePath(const Item &context, bool shuffle);
+// Whether a queue path asks for a shuffled start.
+bool queuePathShuffles(const QString &path);
 
 // What the backend is playing.
 struct Playback {
@@ -63,6 +80,9 @@ struct Playback {
     qint64 progressMs = 0;
     QString deviceId, deviceName, deviceType;
     int volume = -1;
+    // What it plays from (spotify:playlist:<id>), when the backend says;
+    // MPRIS doesn't.
+    QString contextUri;
     QJsonObject toJson() const;
 };
 
@@ -122,10 +142,23 @@ QList<Item> parseContextTracks(const QJsonObject &o);
 // Whether a message from spotify_player is about a rate limit.
 bool isRateLimitText(const QString &text);
 
+// spotify_player 0.25 asks with your own client ID first and, when Spotify
+// refuses that ID (a 4xx answer), asks again with ncspot's shared one. It
+// logs each refusal: "Custom Spotify Web API request failed; retrying with
+// ncspot client method="GET" url="artists/<id>/top-tracks" status=403
+// Forbidden".
+struct Refusal {
+    QString method;
+    QString url;    // as logged: relative to https://api.spotify.com/v1/
+    int status = 0; // 403, 404, 400…
+    QDateTime at;   // UTC
+};
+
 struct LogNews {
     int rateLimits = 0;     // rate-limit lines newer than the window
     QDateTime retryUntil;   // when Spotify said to try again, in UTC
     QDateTime lastAt;       // the newest rate-limit line's time, in UTC
+    QList<Refusal> refusals; // your client ID refused, from today
 };
 // Reads what spotify_player's newest log (spotify-player-*.log in its cache
 // folder) said about rate limits in the last windowSecs seconds. *file and
@@ -133,6 +166,39 @@ struct LogNews {
 // is new; pass empty and 0 the first time.
 LogNews readLogNews(const QString &cacheFolder, QString *file, qint64 *offset, int windowSecs = 120,
                     const QDateTime &now = QDateTime::currentDateTimeUtc());
+
+// What a refused request was for, so the same kind of request isn't sent
+// again: "artist-top-tracks", "artist-related-artists", "artist-albums",
+// "playlist:<id>" (one playlist's details or tracks), "recommendations",
+// or otherwise the path with its ids replaced by "*".
+QString refusalKey(const QString &url);
+
+// What Spotify refused to a client ID, learned from spotify_player's log and
+// kept for the rest of the day (Spotify can change its mind, and a new day
+// tries again). Kept in a small JSON file so Omamp remembers across runs.
+class Refusals {
+public:
+    explicit Refusals(const QString &file = {});
+    void setFile(const QString &file);
+    // The client ID whose refusals count (another ID starts afresh).
+    void setClientId(const QString &id);
+    QString clientId() const { return m_clientId; }
+    // Returns true when the key is new.
+    bool learn(const QString &key, int status, const QDate &day = QDate::currentDate());
+    bool refused(const QString &key, const QDate &day = QDate::currentDate()) const;
+    int status(const QString &key) const { return m_status.value(key); }
+    QStringList keys(const QDate &day = QDate::currentDate()) const;
+    void clear();
+
+private:
+    void load();
+    void save() const;
+
+    QString m_file;
+    QString m_clientId;
+    QDate m_day;
+    QHash<QString, int> m_status;
+};
 
 // A command can be cancelled from another thread: the worker running it
 // holds a CancelScope, and runProgram stops the process when the flag is
@@ -199,6 +265,9 @@ public:
     // Plays a track, album, artist or playlist on the backend itself, with
     // Spotify choosing what follows (the command line's `play`).
     virtual bool playItem(const Item &item, QString *error) = 0;
+    // Plays a playlist, album or artist as a whole on the backend, shuffled
+    // or not. Only Spotify's player is asked: nothing reads the tracks.
+    virtual bool playContext(const Item &context, bool shuffle, QString *error);
     virtual bool resume(QString *error) = 0;
     virtual bool pause(QString *error) = 0;
     // currentMs is the position Omamp believes, for backends that seek by
@@ -211,8 +280,14 @@ public:
 
     // section: playlists, liked, albums, artists.
     virtual QList<Item> library(const QString &section, QString *error);
-    // The tracks of a playlist or an album, or an artist's top tracks.
+    // The tracks of a playlist or an album, or an artist's best-known tracks
+    // (from search: Spotify refuses an artist's top tracks to new apps).
     virtual QList<Item> tracksOf(const Item &container, QString *error);
+    // An artist's page from search alone: their best-known tracks, then
+    // their albums. *sections gets a heading for each item. Search is
+    // allowed for every app, where an artist's top tracks, related artists
+    // and album list are refused to apps made since November 2024.
+    virtual QList<Item> artistPage(const Item &artist, QStringList *sections, QString *error);
     virtual SearchResults search(const QString &text, QString *error);
     // Adds a track or a whole album to a playlist.
     virtual bool addToPlaylist(const QString &playlistId, const Item &item, QString *error);
@@ -274,6 +349,8 @@ public:
     bool connectDevice(const QString &id, QString *error) override;
     QList<Item> library(const QString &section, QString *error) override;
     QList<Item> tracksOf(const Item &container, QString *error) override;
+    QList<Item> artistPage(const Item &artist, QStringList *sections, QString *error) override;
+    bool playContext(const Item &context, bool shuffle, QString *error) override;
     SearchResults search(const QString &text, QString *error) override;
     bool addToPlaylist(const QString &playlistId, const Item &item, QString *error) override;
     Item track(const QString &id, QString *error) override;

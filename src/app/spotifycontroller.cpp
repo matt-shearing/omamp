@@ -88,8 +88,13 @@ QString SpotifyArt::cachedFile(const Spotify::Item &item) const {
 
 QString SpotifyArt::fileForPath(const QString &path) const {
     QString kind, id;
-    if (!Spotify::parseReference(path, &kind, &id) || kind != "track")
+    if (!Spotify::parseReference(path, &kind, &id))
         return {};
+    if (kind != "track") {
+        // A whole playlist, album or artist: its own picture.
+        const QString file = m_dir + '/' + kind + '-' + id + ".jpg";
+        return QFileInfo::exists(file) ? file : QString();
+    }
     QString album;
     {
         QMutexLocker lock(&m_mutex);
@@ -172,6 +177,27 @@ void SpotifyArt::lookUp(const QString &key, const QString &webUrl) {
         }
         // The slot stays taken for the picture itself.
         download(key, QUrl(thumb));
+    });
+}
+
+void SpotifyArt::lookUpTitle(const QString &webUrl, std::function<void(const QString &)> done) {
+    if (oembedBase() == "off") {
+        QTimer::singleShot(0, this, [done] { done({}); });
+        return;
+    }
+    QUrl url(oembedBase());
+    QUrlQuery q;
+    q.addQueryItem("url", webUrl);
+    url.setQuery(q);
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, "Omamp/" + QCoreApplication::applicationVersion());
+    request.setTransferTimeout(15000);
+    QNetworkReply *reply = m_net.get(request);
+    connect(reply, &QNetworkReply::finished, this, [reply, done] {
+        reply->deleteLater();
+        done(reply->error() == QNetworkReply::NoError
+                 ? QJsonDocument::fromJson(reply->readAll()).object().value("title").toString()
+                 : QString());
     });
 }
 
@@ -318,6 +344,16 @@ bool SpotifyPlayback::followsMpris() const { return m_c->mpris()->available(); }
 bool SpotifyPlayback::isOurs(const Spotify::Playback &p) const {
     if (!p.valid)
         return false;
+    if (m_context) {
+        // The backend's state names the context; MPRIS doesn't, so there a
+        // start counts once something new plays, and after that whatever
+        // plays is the context's next track.
+        if (!p.contextUri.isEmpty())
+            return p.contextUri == m_contextItem.uri();
+        if (!m_starting)
+            return true;
+        return p.playing && (!m_beforePlaying || p.track.name != m_beforeTitle || m_startedAt.elapsed() > 6000);
+    }
     if (!p.track.id.isEmpty() && !m_track.id.isEmpty())
         return p.track.id == m_track.id;
     if (m_track.name.isEmpty() || p.track.name.compare(m_track.name, Qt::CaseInsensitive) != 0)
@@ -327,6 +363,10 @@ bool SpotifyPlayback::isOurs(const Spotify::Playback &p) const {
 }
 
 QVariantMap SpotifyPlayback::metaData() const {
+    // A context entry shows the track Spotify is on; before the first one
+    // is known, the playlist's own name.
+    if (m_context && m_track.name.isEmpty())
+        return {{"title", m_contextItem.name}, {"artist", m_contextItem.artistText()}, {"album", QString()}};
     return {{"title", m_track.name}, {"artist", m_track.artistText()}, {"album", m_track.album}};
 }
 
@@ -366,11 +406,14 @@ void SpotifyPlayback::load(const QString &path) {
     m_path = path;
     QString kind, id;
     Spotify::parseReference(path, &kind, &id);
-    m_track = m_c->knownTrack(id);
+    m_context = !kind.isEmpty() && kind != "track";
+    m_shuffle = Spotify::queuePathShuffles(path);
+    m_contextItem = m_context ? m_c->knownContext(kind, id) : Spotify::Item();
+    m_track = m_context ? Spotify::Item() : m_c->knownTrack(id);
     if (!m_track.isValid()) {
         m_track = Spotify::Item();
         m_track.kind = "track";
-        m_track.id = id;
+        m_track.id = m_context ? QString() : id;
     }
     m_state = AudioEngine::Stopped;
     m_started = m_starting = m_confirmed = m_pausedByUs = m_askedOnce = false;
@@ -449,7 +492,7 @@ void SpotifyPlayback::play() {
         fail(tr("Spotify is off. Switch it on in Settings → Spotify."));
         return;
     }
-    if (m_track.id.isEmpty()) {
+    if (m_context ? m_contextItem.id.isEmpty() : m_track.id.isEmpty()) {
         fail(tr("not a Spotify track"));
         return;
     }
@@ -471,10 +514,22 @@ void SpotifyPlayback::play() {
     emit bufferingChanged();
     setState(AudioEngine::Playing);
     const QString id = m_track.id;
+    const Spotify::Item context = m_contextItem;
+    const bool contextEntry = m_context, shuffle = m_shuffle;
+    if (m_context) {
+        const Spotify::Playback before = m_c->mpris()->available() ? m_c->mpris()->state() : Spotify::Playback();
+        m_beforeTitle = before.valid ? before.track.name : QString();
+        m_beforePlaying = before.valid && before.playing;
+    }
     QPointer<SpotifyPlayback> self(this);
     m_c->request(
         Spotify::Requests::Control, {},
-        [id](Spotify::Backend &b, Spotify::Result &r) { b.playTrack(id, &r.error); },
+        [id, context, contextEntry, shuffle](Spotify::Backend &b, Spotify::Result &r) {
+            if (contextEntry)
+                b.playContext(context, shuffle, &r.error);
+            else
+                b.playTrack(id, &r.error);
+        },
         [self, generation](const Spotify::Result &r) {
             if (self && !r.error.isEmpty() && generation == self->m_generation)
                 self->fail(r.error);
@@ -574,7 +629,9 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
             // The playback state has the album and its picture; MPRIS has
             // no ids, so what Omamp knew stays.
             const qint64 oldDuration = m_track.durationMs;
-            if (!p.track.id.isEmpty() && !p.track.albumId.isEmpty()) {
+            if (m_context) {
+                m_track = p.track;
+            } else if (!p.track.id.isEmpty() && !p.track.albumId.isEmpty()) {
                 m_track = p.track;
             } else {
                 if (m_track.name.isEmpty())
@@ -625,6 +682,16 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
         }
         return;
     }
+    if (m_context && !p.track.name.isEmpty() &&
+        (p.track.name != m_track.name || (!p.track.id.isEmpty() && p.track.id != m_track.id))) {
+        // Spotify moved on to the context's next track.
+        takeTrack(p);
+        if (p.playing && m_state != AudioEngine::Playing) {
+            m_pausedByUs = false;
+            setState(AudioEngine::Playing);
+        }
+        return;
+    }
     if (p.playing) {
         if (m_state != AudioEngine::Playing && settled) {
             m_pausedByUs = false;
@@ -644,6 +711,18 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
         setBase(p.progressMs);
         setState(AudioEngine::Paused);
     }
+}
+
+void SpotifyPlayback::takeTrack(const Spotify::Playback &p) {
+    m_track = p.track;
+    if (m_track.kind.isEmpty())
+        m_track.kind = "track";
+    if (m_track.isValid())
+        m_c->rememberTracks({m_track});
+    emit metaDataChanged();
+    emit durationChanged(m_track.durationMs);
+    setBase(p.progressMs);
+    emit positionChanged(position());
 }
 
 void SpotifyPlayback::finishTrack() {
@@ -680,6 +759,9 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
     m_warmupMs = envMs("OMAMP_SPOTIFY_WARMUP_MS", 6000);
     m_slowMs = envMs("OMAMP_SPOTIFY_SLOW_MS", 4000);
     makeBackend();
+    // What Spotify refused today, per client ID, beside the pictures.
+    m_refusals.setFile(m_art.dir() + "/refused.json");
+    m_refusals.setClientId(Spotify::SpotifyPlayerBackend::effectiveClientId());
 
     connect(&m_art, &SpotifyArt::artReady, this, [this](const QString &key) {
         m_items.artArrived(key);
@@ -900,8 +982,10 @@ void SpotifyController::setRateLimited(bool on, const QDateTime &until) {
 void SpotifyController::checkRateLimit(bool failed, const QString &error) {
     const QDateTime now = QDateTime::currentDateTimeUtc();
     Spotify::LogNews news;
-    if (m_settings.backend == "spotify_player")
+    if (m_settings.backend == "spotify_player") {
         news = Spotify::readLogNews(Spotify::SpotifyPlayerBackend::cacheFolder(), &m_logFile, &m_logOffset, 120, now);
+        learnRefusals(news);
+    }
     const bool hit = Spotify::isRateLimitText(error) || news.rateLimits > 0 ||
                      (failed && m_rateLimited && error.contains("in time"));
     if (hit) {
@@ -917,6 +1001,52 @@ void SpotifyController::checkRateLimit(bool failed, const QString &error) {
     } else if (!failed && m_rateLimited && now >= m_retryUntil && !m_loading) {
         setRateLimited(false);
     }
+}
+
+// Remembers what Spotify refused your client ID, so Omamp doesn't ask for
+// it again today. A playlist that is loading now and turns out refused
+// stops waiting: spotify_player is asking ncspot's shared, rate-limited ID
+// instead, which can take a minute. Its answer still fills the cache if it
+// comes.
+void SpotifyController::learnRefusals(const Spotify::LogNews &news) {
+    if (news.refusals.isEmpty())
+        return;
+    m_refusals.setClientId(Spotify::SpotifyPlayerBackend::effectiveClientId());
+    bool changed = false;
+    for (const Spotify::Refusal &r : news.refusals)
+        changed = m_refusals.learn(Spotify::refusalKey(r.url), r.status) || changed;
+    if (changed)
+        emit refusedChanged();
+    if (m_loading && m_view.section == "tracks" && m_view.container.kind == "playlist" && !m_view.showTracks &&
+        !m_view.restricted && isRestricted(m_view.container)) {
+        ++m_viewGeneration;
+        m_retryTimer.stop();
+        m_view.restricted = true;
+        setLoading(false);
+        emit viewChanged();
+    }
+}
+
+bool SpotifyController::isRestricted(const Spotify::Item &item) const {
+    return item.kind == "playlist" && (item.spotifyMade() || m_refusals.refused("playlist:" + item.id));
+}
+
+QString SpotifyController::viewNote() const {
+    if (m_view.section != "tracks")
+        return {};
+    if (m_view.container.kind == "artist")
+        return tr("Spotify doesn't let new apps read an artist's top tracks or related artists, so these come from "
+                  "search. Play plays the artist on Spotify.");
+    if (!m_view.restricted)
+        return {};
+    const QString why =
+        m_view.container.spotifyMade()
+            ? tr("Spotify made this playlist, and it lets only its own apps read the tracks of playlists it makes.")
+            : tr("Spotify wouldn't let your app read this playlist's tracks today.");
+    if (m_view.showTracks)
+        return why + ' ' + tr("Listing them goes through a shared connection that Spotify keeps busy, so it can take a "
+                              "minute.");
+    return why + ' ' + tr("Omamp can still play it: Spotify plays the whole playlist, and the deck follows each track.");
 }
 
 // --- Status ---------------------------------------------------------------------------
@@ -1195,6 +1325,8 @@ bool SpotifyController::useOwnClientId(const QString &id) {
                 return;
             }
             m_cache.clear();
+            m_refusals.setClientId(Spotify::SpotifyPlayerBackend::effectiveClientId());
+            emit refusedChanged();
             QString text = tr("Saved your client ID in %1.").arg(appConfigPath());
             const QString backup = r.extra.value("backup").toString();
             if (!backup.isEmpty())
@@ -1282,6 +1414,9 @@ void SpotifyController::fetchList(const View &view, bool force, std::function<vo
                 add(r.search.albums, tr("Albums"));
                 add(r.search.artists, tr("Artists"));
                 add(r.search.playlists, tr("Playlists"));
+            } else if (view.section == "tracks" && view.container.kind == "artist") {
+                // From search only: never `get item … artist`.
+                r.items = b.artistPage(view.container, &r.sections, &r.error);
             } else if (view.section == "tracks") {
                 r.items = b.tracksOf(view.container, &r.error);
             } else {
@@ -1297,6 +1432,7 @@ void SpotifyController::fetchList(const View &view, bool force, std::function<vo
                 c.age.start();
                 m_cache.insert(key, c);
                 rememberTracks(r.items);
+                rememberNames(r.items);
                 if (view.section == "playlists") {
                     m_playlists = r.items;
                     emit playlistsChanged();
@@ -1337,6 +1473,16 @@ void SpotifyController::load(const View &view, bool force, bool retry) {
         m_view.error = tr("%1 can't show your library or search. Choose spotify_player in Settings → Spotify for that; "
                           "links you paste still play.")
                            .arg(m_backend->name());
+        emit viewChanged();
+        return;
+    }
+    // A playlist Spotify keeps from your app: shown with Play and Shuffle,
+    // its tracks only when asked for (or when a copy is already here).
+    m_view.restricted = m_view.section == "tracks" && isRestricted(m_view.container);
+    if (m_view.restricted && !m_view.showTracks) {
+        const auto kept = m_cache.constFind(m_view.key());
+        m_items.setItems(kept != m_cache.constEnd() ? kept->items : QList<Spotify::Item>());
+        setLoading(false);
         emit viewChanged();
         return;
     }
@@ -1403,11 +1549,74 @@ void SpotifyController::openRow(int row) {
     const Spotify::Item item = m_items.at(row);
     if (item.kind == "track" || !item.isValid())
         return;
-    m_back << m_view;
+    openContainer(item, true);
+}
+
+void SpotifyController::openContainer(const Spotify::Item &given, bool keepBack) {
+    if (keepBack)
+        m_back << m_view;
+    else
+        m_back.clear();
     View v;
     v.section = "tracks";
-    v.container = item;
+    v.container = withName(given);
+    rememberNames({v.container});
+    if (v.container.kind == "artist" && v.container.name.isEmpty()) {
+        // An artist link: search needs the name, and Spotify's public
+        // oEmbed page gives it without the Web API.
+        m_view = v;
+        m_view.error.clear();
+        setLoading(true);
+        emit viewChanged();
+        const int generation = ++m_viewGeneration;
+        m_art.lookUpTitle(v.container.webUrl(), [this, v, generation](const QString &title) {
+            if (generation != m_viewGeneration)
+                return;
+            View named = v;
+            named.container.name = title;
+            if (!title.isEmpty())
+                rememberNames({named.container});
+            load(named);
+        });
+        return;
+    }
     load(v);
+}
+
+Spotify::Item SpotifyController::knownContext(const QString &kind, const QString &id) const {
+    Spotify::Item item = m_contexts.value(kind + ':' + id);
+    if (!item.isValid()) {
+        item.kind = kind;
+        item.id = id;
+    }
+    return item;
+}
+
+void SpotifyController::rememberNames(const QList<Spotify::Item> &items) {
+    for (const Spotify::Item &i : items) {
+        if (i.kind != "track" && i.isValid() && !i.name.isEmpty())
+            m_contexts.insert(i.kind + ':' + i.id, i);
+        // A track or album names its artists too.
+        for (int a = 0; a < i.artistIds.size() && a < i.artists.size(); ++a) {
+            const QString key = "artist:" + i.artistIds.at(a);
+            if (!i.artistIds.at(a).isEmpty() && !m_contexts.contains(key)) {
+                Spotify::Item artist;
+                artist.kind = "artist";
+                artist.id = i.artistIds.at(a);
+                artist.name = i.artists.at(a);
+                m_contexts.insert(key, artist);
+            }
+        }
+    }
+}
+
+Spotify::Item SpotifyController::withName(Spotify::Item item) const {
+    if (item.name.isEmpty()) {
+        const Spotify::Item known = m_contexts.value(item.kind + ':' + item.id);
+        if (!known.name.isEmpty())
+            return known;
+    }
+    return item;
 }
 
 void SpotifyController::back() {
@@ -1558,6 +1767,49 @@ void SpotifyController::queue(const QList<Spotify::Item> &tracks, int start, Mod
         setMessage(tr("Added %n Spotify track(s) to Now Playing", "", n));
 }
 
+void SpotifyController::queueContext(const Spotify::Item &given, Mode mode, bool shuffle) {
+    if (!m_player || !given.isValid())
+        return;
+    const Spotify::Item c = withName(given);
+    rememberNames({c});
+    m_art.want(c);
+    Playlist::Track pt;
+    pt.path = Spotify::contextQueuePath(c, shuffle);
+    pt.title = c.name.isEmpty() ? kindLabel(c.kind) : c.name;
+    if (c.kind == "playlist")
+        pt.artist = c.owner.isEmpty() ? tr("Spotify playlist") : tr("Spotify playlist by %1").arg(c.owner);
+    else if (c.kind == "album")
+        pt.artist = c.artistText();
+    else
+        pt.artist = tr("Artist on Spotify");
+    if (mode == Play)
+        m_player->playTracks({pt}, 0);
+    else if (mode == Next)
+        m_player->queueNext({pt});
+    else
+        m_player->appendTracks({pt});
+    if (mode != Play)
+        setMessage(tr("Added “%1” to Now Playing").arg(pt.title));
+}
+
+void SpotifyController::playView(bool shuffle) {
+    if (m_settings.enabled && m_view.section == "tracks")
+        queueContext(m_view.container, Play, shuffle);
+}
+
+void SpotifyController::enqueueView(bool next) {
+    if (m_settings.enabled && m_view.section == "tracks")
+        queueContext(m_view.container, next ? Next : Append, false);
+}
+
+void SpotifyController::showRestrictedTracks() {
+    if (m_view.section != "tracks" || !m_view.restricted)
+        return;
+    View v = m_view;
+    v.showTracks = true;
+    load(v);
+}
+
 void SpotifyController::playFrom(SpotifyItemsModel *model, int row, Mode mode) {
     if (!m_settings.enabled)
         return;
@@ -1569,6 +1821,12 @@ void SpotifyController::playFrom(SpotifyItemsModel *model, int row, Mode mode) {
             queue(model->tracks(), model->trackIndex(row), Play);
         else
             queue({item}, 0, mode);
+        return;
+    }
+    // An artist, or a playlist Spotify keeps from your app, plays as one
+    // entry: Spotify plays it, and nothing reads its tracks.
+    if (item.kind == "artist" || isRestricted(item)) {
+        queueContext(item, mode, false);
         return;
     }
     View v;
@@ -1592,11 +1850,7 @@ void SpotifyController::openBlendRow(int row) {
         queue({item}, 0, Next);
         return;
     }
-    m_back.clear();
-    View v;
-    v.section = "tracks";
-    v.container = item;
-    load(v);
+    openContainer(item, false);
     emit showRequested();
 }
 
@@ -1615,11 +1869,7 @@ QString SpotifyController::activateUri(const QString &text) {
             setMessage(tr("%1 can only play single tracks from Omamp.").arg(m_backend->name()));
             return {};
         }
-        m_back.clear();
-        View v;
-        v.section = "tracks";
-        v.container = container;
-        load(v);
+        openContainer(container, false);
         emit showRequested();
         return "opened";
     }

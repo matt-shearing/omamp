@@ -24,6 +24,7 @@
 #include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QThread>
 #include <QTimeZone>
 #include <QtTest>
@@ -200,13 +201,15 @@ struct FakeSpotify {
     }
     void clearCalls() { QFile::remove(state() + "/calls.log"); }
     // What spotify_player would report: the track at a position.
-    void setPlayback(const QString &trackId, qint64 progressMs, bool playing) {
+    void setPlayback(const QString &trackId, qint64 progressMs, bool playing, const QString &contextUri = {}) {
         QFile item(state() + "/tracks/full-" + trackId + ".json");
         item.open(QIODevice::ReadOnly);
         const QByteArray json =
             "{\"device\":{\"id\":\"d1\",\"is_active\":true,\"is_private_session\":false,\"is_restricted\":false,"
             "\"name\":\"spotify-player\",\"type\":\"Speaker\",\"volume_percent\":70},\"repeat_state\":\"off\","
-            "\"shuffle_state\":false,\"context\":null,\"timestamp\":1760000000000,\"progress_ms\":" +
+            "\"shuffle_state\":false,\"context\":" +
+            (contextUri.isEmpty() ? QByteArray("null") : "{\"uri\":\"" + contextUri.toUtf8() + "\"}") +
+            ",\"timestamp\":1760000000000,\"progress_ms\":" +
             QByteArray::number(progressMs) + ",\"is_playing\":" + (playing ? "true" : "false") +
             ",\"item\":" + item.readAll() +
             ",\"currently_playing_type\":\"track\",\"actions\":{\"disallows\":{}}}\n";
@@ -476,7 +479,10 @@ private slots:
         Spotify::Item artist;
         artist.kind = "artist";
         artist.id = fake.id("artist:Neon Coast");
+        fake.clearCalls();
         QCOMPARE(b.tracksOf(artist, &error).size(), 4);
+        // From search, never from `get item … artist`, which Spotify refuses.
+        QVERIFY2(fake.calls().filter(QRegularExpression(" artist$")).isEmpty(), qPrintable(fake.calls().join(" | ")));
 
         const Spotify::SearchResults r = b.search("neon coast", &error);
         QCOMPARE(r.tracks.size(), 5);
@@ -1470,6 +1476,316 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 11, 5000);
         c.waitForIdle();
         QCOMPARE(fake.calls().filter("search").size(), 1);
+    }
+
+    // --- Spotify's limits on apps made since November 2024 ---------------------------
+    //
+    // With your own client ID, Spotify refuses an artist's top tracks,
+    // related artists and album list, and the details and tracks of the
+    // playlists it makes itself. spotify_player then asks again with
+    // ncspot's shared ID, which is nearly always rate-limited, so the
+    // answer takes up to a minute. The fake does the same (refusals in its
+    // log, then a late answer).
+
+    void refusalsAreKeptPerClientIdForTheDay() {
+        QCOMPARE(Spotify::refusalKey("artists/3JlzEFwarS8ZcCGNFy11y4/top-tracks"), QString("artist-top-tracks"));
+        QCOMPARE(Spotify::refusalKey("artists/3JlzEFwarS8ZcCGNFy11y4/related-artists"),
+                 QString("artist-related-artists"));
+        QCOMPARE(Spotify::refusalKey("artists/3JlzEFwarS8ZcCGNFy11y4/albums?include_groups=album,single"),
+                 QString("artist-albums"));
+        QCOMPARE(Spotify::refusalKey("playlists/37i9dQZF1DZ06evO2aJbod"), QString("playlist:37i9dQZF1DZ06evO2aJbod"));
+        QCOMPARE(Spotify::refusalKey("playlists/37i9dQZF1DZ06evO2aJbod/items"),
+                 QString("playlist:37i9dQZF1DZ06evO2aJbod"));
+        QCOMPARE(Spotify::refusalKey("https://api.spotify.com/v1/recommendations?seed_artists=x"),
+                 QString("recommendations"));
+        QCOMPARE(Spotify::refusalKey("audio-features/3JlzEFwarS8ZcCGNFy11y4"), QString("audio-features/*"));
+
+        // Lines as spotify_player 0.25.1 wrote them on Matt's machine.
+        QTemporaryDir dir;
+        const QDateTime now = QDateTime::fromString("2026-10-20T04:07:00Z", Qt::ISODate);
+        QFile log(dir.filePath("spotify-player-26-10-20-13-38.log"));
+        QVERIFY(log.open(QIODevice::WriteOnly));
+        log.write("2026-10-19T23:00:00.000000Z  WARN x: spotify_player::client::spotify: Custom Spotify Web API "
+                  "request failed; retrying with ncspot client method=\"GET\" url=\"playlists/yesterday\" status=404 Not Found\n"
+                  "2026-10-20T03:39:03.811343Z  WARN socket_request{request=Get(Item(Playlist, Id(\"37i9dQZF1DZ06evO2aJbod\"))) "
+                  "dest_addr=127.0.0.1:39329}: spotify_player::client::spotify: Custom Spotify Web API request failed; "
+                  "retrying with ncspot client method=\"GET\" url=\"playlists/37i9dQZF1DZ06evO2aJbod\" status=404 Not Found\n"
+                  "2026-10-20T04:05:19.269861Z  WARN socket_request{request=Get(Item(Artist, Id(\"3JlzEFwarS8ZcCGNFy11y4\"))) "
+                  "dest_addr=127.0.0.1:35448}: spotify_player::client::spotify: Custom Spotify Web API request failed; "
+                  "retrying with ncspot client method=\"GET\" url=\"artists/3JlzEFwarS8ZcCGNFy11y4/top-tracks\" status=403 Forbidden\n"
+                  "2026-10-20T04:06:20.470298Z  WARN socket_request{request=Get(Item(Artist, Id(\"3JlzEFwarS8ZcCGNFy11y4\"))) "
+                  "dest_addr=127.0.0.1:35448}: spotify_player::client::spotify: Custom Spotify Web API request failed; "
+                  "retrying with ncspot client method=\"GET\" url=\"artists/3JlzEFwarS8ZcCGNFy11y4/albums?include_groups=album,single\" status=400 Bad Request\n"
+                  "2026-10-20T04:06:30.000000Z  WARN x: spotify_player::client::spotify: Custom Spotify Web API request "
+                  "failed; retrying with ncspot client method=\"GET\" url=\"me/albums\" status=429 Too Many Requests\n");
+        log.close();
+        QString file;
+        qint64 offset = 0;
+        const Spotify::LogNews news = Spotify::readLogNews(dir.path(), &file, &offset, 120, now);
+        // Today's three refusals, though older than the rate-limit window;
+        // yesterday's isn't, and a 429 is a rate limit, not a refusal.
+        QCOMPARE(news.refusals.size(), 3);
+        QCOMPARE(news.refusals.at(0).status, 404);
+        QCOMPARE(news.refusals.at(1).url, QString("artists/3JlzEFwarS8ZcCGNFy11y4/top-tracks"));
+        QCOMPARE(news.rateLimits, 1);
+
+        // Kept per client ID, in a file, for the day.
+        const QString store = dir.filePath("refused.json");
+        const QDate today(2026, 10, 20);
+        {
+            Spotify::Refusals r(store);
+            r.setClientId("c789e6070c2845b0bf498faa31d397a8");
+            QVERIFY(r.learn("artist-top-tracks", 403, today));
+            QVERIFY(!r.learn("artist-top-tracks", 403, today));
+            QVERIFY(r.learn("playlist:37i9dQZF1DZ06evO2aJbod", 404, today));
+        }
+        Spotify::Refusals again(store);
+        again.setClientId("C789E6070C2845B0BF498FAA31D397A8");
+        QVERIFY(again.refused("artist-top-tracks", today));
+        QCOMPARE(again.keys(today).size(), 2);
+        // Tomorrow Spotify is asked again.
+        QVERIFY(!again.refused("artist-top-tracks", today.addDays(1)));
+        // Another client ID starts afresh.
+        again.setClientId("d420a117a32841c2b3474932e49fb54b");
+        QVERIFY(!again.refused("artist-top-tracks", today));
+
+        // Who made a playlist.
+        Spotify::Item p;
+        p.kind = "playlist";
+        p.id = "37i9dQZF1DZ06evO2aJbod";
+        QVERIFY(p.spotifyMade());
+        p.id = "4ytkzjU3Lf8GoSTI1oE9uR";
+        QVERIFY(!p.spotifyMade());
+        p.ownerId = "spotify";
+        QVERIFY(p.spotifyMade());
+        QCOMPARE(Spotify::contextQueuePath(p, true), QString("spotify://playlist/4ytkzjU3Lf8GoSTI1oE9uR?shuffle=1"));
+        QString kind, id;
+        QVERIFY(Spotify::parseReference("spotify://playlist/4ytkzjU3Lf8GoSTI1oE9uR?shuffle=1", &kind, &id));
+        QCOMPARE(id, QString("4ytkzjU3Lf8GoSTI1oE9uR"));
+        QVERIFY(Spotify::queuePathShuffles("spotify://playlist/4ytkzjU3Lf8GoSTI1oE9uR?shuffle=1"));
+    }
+
+    void anArtistPageComesFromSearchAlone() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        auto *engine = new FakeEngine;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        Player player(new HandoffEngine(engine, c.playback()), QString(),
+                      [](const QString &path, qint64, QString *) { return QUrl(path); });
+        c.setPlayer(&player);
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        c.openSection("artists");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 6, 5000);
+        int row = -1;
+        for (int r = 0; r < c.items()->count(); ++r)
+            if (c.items()->at(r).name == "Neon Coast")
+                row = r;
+        QVERIFY(row >= 0);
+        fake.clearCalls();
+        QElapsedTimer t;
+        t.start();
+        c.openRow(row);
+        QCOMPARE(c.viewKind(), QString("artist"));
+        QCOMPARE(c.viewTitle(), QString("Neon Coast"));
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        // Fast: the fake answers `get item … artist` only after its
+        // refusals and a wait, as Spotify does.
+        QVERIFY2(t.elapsed() < 1500, qPrintable(QString::number(t.elapsed())));
+        QCOMPARE(c.items()->get(0).value("section").toString(), QString("Popular tracks"));
+        QCOMPARE(c.items()->get(4).value("section").toString(), QString("Albums"));
+        QCOMPARE(c.items()->at(4).name, QString("Afterglow Avenue"));
+        QVERIFY(!c.viewNote().isEmpty());
+        QCOMPARE(fake.calls(), (QStringList{"search -- Neon Coast", "search -- artist:\"Neon Coast\""}));
+
+        // Play plays the artist on Spotify as one entry: no tracks read.
+        fake.clearCalls();
+        c.playView(false);
+        QCOMPARE(player.playlist()->count(), 1);
+        const QString id = fake.id("artist:Neon Coast");
+        QCOMPARE(player.playlist()->at(0).path, "spotify://artist/" + id);
+        QCOMPARE(player.playlist()->at(0).title, QString("Neon Coast"));
+        QTRY_VERIFY_WITH_TIMEOUT(fake.calls().contains("playback start context --id " + id + " artist"), 5000);
+        player.stop();
+
+        // An artist row's Play does the same, from the list of artists.
+        c.back();
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 6, 5000);
+        fake.clearCalls();
+        c.enqueueRow(row);
+        QCOMPARE(player.playlist()->count(), 2);
+        c.waitForIdle();
+        // Not once was an artist read with `get item`.
+        QVERIFY2(fake.calls().filter(QRegularExpression(" artist$")).filter("get item").isEmpty(),
+                 qPrintable(fake.calls().join(" | ")));
+
+        // A link to an artist Omamp knows by name opens the same page.
+        c.activateUri("https://open.spotify.com/artist/" + fake.id("artist:Lunar Drive"));
+        QTRY_VERIFY_WITH_TIMEOUT(!c.loading() && c.viewTitle() == "Lunar Drive", 5000);
+        QVERIFY(c.items()->count() > 0);
+    }
+
+    void spotifysOwnPlaylistPlaysWithoutReadingIt() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        auto *engine = new FakeEngine;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.playback()->setTimings(100, 4000);
+        Player player(new HandoffEngine(engine, c.playback()), QString(),
+                      [](const QString &path, qint64, QString *) { return QUrl(path); });
+        c.setPlayer(&player);
+        const QString synth = fake.id("playlist:Synthwave Essentials");
+        fake.touch(fake.state() + "/restricted", synth.toUtf8() + "\n");
+        fake.touch(fake.state() + "/slow-refused", "1");
+        const QString tail = fake.id("track:Tail Lights"), harbor = fake.id("track:Harbor Lights");
+        fake.touch(fake.state() + "/context-track", tail.toUtf8());
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        c.setViewVisible(true);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        QCOMPARE(c.items()->at(3).name, QString("Synthwave Essentials")); // owned by "spotify"
+
+        // Opened: the header at once, no list, nothing asked of Spotify.
+        fake.clearCalls();
+        c.openRow(3);
+        QVERIFY(c.viewRestricted());
+        QVERIFY(!c.loading());
+        QCOMPARE(c.items()->count(), 0);
+        QVERIFY(c.viewNote().contains("Spotify made this playlist"));
+        c.waitForIdle();
+        QVERIFY(fake.calls().filter("get item").isEmpty());
+
+        // Play: one Now Playing entry, played by context.
+        QList<Playlist::Track> after{{dir.filePath("b.flac"), "Local B", "Me", 1000, 0}};
+        c.playView(false);
+        player.appendTracks(after);
+        QCOMPARE(player.playlist()->count(), 2);
+        QCOMPARE(player.playlist()->at(0).path, "spotify://playlist/" + synth);
+        QCOMPARE(player.playlist()->at(0).title, QString("Synthwave Essentials"));
+        QTRY_VERIFY_WITH_TIMEOUT(fake.calls().contains("playback start context --id " + synth + " playlist"), 5000);
+        QCOMPARE(engine->state(), AudioEngine::Stopped);
+        // Confirmed by the context in the state; the deck shows its track.
+        QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 5000);
+        QCOMPARE(player.state(), QString("playing"));
+        QCOMPARE(player.title(), QString("Tail Lights"));
+        QCOMPARE(player.artist(), QString("Lunar Drive"));
+        // Spotify moves on to the playlist's next track: the deck follows.
+        const QString uri = "spotify:playlist:" + synth;
+        fake.setPlayback(harbor, 1000, true, uri);
+        QTRY_COMPARE_WITH_TIMEOUT(player.title(), QString("Harbor Lights"), 5000);
+        QCOMPARE(player.duration(), qint64(255000));
+        QCOMPARE(player.currentIndex(), 0);
+        // And stops at the end of the playlist: the next entry plays.
+        fake.setPlayback(harbor, 255000, false, uri);
+        QTRY_COMPARE_WITH_TIMEOUT(player.currentIndex(), 1, 5000);
+        QCOMPARE(engine->source(), dir.filePath("b.flac"));
+        player.stop();
+        QVERIFY(fake.calls().filter("get item").isEmpty());
+
+        // Shuffle asks Spotify to shuffle; Play next queues it.
+        fake.clearCalls();
+        c.playView(true);
+        QCOMPARE(player.playlist()->at(0).path, "spotify://playlist/" + synth + "?shuffle=1");
+        QTRY_VERIFY_WITH_TIMEOUT(fake.calls().contains("playback start context --id " + synth + " playlist --shuffle"),
+                                 5000);
+        player.stop();
+        c.enqueueView(false);
+        QCOMPARE(player.playlist()->count(), 2);
+
+        // The tracks only when asked, slowly, with the usual waiting.
+        fake.clearCalls();
+        c.showRestrictedTracks();
+        QVERIFY(c.loading());
+        QVERIFY(!c.viewRestricted());
+        QVERIFY(c.viewNote().contains("shared connection"));
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 3, 8000);
+        QCOMPARE(fake.calls().filter("get item").size(), 1);
+    }
+
+    void aRefusedPlaylistStopsWaitingAndIsRemembered() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        // Someone else's playlist that Spotify refuses your ID today.
+        const QString retro = fake.id("playlist:Retro Futures");
+        fake.touch(fake.state() + "/restricted", retro.toUtf8() + "\n");
+        fake.touch(fake.state() + "/slow-refused", "5");
+        {
+            SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+            c.setEnabled(true);
+            QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+            c.setViewVisible(true);
+            QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+            QCOMPARE(c.items()->at(4).name, QString("Retro Futures"));
+            QVERIFY(!c.isRestricted(c.items()->at(4)));
+            QElapsedTimer t;
+            t.start();
+            c.openRow(4);
+            QVERIFY(c.loading());
+            // spotify_player's log says your ID was refused: Omamp stops
+            // waiting on the shared ID and says why, long before the answer.
+            QTRY_VERIFY_WITH_TIMEOUT(c.viewRestricted(), 3500);
+            QVERIFY2(t.elapsed() < 3500, qPrintable(QString::number(t.elapsed())));
+            QVERIFY(!c.loading());
+            QVERIFY(c.viewNote().contains("wouldn't let your app"));
+            QVERIFY(c.refused().contains("playlist:" + retro));
+            c.waitForIdle();
+            // Opened again: not asked again.
+            c.back();
+            fake.clearCalls();
+            c.openRow(4);
+            QVERIFY(c.viewRestricted());
+            c.waitForIdle();
+            QVERIFY(fake.calls().filter("get item").isEmpty());
+        }
+        // Remembered across runs, for this client ID and today.
+        QVERIFY(QFile::exists(dir.filePath("art/refused.json")));
+        SpotifyController again(dir.filePath("spotify.conf"), dir.filePath("art"));
+        Spotify::Item item;
+        item.kind = "playlist";
+        item.id = retro;
+        QVERIFY(again.isRestricted(item));
+    }
+
+    void aContextIsFollowedThroughMpris() {
+        PrivateBus bus;
+        if (!bus.ok())
+            QSKIP("dbus-daemon isn't available");
+        FakeSpotify fake;
+        fake.set("OMAMP_SPOTIFY_MPRIS_BUS", bus.address);
+        fake.set("OMAMP_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.spotify_player");
+        FakeMpris mpris(bus.address, "org.mpris.MediaPlayer2.spotify_player");
+        QVERIFY2(mpris.registered(), qPrintable(mpris.why()));
+        QTemporaryDir dir;
+        auto *engine = new FakeEngine;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.playback()->setTimings(100, 8000);
+        Player player(new HandoffEngine(engine, c.playback()), QString(),
+                      [](const QString &path, qint64, QString *) { return QUrl(path); });
+        c.setPlayer(&player);
+        // Something else was playing before.
+        mpris.show("Old Song", "Someone", "Old Album", 200000, "Playing", 5000);
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        QTRY_COMPARE_WITH_TIMEOUT(c.followMode(), QString("mpris"), 3000);
+        c.setViewVisible(true);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        c.openRow(3);
+        QVERIFY(c.viewRestricted());
+        fake.clearCalls();
+        c.playView(false);
+        const QString synth = fake.id("playlist:Synthwave Essentials");
+        QTRY_VERIFY_WITH_TIMEOUT(fake.calls().contains("playback start context --id " + synth + " playlist"), 5000);
+        QTest::qWait(300);
+        // The old song still shows: not ours yet.
+        QVERIFY(player.buffering());
+        mpris.show("Tail Lights", "Lunar Drive", "Night Ride Home", 221000, "Playing", 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 3000);
+        QCOMPARE(player.title(), QString("Tail Lights"));
+        mpris.show("Harbor Lights", "Chrome Harbor", "Harbor Lights", 255000, "Playing", 0);
+        QTRY_COMPARE_WITH_TIMEOUT(player.title(), QString("Harbor Lights"), 3000);
+        QCOMPARE(player.duration(), qint64(255000));
+        QCOMPARE(stateReads(fake.calls()), 0);
+        player.stop();
     }
 };
 

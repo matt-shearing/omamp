@@ -12,6 +12,8 @@
 #include <QThread>
 #include <QUrl>
 #include <QHash>
+#include <QSet>
+#include <algorithm>
 #include <QElapsedTimer>
 #include <QSaveFile>
 #include <QTimeZone>
@@ -178,13 +180,30 @@ LogNews readLogNews(const QString &cacheFolder, QString *file, qint64 *offset, i
             break;
         consumed += raw.size();
         const QString line = QString::fromUtf8(raw);
-        if (!line.contains("rate limit", Qt::CaseInsensitive) && !line.contains("429 Too Many Requests"))
+        // A refusal is a 4xx other than 429: a 429 is Spotify asking to wait.
+        const bool refusal = line.contains("retrying with ncspot client") && !line.contains("status=429");
+        if (!refusal && !line.contains("rate limit", Qt::CaseInsensitive) && !line.contains("429 Too Many Requests"))
             continue;
         QDateTime at;
         const auto m = stamp.match(line);
         if (m.hasMatch()) {
             at = QDateTime::fromString(m.captured(1), "yyyy-MM-ddTHH:mm:ss");
             at.setTimeZone(QTimeZone::UTC);
+        }
+        if (refusal) {
+            // Kept for the day, whatever the window: what Spotify refuses
+            // it keeps refusing.
+            static const QRegularExpression fields(R"re(method="?(\w+)"? url="([^"]+)" status=(\d{3}))re");
+            const auto f = fields.match(line);
+            if (f.hasMatch() && (!at.isValid() || at.date() == now.date())) {
+                Refusal r;
+                r.method = f.captured(1);
+                r.url = f.captured(2);
+                r.status = f.captured(3).toInt();
+                r.at = at.isValid() ? at : now;
+                news.refusals << r;
+            }
+            continue;
         }
         if (at.isValid() && at.secsTo(now) > windowSecs)
             continue;
@@ -203,6 +222,104 @@ LogNews readLogNews(const QString &cacheFolder, QString *file, qint64 *offset, i
     *file = newest;
     *offset = consumed;
     return news;
+}
+
+QString refusalKey(const QString &url) {
+    QString path = url.section('?', 0, 0);
+    if (path.startsWith("http")) {
+        const int v1 = path.indexOf("/v1/");
+        path = v1 >= 0 ? path.mid(v1 + 4) : QUrl(path).path();
+    }
+    const QStringList p = path.split('/', Qt::SkipEmptyParts);
+    if (p.size() >= 3 && p[0] == "artists")
+        return "artist-" + p[2];
+    if (p.size() >= 2 && p[0] == "playlists")
+        return "playlist:" + p[1];
+    if (!p.isEmpty() && p[0] == "recommendations")
+        return "recommendations";
+    static const QRegularExpression id("^[A-Za-z0-9]{22}$");
+    QStringList out;
+    for (const QString &part : p)
+        out << (id.match(part).hasMatch() ? QString("*") : part);
+    return out.join('/');
+}
+
+Refusals::Refusals(const QString &file) { setFile(file); }
+
+void Refusals::setFile(const QString &file) {
+    m_file = file;
+    load();
+}
+
+void Refusals::setClientId(const QString &id) {
+    if (id.compare(m_clientId, Qt::CaseInsensitive) == 0)
+        return;
+    m_clientId = id.toLower();
+    load();
+}
+
+bool Refusals::learn(const QString &key, int status, const QDate &day) {
+    if (key.isEmpty())
+        return false;
+    if (day != m_day) {
+        m_status.clear();
+        m_day = day;
+    }
+    const bool fresh = !m_status.contains(key);
+    m_status.insert(key, status);
+    if (fresh)
+        save();
+    return fresh;
+}
+
+bool Refusals::refused(const QString &key, const QDate &day) const { return day == m_day && m_status.contains(key); }
+
+QStringList Refusals::keys(const QDate &day) const {
+    if (day != m_day)
+        return {};
+    QStringList k = m_status.keys();
+    k.sort();
+    return k;
+}
+
+void Refusals::clear() {
+    m_status.clear();
+    save();
+}
+
+// { "<client id>": { "day": "2026-10-20", "refused": { "<key>": 403 } } }
+void Refusals::load() {
+    m_status.clear();
+    m_day = QDate();
+    QFile f(m_file);
+    if (m_file.isEmpty() || !f.open(QIODevice::ReadOnly))
+        return;
+    const QJsonObject mine = QJsonDocument::fromJson(f.readAll()).object().value(m_clientId).toObject();
+    m_day = QDate::fromString(mine.value("day").toString(), Qt::ISODate);
+    const QJsonObject refused = mine.value("refused").toObject();
+    for (auto it = refused.begin(); it != refused.end(); ++it)
+        m_status.insert(it.key(), it.value().toInt());
+}
+
+void Refusals::save() const {
+    if (m_file.isEmpty())
+        return;
+    QJsonObject all;
+    {
+        QFile f(m_file);
+        if (f.open(QIODevice::ReadOnly))
+            all = QJsonDocument::fromJson(f.readAll()).object();
+    }
+    QJsonObject refused;
+    for (auto it = m_status.cbegin(); it != m_status.cend(); ++it)
+        refused.insert(it.key(), it.value());
+    all.insert(m_clientId, QJsonObject{{"day", m_day.toString(Qt::ISODate)}, {"refused", refused}});
+    QDir().mkpath(QFileInfo(m_file).absolutePath());
+    QSaveFile out(m_file);
+    if (out.open(QIODevice::WriteOnly)) {
+        out.write(QJsonDocument(all).toJson());
+        out.commit();
+    }
 }
 
 // --- Items --------------------------------------------------------------------
@@ -258,13 +375,24 @@ QJsonObject SearchResults::toJson() const {
 
 bool isQueuePath(const QString &path) { return path.startsWith(QLatin1String("spotify://")); }
 
+bool Item::spotifyMade() const {
+    return kind == "playlist" &&
+           (ownerId == "spotify" || (ownerId.isEmpty() && owner == "Spotify") || id.startsWith("37i9dQZF1"));
+}
+
+QString contextQueuePath(const Item &context, bool shuffle) {
+    return Item::queuePathFor(context.kind, context.id) + (shuffle ? "?shuffle=1" : "");
+}
+
+bool queuePathShuffles(const QString &path) { return isQueuePath(path) && path.endsWith("?shuffle=1"); }
+
 bool parseReference(const QString &text, QString *kind, QString *id, const QString &defaultKind) {
     static const QStringList kinds{"track", "album", "artist", "playlist"};
     static const QRegularExpression idPattern("^[A-Za-z0-9]{10,40}$");
     const QString t = text.trimmed();
     QString k, i;
     if (t.startsWith("spotify://")) {
-        const QStringList parts = t.mid(10).split('/');
+        const QStringList parts = t.mid(10).section('?', 0, 0).split('/');
         if (parts.size() == 2)
             k = parts[0], i = parts[1];
     } else if (t.startsWith("spotify:")) {
@@ -350,6 +478,7 @@ Item parsePlaylist(const QJsonObject &o) {
     // A tuple: ["display name", "user id"].
     const QJsonValue owner = o.value("owner");
     p.owner = owner.isArray() ? owner.toArray().at(0).toString() : owner.toObject().value("display_name").toString();
+    p.ownerId = owner.isArray() ? owner.toArray().at(1).toString() : owner.toObject().value("id").toString();
     return p;
 }
 
@@ -396,6 +525,7 @@ Playback parsePlayback(const QJsonValue &v) {
     p.deviceName = device.value("name").toString();
     p.deviceType = device.value("type").toString();
     p.volume = device.value("volume_percent").isDouble() ? device.value("volume_percent").toInt() : -1;
+    p.contextUri = o.value("context").toObject().value("uri").toString();
     const QJsonObject item = o.value("item").toObject();
     // An episode or something rspotify didn't know is shown by name only.
     if (!item.isEmpty())
@@ -498,6 +628,10 @@ QList<Item> Backend::library(const QString &, QString *error) {
 }
 
 QList<Item> Backend::tracksOf(const Item &, QString *error) { return library({}, error); }
+
+QList<Item> Backend::artistPage(const Item &, QStringList *, QString *error) { return library({}, error); }
+
+bool Backend::playContext(const Item &context, bool, QString *error) { return playItem(context, error); }
 
 SearchResults Backend::search(const QString &, QString *error) {
     if (error)
@@ -984,10 +1118,94 @@ QList<Item> SpotifyPlayerBackend::tracksOf(const Item &container, QString *error
             *error = tr("only a playlist, an album or an artist has tracks");
         return {};
     }
+    // Never `get item … artist`: it reads the artist's top tracks and
+    // related artists, which Spotify refuses to new apps, and then waits on
+    // ncspot's shared, rate-limited client ID.
+    if (container.kind == "artist") {
+        QList<Item> tracks;
+        for (const Item &i : artistPage(container, nullptr, error))
+            if (i.kind == "track")
+                tracks << i;
+        return tracks;
+    }
     QJsonValue v;
     if (!json({"get", "item", "--id", container.id, container.kind}, &v, error, longTimeoutMs()))
         return {};
     return parseContextTracks(v.toObject());
+}
+
+QList<Item> SpotifyPlayerBackend::artistPage(const Item &artist, QStringList *sections, QString *error) {
+    QString name = artist.name;
+    // Known by id only (a link): your followed artists may name it, and
+    // Spotify lets every app read those quickly.
+    if (name.trimmed().isEmpty()) {
+        QString ignored;
+        for (const Item &a : library("artists", &ignored))
+            if (a.id == artist.id)
+                name = a.name;
+    }
+    name.remove('"');
+    name = name.trimmed();
+    if (name.isEmpty()) {
+        if (error)
+            *error = tr("Omamp doesn't know this artist's name, so it can't look the artist up.");
+        return {};
+    }
+    // Two searches: the plain name ranks the best-known tracks first, and
+    // artist:"name" finds more of the artist's own albums. Spotify answers
+    // at most ten of each kind.
+    QString firstError;
+    const SearchResults plain = search(name, &firstError);
+    QString secondError;
+    const SearchResults byArtist = search("artist:\"" + name + "\"", &secondError);
+    if (!firstError.isEmpty() && !secondError.isEmpty()) {
+        if (error)
+            *error = firstError;
+        return {};
+    }
+    auto theirs = [&artist](const Item &i) { return i.artistIds.contains(artist.id); };
+    QList<Item> tracks, albums;
+    QSet<QString> seen;
+    // A track and its namesake single share a name; tracks are kept by id
+    // and by name, so the list doesn't repeat itself.
+    QSet<QString> names;
+    for (const QList<Item> *list : {&plain.tracks, &byArtist.tracks})
+        for (const Item &t : *list)
+            if (theirs(t) && !seen.contains(t.id) && !names.contains(t.name.toLower())) {
+                seen.insert(t.id);
+                names.insert(t.name.toLower());
+                tracks << t;
+            }
+    names.clear();
+    for (const QList<Item> *list : {&byArtist.albums, &plain.albums})
+        for (const Item &a : *list)
+            if (theirs(a) && !seen.contains(a.id) && !names.contains(a.name.toLower() + '|' + a.year)) {
+                seen.insert(a.id);
+                names.insert(a.name.toLower() + '|' + a.year);
+                albums << a;
+            }
+    // Newest album first, as the artist's own page does.
+    std::stable_sort(albums.begin(), albums.end(), [](const Item &a, const Item &b) { return a.year > b.year; });
+    if (sections) {
+        sections->clear();
+        for (int i = 0; i < tracks.size(); ++i)
+            *sections << tr("Popular tracks");
+        for (int i = 0; i < albums.size(); ++i)
+            *sections << tr("Albums");
+    }
+    return tracks + albums;
+}
+
+bool SpotifyPlayerBackend::playContext(const Item &context, bool shuffle, QString *error) {
+    if (context.kind == "track")
+        return playTrack(context.id, error);
+    // With an id, spotify_player looks nothing up: it asks Spotify's player
+    // (PUT me/player/play with the context) and, when shuffling, sets
+    // shuffle (PUT me/player/shuffle). Neither reads the tracks.
+    QStringList arguments{"playback", "start", "context", "--id", context.id, context.kind};
+    if (shuffle)
+        arguments << "--shuffle";
+    return command(arguments, nullptr, error);
 }
 
 SearchResults SpotifyPlayerBackend::search(const QString &text, QString *error) {

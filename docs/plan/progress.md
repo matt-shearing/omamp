@@ -4679,3 +4679,132 @@ light theme.
 - **Library-only entries are greyed on the deck** (Edit tags, Organise…)
   because they need chosen tracks, which only the library has.
 - **Translations**: the new strings are English only.
+
+## Spotify: rate limits (20 October 2026)
+
+**First real use hit Spotify's rate limit.** Matt signed in (spotify_player
+0.25.1 daemon, Premium; Spotifast open on the same account). His playlists
+listed, but opening "This Is Brian Fallon" (149 tracks) failed with
+"spotify_player did not answer in time". spotify_player's log showed a burst
+of `429 Too Many Requests` from the Web API just after start-up (me/player,
+me/playlists, me/albums, me/following, devices), then
+`retry_after_secs=19` for the playlist itself, with spotify_player waiting
+and retrying on its own past Omamp's 20 s limit. Run alone, the same
+`get item` took about 1.1 s.
+
+Two causes. Omamp read `get key playback` every second while a Spotify track
+played (one Web API request each time) and fired devices and the library in
+a burst when switched on. And Matt's `app.toml` sets `client_id` to
+Spotify's own desktop app ID (`65b708073fc…`), which every librespot-based
+player shares; spotify_player 0.25.1's built-in default is ncspot's
+(`d420a117…`), also shared. With a custom ID, spotify_player still reads
+`me/playlists` and `playlists/` through ncspot's ID and falls back to it on
+any 4xx (`client/spotify.rs`).
+
+### What changed
+
+- **Following playback over MPRIS** (`src/core/spotify/spotifympris.*`):
+  `Spotify::MprisWatch` follows `org.mpris.MediaPlayer2.spotify_player`
+  (found on Matt's bus; spotify_player refreshes it once a second, souvlaki
+  underneath) or `org.mpris.MediaPlayer2.spotifast` through QtDBus: GetAll on
+  appearing, PropertiesChanged, Seeked (spotify_player declares it with
+  signature `s`, so the position is read back), and a Position read every
+  2 s (500 ms near the end) while playing. Property reads only; no method is
+  called. spotify_player's metadata has no id (`mpris:trackid` is `/`), so
+  `SpotifyPlayback::isOurs()` matches by title and length (±3 s); Spotifast's
+  `xesam:url` carries the URI. A track whose name Omamp doesn't know is
+  confirmed by one command-line read. Without MPRIS the command line is read
+  every 5 s while a Spotify track plays in Omamp (1.5 s while starting and
+  near the end), and never otherwise. The view reads "playing now" once when
+  shown, at most every 15 s, and only without MPRIS.
+- **One request queue** (`src/core/spotify/spotifyrequests.*`):
+  `Spotify::Requests` with a control lane (play, pause, seek, state, status)
+  and a data lane (lists, search, devices), one command each, de-duplicated
+  by key, the data lane spaced 300 ms and held back on demand. It replaces
+  the two thread pools. Commands can be cancelled (`CancelScope`; `runProgram`
+  waits in 100 ms steps and kills the process).
+- **Cache and laziness** (`SpotifyController`): lists kept 10 minutes
+  (searches 5) by view key, shown at once while a stale one is re-read;
+  Refresh bypasses. Switching on reads devices and playlists only (the
+  account comes from the playlists); sections load when the view is shown.
+  After Omamp starts the daemon, the data lane waits 6 s. The library
+  search strip, the palette and the view share one search request.
+- **Rate limits**: lists get 60 s (`longTimeoutMs`, was 20 s).
+  `Spotify::readLogNews()` reads new lines of spotify_player's newest log for
+  "rate limit encountered" or "429 Too Many Requests" within two minutes and
+  their `retry_after_secs`; `isRateLimitText()` checks errors. While
+  rate-limited the data lane is held until Spotify's time; a failed list is
+  retried twice automatically, then shows an error with Retry. The view
+  shows "Spotify is rate-limiting requests. Retrying in N s…", "Still
+  loading… Spotify is slow right now (N s)" after 4 s, Cancel, and a
+  refresh button.
+- **Your own client ID**: `SpotifyPlayerBackend::writeClientId()` backs up
+  `app.toml` to `app.toml.omamp-backup-<time>`, replaces the top-level
+  `client_id` line (multi-line strings and tables respected) or adds one
+  above the first table, and saves atomically; it refuses an ID that isn't
+  32 hex digits and a file with `client_id_command`. `signedIn()` now needs
+  `<client_id>_token.json` when `app.toml` names an ID. Settings → Spotify →
+  "Use your own Spotify app (recommended)" explains why, lists the dashboard
+  steps, writes the ID, stops spotify_player (`stopInstances()`, SIGTERM then
+  SIGKILL, only instances of the configured program) and leaves the restart
+  to the sign-in. The Status box gains "Follows playback".
+
+### Test results
+
+`OMAMP_TESTS=spotify`: 31 passed (29 tests plus set-up and tidy-up), 0
+failed; the new ones also passed three runs in a row. New tests:
+
+| Test | What it shows |
+|---|---|
+| Queue | Three asks for one list run once; two lists run one at a time, spaced; the control lane doesn't wait behind a list; a hold delays the data lane; cancel while waiting and while running |
+| Cancelled command | A slow `spotify_player` is killed within a second of the cancel |
+| Log | Rate-limit lines from a 0.25.1 log are counted inside the window with `retry_after_secs`; read again, only new lines count |
+| Slow and rate-limited | The title shows at once, "slow" after 300 ms, rate-limited with a countdown, the list arrives; reopened from the cache with no command; Refresh reads it again |
+| Rate-limited failure | Retried after Spotify's wait and arrives; failing every time: three tries, then the error with Retry |
+| Cancel | A 6 s load stops within 2 s with "Stopped loading"; Retry loads it |
+| No burst | Switching on: `--daemon`, a 1.5 s wait, devices, playlists, nothing else; showing the view adds one state read and nothing on a second showing |
+| Client ID writer | Only the top-level `client_id` changes (a look-alike inside a multi-line string and in `[device]` stay); backup equals the original; added above the first table; made when missing; bad IDs and `client_id_command` refused |
+| Client ID flow | Writes the ID in the fake's config, stops the fake daemon, signed out until the new token appears, then started again |
+| MPRIS | On a private `dbus-daemon`, a fake spotify_player MPRIS service (no id) confirms the start, a pause and resume from elsewhere and the end, with zero `get key playback` calls although the poll interval is 100 ms |
+| No MPRIS | Default timings: at most two state reads in 6 s while playing, none when stopped |
+| Shared search | Library search, palette and view: one `search` command |
+
+`enableAndDisable` now shows the view before expecting the playlists and
+checks `user-playlists` ran once. Every test points Omamp at a bus name that
+doesn't exist, so Matt's real spotify_player MPRIS is never read.
+
+`bin/test` with JOBS=4: every class passed (27 Totals lines, 0 failed).
+
+### Checked on this machine (read only)
+
+`busctl --user list`: `org.mpris.MediaPlayer2.spotify_player` (pid of the
+daemon) and `org.mpris.MediaPlayer2.spotifast`. Introspected and read
+properties only. spotify_player's Metadata: `xesam:title`, `xesam:artist`
+(one joined string), `xesam:album`, `mpris:trackid` `/`, `mpris:length`,
+`mpris:artUrl`. Spotifast adds `xesam:url` (`spotify:track:<id>`) and its
+Position doesn't announce changes. Matt's daemon, config and Omamp were not
+touched.
+
+### Screenshots (not committed)
+
+Offscreen, in a throwaway HOME on a `dbus-run-session` bus with the fake
+daemon: Settings → Spotify (the new section and "Follows playback") and the
+Spotify view rate-limited with its countdown and Cancel. The view's title
+was squeezed by a text Refresh button, so it became an icon with a tooltip.
+
+### Known gaps
+
+- **Not tried against the real daemon.** MPRIS was read on Matt's bus but
+  followed only against the fake; the title-and-length match is untested on
+  real metadata (for example a track whose name Spotify writes differently
+  in the playlist and the playback state).
+- **No progressive playlist.** spotify_player's `get item` returns the whole
+  playlist at once and has no paging, so a 149-track playlist still arrives
+  in one piece. Omamp shows the old copy (when it has one) meanwhile.
+- **spotify_player's own start-up burst** comes from spotify_player, not
+  Omamp; Omamp only waits it out.
+- **Your own client ID still shares some requests**: spotify_player 0.25.1
+  reads `me/playlists` and `playlists/` through ncspot's ID whatever you set.
+- **The view's playing-now line without MPRIS** updates only when the view
+  is shown or while Omamp plays a Spotify track.
+- **Translations**: the new strings are English only.

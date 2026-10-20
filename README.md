@@ -11,7 +11,7 @@ Auto-DJ, MusicBrainz tagging, synced lyrics, libraries that live on a NAS
 or a Navidrome server, sync to a phone, USB drive or Syncthing folder, and
 reports as CSV or HTML.
 
-> **Status:** early (0.2.0). Everything below is built and tested (395
+> **Status:** early (0.2.0). Everything below is built and tested (407
 > automated tests), but only against made-up music, mock web services and
 > simulated network shares. It has not yet been tried on a real large library
 > or a real NAS. Expect rough edges and breaking changes. The plan and a

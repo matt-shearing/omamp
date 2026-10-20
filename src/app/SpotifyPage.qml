@@ -12,6 +12,7 @@ ScrollView {
     objectName: "spotifyPage"
     clip: true
     contentWidth: availableWidth
+    ScrollBar.vertical: ScrollBar { objectName: "spotifyPageScroll"; parent: page; x: page.width - width; height: page.availableHeight }
 
     component Heading: Text {
         Layout.fillWidth: true
@@ -128,6 +129,14 @@ ScrollView {
                     valueColor: spotify.premium === "yes" ? theme.c.green : spotify.premium === "no" ? theme.c.yellow : theme.c.muted
                 }
                 Fact {
+                    objectName: "spotifyFollowMode"
+                    visible: spotify.enabled
+                    label: qsTr("Follows playback")
+                    value: spotify.followMode === "mpris" ? qsTr("Through MPRIS, without asking Spotify")
+                         : spotify.followMode === "polling" ? qsTr("By asking Spotify every 5 seconds while a Spotify track plays in Omamp (no MPRIS from %1)").arg(spotify.backendName)
+                         : qsTr("Not yet")
+                }
+                Fact {
                     label: qsTr("Plays on")
                     value: spotify.device !== "" ? spotify.device : qsTr("“%1” on this computer").arg(spotify.deviceName)
                 }
@@ -167,6 +176,100 @@ ScrollView {
             visible: spotify.waitingForSignIn
             text: qsTr("Waiting for the sign-in to finish…")
             color: theme.accent
+        }
+
+        // ---- Your own client ID ----------------------------------------------
+        Heading {
+            text: qsTr("Use your own Spotify app (recommended)")
+            visible: spotify.backendId === "spotify_player"
+        }
+        ColumnLayout {
+            objectName: "spotifyOwnApp"
+            Layout.fillWidth: true
+            visible: spotify.backendId === "spotify_player"
+            spacing: 6
+
+            Note {
+                text: qsTr("spotify_player reads your library and starts playback through Spotify's Web API, which identifies every app by a client ID. Spotify limits how often one client ID may ask, and the ID spotify_player uses is shared by many people, so at busy times Spotify answers “too many requests” and lists take a long time or fail. With an app of your own the limit is yours alone. It is free and takes a few minutes.")
+            }
+            Text {
+                objectName: "spotifyClientIdState"
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                font.pixelSize: 13
+                color: spotify.clientIdKind === "own" ? theme.c.green : theme.c.yellow
+                text: spotify.clientIdKind === "own" ? qsTr("spotify_player uses your own client ID (%1).").arg(spotify.clientId)
+                    : spotify.clientIdKind === "desktop" ? qsTr("spotify_player's app.toml sets client_id to Spotify's own desktop app ID, which every player built on librespot shares. Expect rate limits.")
+                    : spotify.clientIdKind === "command" ? qsTr("spotify_player takes its client ID from client_id_command in app.toml. Omamp leaves that alone.")
+                    : qsTr("spotify_player uses its built-in client ID (ncspot's), which many people share. Expect rate limits at busy times.")
+            }
+            Text {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                wrapMode: Text.Wrap
+                textFormat: Text.StyledText
+                font.pixelSize: 13
+                color: theme.c.foreground
+                linkColor: theme.accent
+                onLinkActivated: (link) => Qt.openUrlExternally(link)
+                text: qsTr("1. Open <a href=\"https://developer.spotify.com/dashboard\">developer.spotify.com/dashboard</a> and sign in with your Spotify account.<br>"
+                         + "2. Press <b>Create app</b>. Any name and description will do, for example “Omamp”.<br>"
+                         + "3. Under <b>Redirect URIs</b>, add exactly: http://127.0.0.1:8989/login<br>"
+                         + "4. Where it asks which APIs you will use, tick <b>Web API</b>. Accept the terms and press <b>Save</b>.<br>"
+                         + "5. Open the app's <b>Settings</b> and copy its <b>Client ID</b>.<br>"
+                         + "6. Paste it below and press <b>Use this client ID</b>.<br>"
+                         + "7. Sign in again when Omamp asks: spotify_player needs your permission for the new app.")
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                TextField {
+                    id: redirectField
+                    Layout.preferredWidth: 260
+                    readOnly: true
+                    selectByMouse: true
+                    text: "http://127.0.0.1:8989/login"
+                    font.pixelSize: 12
+                }
+                Button {
+                    text: qsTr("Copy the redirect URI")
+                    font.pixelSize: 12
+                    onClicked: { redirectField.selectAll(); redirectField.copy(); redirectField.deselect() }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                enabled: spotify.clientIdKind !== "command" && !spotify.clientIdBusy
+                TextField {
+                    id: clientIdField
+                    objectName: "spotifyClientIdField"
+                    Layout.fillWidth: true
+                    placeholderText: qsTr("Client ID (32 letters and digits)")
+                    font.pixelSize: 13
+                    selectByMouse: true
+                    onAccepted: useButton.clicked()
+                }
+                PrimaryButton {
+                    id: useButton
+                    objectName: "spotifyUseClientId"
+                    text: spotify.clientIdBusy ? qsTr("Saving…") : qsTr("Use this client ID")
+                    enabled: clientIdField.text.trim().length > 0
+                    onClicked: if (spotify.useOwnClientId(clientIdField.text.trim())) clientIdField.text = ""
+                }
+            }
+            Note {
+                text: qsTr("Omamp writes the ID into %1, after keeping a copy of the file beside it, and changes nothing else there. It then stops spotify_player, because it needs a new sign-in for the new app; signing in starts it again.").arg(spotify.appConfigPath)
+            }
+            Text {
+                objectName: "spotifyClientIdMessage"
+                Layout.fillWidth: true
+                visible: spotify.clientIdMessage !== ""
+                wrapMode: Text.Wrap
+                font.pixelSize: 13
+                color: theme.accent
+                text: spotify.clientIdMessage
+            }
         }
 
         Heading {

@@ -218,6 +218,19 @@ FocusScope {
                 }
                 BusyIndicator { visible: spotify.loading; running: visible; implicitWidth: 28; implicitHeight: 28 }
                 Button {
+                    objectName: "spotifyRefresh"
+                    flat: true
+                    enabled: !spotify.loading && spotify.canBrowse
+                    implicitWidth: 36
+                    text: String.fromCodePoint(0xF0450)
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: 16
+                    Accessible.name: qsTr("Refresh")
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Read this list from Spotify again. Omamp keeps lists for ten minutes, so it asks Spotify less often.")
+                    onClicked: spotify.reload()
+                }
+                Button {
                     objectName: "spotifyPlay"
                     text: view.currentIsTrack ? qsTr("Play") : qsTr("Play all")
                     enabled: view.current !== null
@@ -249,14 +262,61 @@ FocusScope {
                 }
             }
 
-            Text {
+            // Where the list stands: loading, slow, rate-limited, or failed.
+            Rectangle {
+                objectName: "spotifyLoadState"
                 Layout.fillWidth: true
-                Layout.margins: 16
-                visible: spotify.viewError !== ""
-                text: spotify.viewError
-                wrapMode: Text.Wrap
-                font.pixelSize: 13
-                color: theme.c.yellow
+                Layout.leftMargin: 12
+                Layout.rightMargin: 12
+                Layout.topMargin: 6
+                visible: stateText.text !== ""
+                implicitHeight: stateRow.implicitHeight + 16
+                radius: Math.min(4, theme.radius)
+                color: theme.c.dark_background
+                border.width: 1
+                border.color: spotify.viewError !== "" ? theme.c.yellow : theme.c.lighter_background
+                RowLayout {
+                    id: stateRow
+                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
+                              leftMargin: 12; rightMargin: 8 }
+                    spacing: 10
+                    Text {
+                        id: stateText
+                        objectName: "spotifyLoadText"
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 13
+                        color: spotify.viewError !== "" ? theme.c.yellow : theme.c.foreground
+                        text: {
+                            if (!spotify.loading)
+                                return spotify.viewError
+                            if (spotify.rateLimited)
+                                return spotify.retryIn > 0
+                                    ? qsTr("Spotify is rate-limiting requests. Retrying in %1 s…").arg(spotify.retryIn)
+                                    : qsTr("Spotify is rate-limiting requests. Retrying…")
+                            if (spotify.loadingSlow)
+                                return qsTr("Still loading… Spotify is slow right now (%1 s).").arg(spotify.loadingSeconds)
+                            if (spotify.refreshing)
+                                return qsTr("Showing the copy from earlier while it reloads.")
+                            return spotify.items.count === 0 ? qsTr("Loading…") : ""
+                        }
+                    }
+                    Button {
+                        objectName: "spotifyCancelLoad"
+                        visible: spotify.loading && (spotify.loadingSlow || spotify.rateLimited)
+                        flat: true
+                        text: qsTr("Cancel")
+                        font.pixelSize: 12
+                        onClicked: spotify.cancelLoad()
+                    }
+                    Button {
+                        objectName: "spotifyRetry"
+                        visible: !spotify.loading && spotify.viewError !== "" && spotify.canBrowse
+                        text: qsTr("Retry")
+                        font.pixelSize: 12
+                        onClicked: spotify.reload()
+                    }
+                }
             }
 
             ListView {

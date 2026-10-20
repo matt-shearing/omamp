@@ -10,6 +10,10 @@
 #                       real daemon fails in its log and nothing changes)
 #   playback pause|play flips is_playing
 #   fail-<verb>         makes that verb exit 1 with a "Bad request" message
+#   slow-<verb>         sleeps that many seconds first (Spotify being slow)
+#   ratelimit           writes spotify_player's rate-limit warning, with the
+#                       file's number as retry_after_secs, to a log in
+#                       $OMAMP_SPOTIFY_PLAYER_CACHE, as the real one does
 set -u
 D=${FAKE_SPOTIFY_DIR:?FAKE_SPOTIFY_DIR is not set}
 printf '%s\n' "$*" >> "$D/calls.log"
@@ -20,6 +24,12 @@ case "${1:-}" in
     while [ -f "$D/daemon.alive" ]; do sleep 0.2; done
     exit 0 ;;
 esac
+
+if [ -f "$D/ratelimit" ] && [ -n "${OMAMP_SPOTIFY_PLAYER_CACHE:-}" ]; then
+    printf '%s  WARN client_request{request=GetContext}: spotify_player::client::middleware: Spotify Web API rate limit encountered method=GET url=https://api.spotify.com/v1/%s retry_after_secs=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%S.000000Z)" "$1" "$(cat "$D/ratelimit")" >> "$OMAMP_SPOTIFY_PLAYER_CACHE/spotify-player-26-10-20-00-00.log"
+fi
+[ -f "$D/slow-$1" ] && sleep "$(cat "$D/slow-$1")"
 
 if [ -f "$D/fail-$1" ]; then
     cat "$D/fail-$1" >&2

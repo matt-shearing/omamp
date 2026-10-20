@@ -281,24 +281,49 @@ void SpotifyItemsModel::artArrived(const QString &key) {
 SpotifyPlayback::SpotifyPlayback(SpotifyController *controller) : m_c(controller) {
     m_poll.setInterval(m_pollMs);
     connect(&m_poll, &QTimer::timeout, this, &SpotifyPlayback::pollNow);
+    // The bus answers this, not Spotify: it corrects the position's drift.
+    m_position.setInterval(2000);
+    connect(&m_position, &QTimer::timeout, this, [this] { m_c->mpris()->refreshPosition(); });
     m_tick.setInterval(250);
     connect(&m_tick, &QTimer::timeout, this, [this] {
         if (m_state != AudioEngine::Playing)
             return;
         emit positionChanged(position());
         // Near the end, look more often, so the next track follows soon.
-        const bool nearEnd = duration() > 0 && position() >= duration() - 3000;
-        const int interval = nearEnd ? qMin(400, m_pollMs) : m_pollMs;
         // setInterval restarts a running timer, so only on a change.
-        if (m_poll.interval() != interval)
-            m_poll.setInterval(interval);
+        const bool nearEnd = duration() > 0 && position() >= duration() - 3000;
+        if (followsMpris()) {
+            const int interval = nearEnd ? 500 : 2000;
+            if (m_position.interval() != interval)
+                m_position.setInterval(interval);
+        } else {
+            // While a start waits to be seen, a little sooner too.
+            const int interval = nearEnd || m_starting ? qMin(1500, m_pollMs) : m_pollMs;
+            if (m_poll.interval() != interval)
+                m_poll.setInterval(interval);
+        }
     });
+    connect(m_c->mpris(), &Spotify::MprisWatch::changed, this, &SpotifyPlayback::onMpris);
+    connect(m_c->mpris(), &Spotify::MprisWatch::availableChanged, this, &SpotifyPlayback::startFollowing);
 }
 
 void SpotifyPlayback::setTimings(int pollMs, int startTimeoutMs) {
     m_pollMs = pollMs;
     m_startTimeoutMs = startTimeoutMs;
     m_poll.setInterval(pollMs);
+}
+
+bool SpotifyPlayback::followsMpris() const { return m_c->mpris()->available(); }
+
+bool SpotifyPlayback::isOurs(const Spotify::Playback &p) const {
+    if (!p.valid)
+        return false;
+    if (!p.track.id.isEmpty() && !m_track.id.isEmpty())
+        return p.track.id == m_track.id;
+    if (m_track.name.isEmpty() || p.track.name.compare(m_track.name, Qt::CaseInsensitive) != 0)
+        return false;
+    // Two tracks of the same name: the length tells them apart.
+    return p.track.durationMs <= 0 || m_track.durationMs <= 0 || qAbs(p.track.durationMs - m_track.durationMs) <= 3000;
 }
 
 QVariantMap SpotifyPlayback::metaData() const {
@@ -322,10 +347,14 @@ void SpotifyPlayback::setState(AudioEngine::State state) {
     if (state == m_state)
         return;
     m_state = state;
-    if (state == AudioEngine::Playing)
+    if (state == AudioEngine::Playing) {
         m_tick.start();
-    else
+        if (m_started && followsMpris())
+            m_position.start();
+    } else {
         m_tick.stop();
+        m_position.stop();
+    }
     emit stateChanged();
 }
 
@@ -333,6 +362,7 @@ void SpotifyPlayback::load(const QString &path) {
     ++m_generation;
     m_poll.stop();
     m_tick.stop();
+    m_position.stop();
     m_path = path;
     QString kind, id;
     Spotify::parseReference(path, &kind, &id);
@@ -343,7 +373,7 @@ void SpotifyPlayback::load(const QString &path) {
         m_track.id = id;
     }
     m_state = AudioEngine::Stopped;
-    m_started = m_starting = m_confirmed = m_pausedByUs = false;
+    m_started = m_starting = m_confirmed = m_pausedByUs = m_askedOnce = false;
     m_base = 0;
     m_since.invalidate();
     emit metaDataChanged();
@@ -357,6 +387,7 @@ void SpotifyPlayback::unload() {
     ++m_generation;
     m_poll.stop();
     m_tick.stop();
+    m_position.stop();
     m_path.clear();
     m_state = AudioEngine::Stopped;
     m_started = m_starting = m_confirmed = false;
@@ -366,6 +397,7 @@ void SpotifyPlayback::fail(const QString &detail) {
     const bool wasStarting = m_starting;
     m_starting = false;
     m_poll.stop();
+    m_position.stop();
     if (wasStarting)
         emit bufferingChanged();
     setState(AudioEngine::Stopped);
@@ -375,6 +407,39 @@ void SpotifyPlayback::fail(const QString &detail) {
         if (path == m_path)
             emit failed(path, detail);
     });
+}
+
+// Follows the track: through MPRIS when the backend publishes it (nothing
+// asked of Spotify), else by reading its state through the command line
+// every few seconds.
+void SpotifyPlayback::startFollowing() {
+    if (m_path.isEmpty() || !m_started) {
+        m_poll.stop();
+        m_position.stop();
+        return;
+    }
+    if (followsMpris()) {
+        m_poll.stop();
+        if (m_state == AudioEngine::Playing)
+            m_position.start();
+        onMpris();
+        // spotify_player's MPRIS has no id; a track whose name Omamp
+        // doesn't know yet is confirmed by one read of the state.
+        if (m_starting && m_track.name.isEmpty() && !m_askedOnce) {
+            m_askedOnce = true;
+            const int generation = m_generation;
+            QTimer::singleShot(1500, this, [this, generation] {
+                if (generation == m_generation && m_starting)
+                    readState();
+            });
+        }
+    } else {
+        m_position.stop();
+        if (m_starting)
+            m_poll.setInterval(qMin(1500, m_pollMs));
+        if (!m_poll.isActive())
+            m_poll.start();
+    }
 }
 
 void SpotifyPlayback::play() {
@@ -396,7 +461,7 @@ void SpotifyPlayback::play() {
         m_c->runControl([](Spotify::Backend &b) { b.resume(nullptr); });
         m_since.restart();
         setState(AudioEngine::Playing);
-        m_poll.start();
+        startFollowing();
         return;
     }
     m_started = true;
@@ -407,19 +472,14 @@ void SpotifyPlayback::play() {
     setState(AudioEngine::Playing);
     const QString id = m_track.id;
     QPointer<SpotifyPlayback> self(this);
-    m_c->runControl([self, id, generation](Spotify::Backend &b) {
-        QString error;
-        if (b.playTrack(id, &error))
-            return;
-        QMetaObject::invokeMethod(
-            self,
-            [self, generation, error] {
-                if (self && generation == self->m_generation)
-                    self->fail(error);
-            },
-            Qt::QueuedConnection);
-    });
-    m_poll.start();
+    m_c->request(
+        Spotify::Requests::Control, {},
+        [id](Spotify::Backend &b, Spotify::Result &r) { b.playTrack(id, &r.error); },
+        [self, generation](const Spotify::Result &r) {
+            if (self && !r.error.isEmpty() && generation == self->m_generation)
+                self->fail(r.error);
+        });
+    startFollowing();
 }
 
 void SpotifyPlayback::pause() {
@@ -440,6 +500,7 @@ void SpotifyPlayback::stop() {
     ++m_generation;
     m_pausedByUs = true;
     m_poll.stop();
+    m_position.stop();
     const bool wasStarting = m_starting;
     m_started = m_starting = m_confirmed = false;
     if (wasStarting)
@@ -462,25 +523,39 @@ void SpotifyPlayback::seek(qint64 ms) {
 }
 
 void SpotifyPlayback::pollNow() {
+    if (m_path.isEmpty())
+        return;
+    if (followsMpris()) {
+        m_c->mpris()->refreshAll();
+        return;
+    }
+    readState();
+}
+
+// One read of the backend's state through its command line: a Web API
+// request, shared with any other read already waiting.
+void SpotifyPlayback::readState() {
     if (m_polling || m_path.isEmpty())
         return;
     m_polling = true;
     const int generation = m_generation, commands = m_commands;
     QPointer<SpotifyPlayback> self(this);
-    m_c->runControl([self, generation, commands](Spotify::Backend &b) {
-        QString error;
-        const Spotify::Playback p = b.playback(&error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, generation, commands, p, error] {
-                if (!self)
-                    return;
-                self->m_polling = false;
-                if (generation == self->m_generation && commands == self->m_commands)
-                    self->onPolled(p, error);
-            },
-            Qt::QueuedConnection);
-    });
+    m_c->request(
+        Spotify::Requests::Control, "playback",
+        [](Spotify::Backend &b, Spotify::Result &r) { r.playback = b.playback(&r.error); },
+        [self, generation, commands](const Spotify::Result &r) {
+            if (!self)
+                return;
+            self->m_polling = false;
+            if (generation == self->m_generation && commands == self->m_commands)
+                self->onPolled(r.playback, r.error);
+        });
+}
+
+void SpotifyPlayback::onMpris() {
+    if (m_path.isEmpty() || !m_started || !followsMpris())
+        return;
+    onPolled(m_c->mpris()->state(), {});
 }
 
 void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error) {
@@ -490,20 +565,36 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
         return;
     }
     m_c->noteNowPlaying(p);
-    const bool ours = p.valid && p.track.id == m_track.id;
+    const bool ours = isOurs(p);
     if (m_starting) {
         if (ours && p.playing) {
             m_starting = false;
             m_confirmed = true;
             emit bufferingChanged();
-            // The playback state has the album and its picture.
+            // The playback state has the album and its picture; MPRIS has
+            // no ids, so what Omamp knew stays.
             const qint64 oldDuration = m_track.durationMs;
-            m_track = p.track;
+            if (!p.track.id.isEmpty() && !p.track.albumId.isEmpty()) {
+                m_track = p.track;
+            } else {
+                if (m_track.name.isEmpty())
+                    m_track.name = p.track.name;
+                if (m_track.artists.isEmpty())
+                    m_track.artists = p.track.artists;
+                if (m_track.album.isEmpty())
+                    m_track.album = p.track.album;
+                if (p.track.durationMs > 0)
+                    m_track.durationMs = p.track.durationMs;
+                if (m_track.imageUrl.isEmpty())
+                    m_track.imageUrl = p.track.imageUrl;
+            }
             if (m_track.durationMs <= 0)
                 m_track.durationMs = oldDuration;
             emit metaDataChanged();
             emit durationChanged(m_track.durationMs);
             setBase(p.progressMs);
+            if (followsMpris())
+                m_position.start();
             m_c->noteStarted(p);
         } else if (m_startedAt.elapsed() > m_startTimeoutMs) {
             fail(m_c->startFailureHint());
@@ -514,28 +605,33 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
         return;
     const qint64 length = duration();
     const bool nearEnd = length > 0 && position() >= length - 4000;
+    // Just after our own command the backend may not have caught up;
+    // spotify_player refreshes its MPRIS state once a second.
+    const int settle = followsMpris() ? 2500 : 1500;
+    const bool settled = !m_lastCommand.isValid() || m_lastCommand.elapsed() > settle;
     if (!ours) {
         if (m_state != AudioEngine::Playing)
             return;
         if (nearEnd) {
             finishTrack();
-        } else {
-            // Something else plays now: someone chose it in Spotify.
+        } else if (settled) {
+            // Something else plays now (someone chose it in Spotify), or
+            // nothing does.
             setBase(position());
             m_pausedByUs = true;
             setState(AudioEngine::Paused);
-            m_c->setMessage(tr("Spotify is playing something else now, so Omamp paused its queue."));
+            if (p.valid)
+                m_c->setMessage(tr("Spotify is playing something else now, so Omamp paused its queue."));
         }
         return;
     }
-    // Just after our own command the backend may not have caught up.
-    const bool settled = !m_lastCommand.isValid() || m_lastCommand.elapsed() > 1500;
     if (p.playing) {
         if (m_state != AudioEngine::Playing && settled) {
             m_pausedByUs = false;
             setState(AudioEngine::Playing);
         }
-        setBase(p.progressMs);
+        if (m_state == AudioEngine::Playing && settled)
+            setBase(p.progressMs);
         return;
     }
     if (m_state != AudioEngine::Playing || m_pausedByUs)
@@ -553,6 +649,7 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
 void SpotifyPlayback::finishTrack() {
     ++m_generation;
     m_poll.stop();
+    m_position.stop();
     m_started = m_starting = m_confirmed = false;
     setBase(duration());
     m_state = AudioEngine::Stopped;
@@ -562,12 +659,26 @@ void SpotifyPlayback::finishTrack() {
 
 // --- SpotifyController ------------------------------------------------------------
 
+QString SpotifyController::View::key() const {
+    if (section == "tracks")
+        return "tracks:" + container.kind + ':' + container.id;
+    if (section == "search")
+        return "search:" + search.toLower();
+    return "library:" + section;
+}
+
 SpotifyController::SpotifyController(const QString &settingsPath, const QString &artDir, QObject *parent)
     : QObject(parent), m_settingsPath(settingsPath.isEmpty() ? Spotify::Settings::defaultPath() : settingsPath),
       m_settings(Spotify::Settings::load(m_settingsPath)), m_art(artDir), m_items(&m_art), m_blend(&m_art),
       m_playback(this), m_launch(defaultLaunch) {
-    m_control.setMaxThreadCount(1);
-    m_data.setMaxThreadCount(1);
+    const auto envMs = [](const char *name, int fallback) {
+        bool ok = false;
+        const int v = qEnvironmentVariableIntValue(name, &ok);
+        return ok && v >= 0 ? v : fallback;
+    };
+    m_requests.setGapMs(envMs("OMAMP_SPOTIFY_GAP_MS", 300));
+    m_warmupMs = envMs("OMAMP_SPOTIFY_WARMUP_MS", 6000);
+    m_slowMs = envMs("OMAMP_SPOTIFY_SLOW_MS", 4000);
     makeBackend();
 
     connect(&m_art, &SpotifyArt::artReady, this, [this](const QString &key) {
@@ -584,6 +695,9 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
             emit playingArtChanged();
     });
 
+    connect(&m_mpris, &Spotify::MprisWatch::changed, this, &SpotifyController::noteMpris);
+    connect(&m_mpris, &Spotify::MprisWatch::availableChanged, this, &SpotifyController::statusChanged);
+
     m_signInWait.setInterval(3000);
     connect(&m_signInWait, &QTimer::timeout, this, [this] {
         if (m_backend->signedIn() || ++m_signInChecks > 100) {
@@ -591,8 +705,6 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
             refreshStatus();
         }
     });
-    m_viewPoll.setInterval(4000);
-    connect(&m_viewPoll, &QTimer::timeout, this, &SpotifyController::pollNowPlaying);
     m_blendTimer.setSingleShot(true);
     m_blendTimer.setInterval(400);
     connect(&m_blendTimer, &QTimer::timeout, this, &SpotifyController::runBlend);
@@ -600,23 +712,46 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
     m_paletteTimer.setInterval(400);
     connect(&m_paletteTimer, &QTimer::timeout, this, &SpotifyController::runPaletteSearch);
 
+    // While a list loads: the seconds, "slow", the rate limit's countdown.
+    m_loadTick.setInterval(1000);
+    connect(&m_loadTick, &QTimer::timeout, this, [this] {
+        if (m_loading) {
+            m_loadingSlow = m_loadClock.elapsed() >= m_slowMs;
+            checkRateLimit(false, {});
+        } else if (m_rateLimited && retryIn() == 0 && !m_retryTimer.isActive()) {
+            setRateLimited(false);
+        }
+        if (!m_loading && !m_rateLimited)
+            m_loadTick.stop();
+        emit loadingChanged();
+    });
+    m_retryTimer.setSingleShot(true);
+    connect(&m_retryTimer, &QTimer::timeout, this, [this] { load(m_view, true, true); });
+
+    followMpris();
     if (m_settings.enabled)
         refreshStatus();
 }
 
 SpotifyController::~SpotifyController() {
     *m_alive = false;
-    m_control.waitForDone();
-    m_data.waitForDone();
+    m_requests.cancelAll();
 }
 
 void SpotifyController::waitForIdle() {
-    m_control.waitForDone();
-    m_data.waitForDone();
+    m_requests.waitForIdle();
     QCoreApplication::processEvents();
 }
 
-void SpotifyController::makeBackend() { m_backend = Spotify::Backend::create(m_settings.backend); }
+void SpotifyController::makeBackend() {
+    m_backend = Spotify::Backend::create(m_settings.backend);
+    m_requests.cancelAll();
+    m_requests.setBackend(m_backend);
+}
+
+void SpotifyController::followMpris() {
+    m_mpris.setService(m_settings.enabled ? m_backend->mprisName() : QString());
+}
 
 void SpotifyController::saveSettings() {
     m_settings.save(m_settingsPath);
@@ -628,11 +763,18 @@ void SpotifyController::setEnabled(bool on) {
         return;
     m_settings.enabled = on;
     saveSettings();
+    followMpris();
     if (on) {
         refreshStatus();
-        load(m_view);
+        // The list loads when the view is shown, not now: switching on
+        // shouldn't fire every request at once.
+        m_viewStale = true;
+        if (m_viewVisible)
+            load(m_view);
     } else {
-        m_viewPoll.stop();
+        m_requests.cancelAll();
+        m_retryTimer.stop();
+        setLoading(false);
         m_items.setItems({});
         m_blend.setItems({});
         if (m_palette)
@@ -645,15 +787,24 @@ void SpotifyController::setBackendId(const QString &id) {
         return;
     m_settings.backend = id;
     makeBackend();
+    followMpris();
     m_status = Status();
+    m_checking = false;
     m_playlists.clear();
+    m_cache.clear();
     m_items.setItems({});
+    setLoading(false);
     saveSettings();
     emit playlistsChanged();
     emit statusChanged();
+    emit clientIdChanged();
     if (m_settings.enabled) {
         refreshStatus();
-        load(View());
+        m_back.clear();
+        m_view = View();
+        m_viewStale = true;
+        if (m_viewVisible)
+            load(m_view);
     }
 }
 
@@ -698,14 +849,19 @@ void SpotifyController::setMessage(const QString &message) {
     emit messageChanged();
 }
 
-void SpotifyController::runControl(std::function<void(Spotify::Backend &)> work) {
-    auto backend = m_backend;
-    m_control.start([backend, work] { work(*backend); });
+void SpotifyController::request(Spotify::Requests::Lane lane, const QString &key, Spotify::Requests::Work work,
+                                Spotify::Requests::Done done) {
+    m_requests.submit(lane, key, std::move(work), this, [this, lane, done](const Spotify::Result &r) {
+        if (lane == Spotify::Requests::Data && !r.cancelled)
+            checkRateLimit(!r.ok(), r.error);
+        if (done)
+            done(r);
+    });
 }
 
-void SpotifyController::runData(std::function<void(Spotify::Backend &)> work) {
-    auto backend = m_backend;
-    m_data.start([backend, work] { work(*backend); });
+void SpotifyController::runControl(std::function<void(Spotify::Backend &)> work) {
+    m_requests.submit(
+        Spotify::Requests::Control, {}, [work](Spotify::Backend &b, Spotify::Result &) { work(b); }, this, {});
 }
 
 void SpotifyController::rememberTracks(const QList<Spotify::Item> &tracks) {
@@ -718,6 +874,49 @@ void SpotifyController::rememberTracks(const QList<Spotify::Item> &tracks) {
             m_known.insert(t.id, merged);
             m_art.remember(t);
         }
+}
+
+// --- Rate limits ------------------------------------------------------------------
+
+int SpotifyController::retryIn() const {
+    if (!m_rateLimited || !m_retryUntil.isValid())
+        return 0;
+    return int(qMax<qint64>(0, QDateTime::currentDateTimeUtc().secsTo(m_retryUntil)));
+}
+
+void SpotifyController::setRateLimited(bool on, const QDateTime &until) {
+    if (on == m_rateLimited && until == m_retryUntil)
+        return;
+    m_rateLimited = on;
+    m_retryUntil = on ? until : QDateTime();
+    if (on)
+        m_loadTick.start();
+    emit loadingChanged();
+}
+
+// Whether Spotify is rate-limiting spotify_player: its error says so, or
+// its log does. While it is, the data lane waits until Spotify said to try
+// again, so Omamp doesn't add to the pile.
+void SpotifyController::checkRateLimit(bool failed, const QString &error) {
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    Spotify::LogNews news;
+    if (m_settings.backend == "spotify_player")
+        news = Spotify::readLogNews(Spotify::SpotifyPlayerBackend::cacheFolder(), &m_logFile, &m_logOffset, 120, now);
+    const bool hit = Spotify::isRateLimitText(error) || news.rateLimits > 0 ||
+                     (failed && m_rateLimited && error.contains("in time"));
+    if (hit) {
+        QDateTime until = news.retryUntil.isValid() ? news.retryUntil : m_retryUntil;
+        if (failed && (!until.isValid() || until < now.addSecs(2)))
+            until = now.addSecs(10);
+        if (!until.isValid())
+            until = now;
+        if (failed)
+            m_requests.holdData(int(qMin<qint64>(now.msecsTo(until), 120000)));
+        if (!m_rateLimited || until > m_retryUntil)
+            setRateLimited(true, until);
+    } else if (!failed && m_rateLimited && now >= m_retryUntil && !m_loading) {
+        setRateLimited(false);
+    }
 }
 
 // --- Status ---------------------------------------------------------------------------
@@ -762,7 +961,17 @@ QString SpotifyController::startFailureHint() const {
     if (m_settings.backend == "spotify_player" && m_status.running && !device)
         return tr("spotify_player has no Spotify Connect device on this computer, so nothing could play. It makes one "
                   "only for a Premium account.");
+    if (m_rateLimited)
+        return tr("Spotify is rate-limiting requests, so the track didn't start in time. Try it again in a minute.");
     return tr("Spotify didn't start the track. %1's log may say why.").arg(m_backend->name());
+}
+
+QString SpotifyController::followMode() const {
+    if (!m_settings.enabled)
+        return "none";
+    if (m_mpris.available())
+        return "mpris";
+    return m_status.running ? "polling" : "none";
 }
 
 void SpotifyController::refreshStatus() {
@@ -770,64 +979,114 @@ void SpotifyController::refreshStatus() {
         return;
     m_checking = true;
     emit statusChanged();
+    emit clientIdChanged();
+    const int generation = ++m_statusGeneration;
     const bool autoStart = m_settings.enabled && m_settings.startDaemon && m_settings.backend == "spotify_player";
-    QPointer<SpotifyController> self(this);
-    runData([self, autoStart](Spotify::Backend &b) {
-        Status s;
-        s.installed = b.installed();
-        s.signedIn = b.signedIn();
-        s.running = b.running();
-        s.deviceName = b.deviceName();
-        if (autoStart && s.installed && s.signedIn && !s.running) {
-            b.start(&s.error);
-            s.running = b.running();
-        }
-        QList<Spotify::Item> playlists;
-        if (s.running) {
-            QString error;
-            const QList<Spotify::Device> devices = b.devices(&error);
-            bool ours = false;
-            for (const Spotify::Device &d : devices) {
-                s.devices << QVariantMap{{"id", d.id}, {"name", d.name}, {"type", d.type}, {"active", d.active}};
-                if (d.active)
-                    s.device = d.name;
-                ours = ours || d.name == s.deviceName;
+    // First what this computer can say without Spotify: installed, signed
+    // in, running (and starting it).
+    request(
+        Spotify::Requests::Control, "status",
+        [autoStart](Spotify::Backend &b, Spotify::Result &r) {
+            const bool installed = b.installed(), signedIn = b.signedIn();
+            bool running = b.running();
+            bool started = false;
+            if (autoStart && installed && signedIn && !running) {
+                b.start(&r.error);
+                running = b.running();
+                started = running;
             }
-            if (ours)
-                s.premium = "yes";
-            if (b.caps().library) {
-                playlists = b.library("playlists", &error);
-                QHash<QString, int> owners;
-                for (const Spotify::Item &p : playlists)
-                    if (!p.owner.isEmpty() && p.owner != "Spotify")
-                        ++owners[p.owner];
-                int most = 0;
-                for (auto it = owners.cbegin(); it != owners.cend(); ++it)
-                    if (it.value() > most)
-                        s.account = it.key(), most = it.value();
+            r.extra = {{"installed", installed}, {"signedIn", signedIn}, {"running", running},
+                       {"started", started},     {"deviceName", b.deviceName()}};
+        },
+        [this, generation](const Spotify::Result &r) {
+            if (generation != m_statusGeneration)
+                return;
+            Status s;
+            s.installed = r.extra.value("installed").toBool();
+            s.signedIn = r.extra.value("signedIn").toBool();
+            s.running = r.extra.value("running").toBool();
+            s.deviceName = r.extra.value("deviceName").toString();
+            s.error = r.error;
+            // What was learned before stays until it is read again.
+            if (s.running && m_status.running) {
+                s.account = m_status.account;
+                s.devices = m_status.devices;
+                s.device = m_status.device;
             }
-            if (!error.isEmpty())
-                s.error = error;
-        }
-        QMetaObject::invokeMethod(
-            self,
-            [self, s, playlists] {
-                if (!self)
+            if (m_status.premium == "no" || (s.running && m_status.running))
+                s.premium = m_status.premium;
+            m_status = s;
+            if (!s.running || !m_backend->caps().library) {
+                if (s.running && !m_backend->caps().library) {
+                    fetchDevicesAndAccount(generation);
                     return;
-                // A failure to play learned this session outlasts a check.
-                const QString premium = self->m_status.premium;
-                self->m_status = s;
-                if (s.premium == "unknown" && premium == "no")
-                    self->m_status.premium = premium;
-                self->m_checking = false;
-                if (s.running && self->m_backend->caps().library) {
-                    self->m_playlists = playlists;
-                    emit self->playlistsChanged();
                 }
-                emit self->statusChanged();
-            },
-            Qt::QueuedConnection);
-    });
+                m_checking = false;
+                emit statusChanged();
+                return;
+            }
+            // spotify_player reads the whole library from Spotify as it
+            // starts; Omamp waits before it asks for more.
+            if (r.extra.value("started").toBool())
+                m_requests.holdData(m_warmupMs);
+            emit statusChanged();
+            fetchDevicesAndAccount(generation);
+        });
+}
+
+// The devices (one request) and the account (from the playlists, which the
+// view needs anyway, through the cache).
+void SpotifyController::fetchDevicesAndAccount(int generation) {
+    request(
+        Spotify::Requests::Data, "devices",
+        [](Spotify::Backend &b, Spotify::Result &r) { r.devices = b.devices(&r.error); },
+        [this, generation](const Spotify::Result &r) {
+            if (generation != m_statusGeneration)
+                return;
+            if (r.ok()) {
+                m_status.devices.clear();
+                m_status.device.clear();
+                bool ours = false;
+                for (const Spotify::Device &d : r.devices) {
+                    m_status.devices << QVariantMap{{"id", d.id}, {"name", d.name}, {"type", d.type}, {"active", d.active}};
+                    if (d.active)
+                        m_status.device = d.name;
+                    ours = ours || d.name == m_status.deviceName;
+                }
+                if (ours)
+                    m_status.premium = "yes";
+                else if (m_status.premium != "no")
+                    m_status.premium = "unknown";
+            } else if (!r.cancelled) {
+                m_status.error = r.error;
+            }
+            if (!m_backend->caps().library) {
+                m_checking = false;
+                emit statusChanged();
+                return;
+            }
+            View playlists;
+            playlists.section = "playlists";
+            fetchList(playlists, false, [this, generation](const Spotify::Result &l) {
+                if (generation != m_statusGeneration)
+                    return;
+                if (l.ok()) {
+                    QHash<QString, int> owners;
+                    for (const Spotify::Item &p : l.items)
+                        if (!p.owner.isEmpty() && p.owner != "Spotify")
+                            ++owners[p.owner];
+                    int most = 0;
+                    for (auto it = owners.cbegin(); it != owners.cend(); ++it)
+                        if (it.value() > most || (it.value() == most && it.key() < m_status.account))
+                            m_status.account = it.key(), most = it.value();
+                } else if (!l.cancelled && m_status.error.isEmpty()) {
+                    m_status.error = l.error;
+                }
+                m_checking = false;
+                emit statusChanged();
+                emit playlistsChanged();
+            });
+        });
 }
 
 bool SpotifyController::signIn() {
@@ -849,39 +1108,107 @@ bool SpotifyController::signIn() {
 }
 
 void SpotifyController::startBackend() {
-    QPointer<SpotifyController> self(this);
-    runData([self](Spotify::Backend &b) {
-        QString error;
-        const bool ok = b.start(&error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, ok, error] {
-                if (!self)
-                    return;
-                if (!ok)
-                    self->setMessage(error);
-                self->refreshStatus();
-            },
-            Qt::QueuedConnection);
-    });
+    request(
+        Spotify::Requests::Control, "start",
+        [](Spotify::Backend &b, Spotify::Result &r) { b.start(&r.error); },
+        [this](const Spotify::Result &r) {
+            if (!r.error.isEmpty())
+                setMessage(r.error);
+            refreshStatus();
+        });
 }
 
 void SpotifyController::connectDevice(const QString &id) {
-    QPointer<SpotifyController> self(this);
-    runControl([self, id](Spotify::Backend &b) {
-        QString error;
-        b.connectDevice(id, &error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, error] {
-                if (!self)
-                    return;
-                if (!error.isEmpty())
-                    self->setMessage(error);
-                self->refreshStatus();
-            },
-            Qt::QueuedConnection);
-    });
+    request(
+        Spotify::Requests::Control, "connect:" + id,
+        [id](Spotify::Backend &b, Spotify::Result &r) { b.connectDevice(id, &r.error); },
+        [this](const Spotify::Result &r) {
+            if (!r.error.isEmpty())
+                setMessage(r.error);
+            refreshStatus();
+        });
+}
+
+// --- Your own client ID --------------------------------------------------------------
+
+QString SpotifyController::appConfigPath() const { return Spotify::SpotifyPlayerBackend::configFolder() + "/app.toml"; }
+
+QString SpotifyController::clientId() const {
+    return Spotify::SpotifyPlayerBackend::effectiveClientId();
+}
+
+QString SpotifyController::clientIdKind() const {
+    using B = Spotify::SpotifyPlayerBackend;
+    if (B::hasClientIdCommand())
+        return "command";
+    const QString id = B::configuredClientId();
+    if (id.isEmpty() || id.compare(B::ncspotClientId(), Qt::CaseInsensitive) == 0)
+        return "default";
+    if (id.compare(B::spotifyDesktopClientId(), Qt::CaseInsensitive) == 0)
+        return "desktop";
+    return "own";
+}
+
+bool SpotifyController::useOwnClientId(const QString &id) {
+    using B = Spotify::SpotifyPlayerBackend;
+    auto say = [this](const QString &text) {
+        m_clientIdMessage = text;
+        emit clientIdChanged();
+    };
+    if (!B::isValidClientId(id)) {
+        say(tr("That isn't a Spotify client ID. A client ID is 32 letters and digits, shown on your app's page at "
+               "developer.spotify.com."));
+        return false;
+    }
+    if (B::hasClientIdCommand()) {
+        say(tr("app.toml sets client_id_command, which spotify_player uses instead of client_id. Remove that line from "
+               "%1 first.")
+                .arg(appConfigPath()));
+        return false;
+    }
+    m_clientIdBusy = true;
+    say(tr("Saving…"));
+    const QString folder = B::configFolder();
+    // On the control lane, so no command runs against spotify_player while
+    // it stops.
+    request(
+        Spotify::Requests::Control, "client-id",
+        [id, folder](Spotify::Backend &, Spotify::Result &r) {
+            QString backup;
+            if (!B::writeClientId(folder, id, &backup, &r.error))
+                return;
+            r.extra.insert("backup", backup);
+            // spotify_player reads the ID as it starts. It needs a new
+            // sign-in for it, and started without one it would wait for a
+            // browser, so it is stopped now and started after the sign-in.
+            B player;
+            const bool wasRunning = player.running();
+            QString stopError;
+            if (wasRunning && !player.stopInstances(&stopError))
+                r.extra.insert("stopError", stopError);
+            r.extra.insert("stopped", wasRunning && stopError.isEmpty());
+        },
+        [this, say](const Spotify::Result &r) {
+            m_clientIdBusy = false;
+            if (!r.ok()) {
+                say(r.error);
+                return;
+            }
+            m_cache.clear();
+            QString text = tr("Saved your client ID in %1.").arg(appConfigPath());
+            const QString backup = r.extra.value("backup").toString();
+            if (!backup.isEmpty())
+                text += ' ' + tr("The previous file is kept as %1.").arg(backup);
+            if (r.extra.value("stopped").toBool())
+                text += ' ' + tr("spotify_player was stopped.");
+            else if (r.extra.contains("stopError"))
+                text += ' ' + r.extra.value("stopError").toString();
+            text += ' ' + tr("Now sign in again with the new ID: press Sign in…, or run “spotify_player authenticate” in "
+                             "a terminal. Omamp starts spotify_player once you're signed in.");
+            say(text);
+            refreshStatus();
+        });
+    return true;
 }
 
 // --- The view -------------------------------------------------------------------------
@@ -912,74 +1239,156 @@ void SpotifyController::setLoading(bool on) {
     if (on == m_loading)
         return;
     m_loading = on;
+    m_loadingSlow = false;
+    if (on) {
+        m_loadClock.start();
+        m_loadTick.start();
+    } else {
+        m_loadClock.invalidate();
+    }
     emit loadingChanged();
 }
 
-void SpotifyController::load(const View &view) {
+int SpotifyController::ttlFor(const View &view) const {
+    // Searches go stale sooner than your own library.
+    return view.section == "search" ? qMin(m_cacheTtlMs, 5 * 60 * 1000) : m_cacheTtlMs;
+}
+
+// Every list goes through here: the cache when it is fresh, else one
+// request on the data lane (shared with any other asking for the same).
+void SpotifyController::fetchList(const View &view, bool force, std::function<void(const Spotify::Result &)> done) {
+    const QString key = view.key();
+    const auto cached = m_cache.constFind(key);
+    if (!force && cached != m_cache.constEnd() && cached->age.elapsed() < ttlFor(view)) {
+        Spotify::Result r;
+        r.items = cached->items;
+        r.sections = cached->sections;
+        r.search = cached->search;
+        done(r);
+        return;
+    }
+    request(
+        Spotify::Requests::Data, key,
+        [view](Spotify::Backend &b, Spotify::Result &r) {
+            if (view.section == "search") {
+                r.search = b.search(view.search, &r.error);
+                auto add = [&](const QList<Spotify::Item> &list, const QString &heading) {
+                    for (const Spotify::Item &i : list) {
+                        r.items << i;
+                        r.sections << heading;
+                    }
+                };
+                add(r.search.tracks, tr("Tracks"));
+                add(r.search.albums, tr("Albums"));
+                add(r.search.artists, tr("Artists"));
+                add(r.search.playlists, tr("Playlists"));
+            } else if (view.section == "tracks") {
+                r.items = b.tracksOf(view.container, &r.error);
+            } else {
+                r.items = b.library(view.section, &r.error);
+            }
+        },
+        [this, view, key, done](const Spotify::Result &r) {
+            if (r.ok()) {
+                Cached c;
+                c.items = r.items;
+                c.sections = r.sections;
+                c.search = r.search;
+                c.age.start();
+                m_cache.insert(key, c);
+                rememberTracks(r.items);
+                if (view.section == "playlists") {
+                    m_playlists = r.items;
+                    emit playlistsChanged();
+                }
+                if (view.section == "liked") {
+                    m_liked.clear();
+                    for (const Spotify::Item &i : r.items)
+                        m_liked.insert(i.id);
+                    m_likedKnown = true;
+                }
+            }
+            done(r);
+        });
+}
+
+void SpotifyController::load(const View &view, bool force, bool retry) {
+    if (!retry) {
+        m_autoRetries = 0;
+        m_retryTimer.stop();
+    }
+    // Leaving a list that is still loading stops it, unless something else
+    // waits for the same answer.
+    if (m_loading && view.key() != m_view.key())
+        m_requests.cancel(m_view.key());
     m_view = view;
     m_view.error.clear();
+    m_viewStale = false;
     const int generation = ++m_viewGeneration;
     emit viewChanged();
     if (!m_settings.enabled) {
         m_items.setItems({});
+        setLoading(false);
         return;
     }
     if (!m_backend->caps().library) {
         m_items.setItems({});
+        setLoading(false);
         m_view.error = tr("%1 can't show your library or search. Choose spotify_player in Settings → Spotify for that; "
                           "links you paste still play.")
                            .arg(m_backend->name());
         emit viewChanged();
         return;
     }
+    // A copy from before shows at once, while a fresh one is read.
+    const auto cached = m_cache.constFind(m_view.key());
+    const bool fresh = !force && cached != m_cache.constEnd() && cached->age.elapsed() < ttlFor(m_view);
+    if (cached != m_cache.constEnd())
+        m_items.setItems(cached->items, cached->sections);
+    else if (!retry)
+        m_items.setItems({});
+    if (fresh) {
+        setLoading(false);
+        if (m_items.count() == 0 && m_view.section == "search")
+            m_view.error = tr("Nothing on Spotify matches “%1”.").arg(m_view.search);
+        emit viewChanged();
+        return;
+    }
     setLoading(true);
-    QPointer<SpotifyController> self(this);
     const View v = m_view;
-    runData([self, v, generation](Spotify::Backend &b) {
-        QString error;
-        QList<Spotify::Item> items;
-        QStringList sections;
-        if (v.section == "search") {
-            const Spotify::SearchResults r = b.search(v.search, &error);
-            auto add = [&](const QList<Spotify::Item> &list, const QString &heading) {
-                for (const Spotify::Item &i : list) {
-                    items << i;
-                    sections << heading;
-                }
-            };
-            add(r.tracks, tr("Tracks"));
-            add(r.albums, tr("Albums"));
-            add(r.artists, tr("Artists"));
-            add(r.playlists, tr("Playlists"));
-        } else if (v.section == "tracks") {
-            items = b.tracksOf(v.container, &error);
-        } else {
-            items = b.library(v.section, &error);
+    fetchList(v, true, [this, v, generation](const Spotify::Result &r) {
+        if (generation != m_viewGeneration)
+            return;
+        if (r.cancelled) {
+            setLoading(false);
+            m_view.error = tr("Stopped loading. Press Retry to try again.");
+            emit viewChanged();
+            return;
         }
-        QMetaObject::invokeMethod(
-            self,
-            [self, v, generation, items, sections, error] {
-                if (!self || generation != self->m_viewGeneration)
-                    return;
-                self->setLoading(false);
-                self->m_view.error = error;
-                self->rememberTracks(items);
-                self->m_items.setItems(items, sections);
-                if (v.section == "playlists" && error.isEmpty()) {
-                    self->m_playlists = items;
-                    emit self->playlistsChanged();
-                }
-                if (v.section == "liked" && error.isEmpty()) {
-                    self->m_liked.clear();
-                    for (const Spotify::Item &i : items)
-                        self->m_liked.insert(i.id);
-                    self->m_likedKnown = true;
-                }
-                if (items.isEmpty() && error.isEmpty() && v.section == "search")
-                    self->m_view.error = tr("Nothing on Spotify matches “%1”.").arg(v.search);
-                emit self->viewChanged();
-            },
-            Qt::QueuedConnection);
+        if (!r.ok()) {
+            // Rate-limited: try again once Spotify allows, twice at most,
+            // still showing "loading".
+            if (m_rateLimited && m_autoRetries < 2) {
+                ++m_autoRetries;
+                m_retryTimer.start(qMax(retryIn(), 3) * 1000);
+                emit loadingChanged();
+                return;
+            }
+            setLoading(false);
+            m_view.error = m_rateLimited ? tr("Spotify is rate-limiting requests, so this didn't load. Press Retry in "
+                                              "a minute, or use your own client ID (Settings → Spotify).")
+                                         : r.error;
+            emit viewChanged();
+            return;
+        }
+        m_autoRetries = 0;
+        setLoading(false);
+        m_items.setItems(r.items, r.sections);
+        if (r.items.isEmpty() && v.section == "search")
+            m_view.error = tr("Nothing on Spotify matches “%1”.").arg(v.search);
+        if (m_rateLimited && retryIn() == 0)
+            setRateLimited(false);
+        emit viewChanged();
     });
 }
 
@@ -1019,49 +1428,82 @@ void SpotifyController::search(const QString &text) {
 }
 
 void SpotifyController::reload() {
-    load(m_view);
+    load(m_view, true);
     refreshStatus();
+}
+
+void SpotifyController::cancelLoad() {
+    m_retryTimer.stop();
+    if (!m_loading)
+        return;
+    m_requests.cancel(m_view.key());
+    // A list that was waiting for an automatic retry has nothing running.
+    if (m_loading && !m_requests.has(m_view.key())) {
+        ++m_viewGeneration;
+        setLoading(false);
+        m_view.error = tr("Stopped loading. Press Retry to try again.");
+        emit viewChanged();
+    }
 }
 
 void SpotifyController::setViewVisible(bool visible) {
     m_viewVisible = visible;
-    if (visible && m_settings.enabled) {
-        pollNowPlaying();
-        m_viewPoll.start();
-    } else {
-        m_viewPoll.stop();
+    if (!visible || !m_settings.enabled)
+        return;
+    if (m_viewStale)
+        load(m_view);
+    // What plays now: MPRIS says it for free. Without it, one read when
+    // the view is shown (at most every 15 s), never a timer: while Omamp
+    // plays a Spotify track its own following keeps this fresh.
+    if (m_mpris.available()) {
+        noteMpris();
+    } else if (m_status.running && m_playback.state() != AudioEngine::Playing &&
+               (!m_nowRead.isValid() || m_nowRead.elapsed() > 15000)) {
+        m_nowRead.start();
+        request(
+            Spotify::Requests::Control, "playback",
+            [](Spotify::Backend &b, Spotify::Result &r) { r.playback = b.playback(&r.error); },
+            [this](const Spotify::Result &r) {
+                if (r.ok())
+                    noteNowPlaying(r.playback);
+            });
     }
 }
 
-void SpotifyController::pollNowPlaying() {
-    // While Omamp plays a Spotify track, its own polling keeps this fresh.
-    if (m_nowPolling || !m_settings.enabled || !m_status.running || m_playback.state() == AudioEngine::Playing)
-        return;
-    m_nowPolling = true;
-    QPointer<SpotifyController> self(this);
-    runData([self](Spotify::Backend &b) {
-        QString error;
-        const Spotify::Playback p = b.playback(&error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, p, error] {
-                if (!self)
-                    return;
-                self->m_nowPolling = false;
-                if (error.isEmpty())
-                    self->noteNowPlaying(p);
-            },
-            Qt::QueuedConnection);
-    });
+void SpotifyController::noteMpris() {
+    if (m_settings.enabled && m_mpris.available())
+        noteNowPlaying(m_mpris.state());
 }
 
-void SpotifyController::noteNowPlaying(const Spotify::Playback &p) {
+void SpotifyController::noteNowPlaying(const Spotify::Playback &given) {
+    Spotify::Playback p = given;
+    // MPRIS from spotify_player names no id: find the track among those
+    // Omamp has seen, so its cover and Liked state are known.
+    if (p.valid && p.track.id.isEmpty() && !p.track.name.isEmpty()) {
+        Spotify::Item match;
+        if (m_playback.isOurs(p))
+            match = knownTrack(m_playback.trackId());
+        if (!match.isValid())
+            for (const Spotify::Item &k : std::as_const(m_known))
+                if (k.name.compare(p.track.name, Qt::CaseInsensitive) == 0 &&
+                    (k.album.isEmpty() || p.track.album.isEmpty() || k.album == p.track.album) &&
+                    (k.durationMs <= 0 || p.track.durationMs <= 0 || qAbs(k.durationMs - p.track.durationMs) <= 3000)) {
+                    match = k;
+                    break;
+                }
+        if (match.isValid()) {
+            const QString image = p.track.imageUrl;
+            p.track = match;
+            if (!image.isEmpty())
+                p.track.imageUrl = image;
+        }
+    }
     QVariantMap m{{"active", p.valid}};
     if (p.valid) {
         if (p.track.isValid())
             rememberTracks({p.track});
         m_art.want(p.track);
-        const QString key = SpotifyArt::keyFor(p.track);
+        const QString key = p.track.isValid() ? SpotifyArt::keyFor(p.track) : QString();
         m.insert("playing", p.playing);
         m.insert("title", p.track.name);
         m.insert("artists", p.track.artistText());
@@ -1071,7 +1513,7 @@ void SpotifyController::noteNowPlaying(const Spotify::Playback &p) {
         m.insert("device", p.deviceName);
         m.insert("uri", p.track.isValid() ? p.track.uri() : QString());
         m.insert("artKey", key);
-        m.insert("art", fileUrl(m_art.cachedFile(p.track)));
+        m.insert("art", p.track.isValid() ? fileUrl(m_art.cachedFile(p.track)) : QString());
         m.insert("liked", m_liked.contains(p.track.id));
         m.insert("likedKnown", m_likedKnown);
     }
@@ -1129,21 +1571,16 @@ void SpotifyController::playFrom(SpotifyItemsModel *model, int row, Mode mode) {
             queue({item}, 0, mode);
         return;
     }
-    QPointer<SpotifyController> self(this);
-    runData([self, item, mode](Spotify::Backend &b) {
-        QString error;
-        const QList<Spotify::Item> tracks = b.tracksOf(item, &error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, tracks, error, mode] {
-                if (!self)
-                    return;
-                if (!error.isEmpty())
-                    self->setMessage(error);
-                else
-                    self->queue(tracks, 0, mode);
-            },
-            Qt::QueuedConnection);
+    View v;
+    v.section = "tracks";
+    v.container = item;
+    fetchList(v, false, [this, mode](const Spotify::Result &r) {
+        if (r.cancelled)
+            return;
+        if (!r.ok())
+            setMessage(m_rateLimited ? tr("Spotify is rate-limiting requests. Try again in a minute.") : r.error);
+        else
+            queue(r.items, 0, mode);
     });
 }
 
@@ -1203,23 +1640,21 @@ QString SpotifyController::activateUri(const QString &text) {
         playIt(known);
         return "played";
     }
-    QPointer<SpotifyController> self(this);
-    runData([self, id, playIt](Spotify::Backend &b) {
-        QString error;
-        Spotify::Item t = b.track(id, &error);
-        if (!t.isValid()) {
-            t = Spotify::Item();
-            t.kind = "track";
-            t.id = id;
-        }
-        QMetaObject::invokeMethod(
-            self,
-            [self, t, playIt] {
-                if (self)
-                    playIt(t);
-            },
-            Qt::QueuedConnection);
-    });
+    request(
+        Spotify::Requests::Data, "track:" + id,
+        [id](Spotify::Backend &b, Spotify::Result &r) {
+            Spotify::Item t = b.track(id, &r.error);
+            if (!t.isValid()) {
+                t = Spotify::Item();
+                t.kind = "track";
+                t.id = id;
+            }
+            r.items = {t};
+        },
+        [playIt](const Spotify::Result &r) {
+            if (!r.cancelled && !r.items.isEmpty())
+                playIt(r.items.first());
+        });
     return "played";
 }
 
@@ -1230,18 +1665,16 @@ void SpotifyController::addToPlaylist(const Spotify::Item &item, const QString &
     for (const Spotify::Item &p : m_playlists)
         if (p.id == playlistId)
             name = p.name;
-    QPointer<SpotifyController> self(this);
-    runData([self, item, playlistId, name](Spotify::Backend &b) {
-        QString error;
-        const bool ok = b.addToPlaylist(playlistId, item, &error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, ok, error, item, name] {
-                if (self)
-                    self->setMessage(ok ? tr("Added “%1” to %2").arg(item.name, name) : error);
-            },
-            Qt::QueuedConnection);
-    });
+    request(
+        Spotify::Requests::Data, {},
+        [item, playlistId](Spotify::Backend &b, Spotify::Result &r) { b.addToPlaylist(playlistId, item, &r.error); },
+        [this, item, name, playlistId](const Spotify::Result &r) {
+            if (r.cancelled)
+                return;
+            if (r.ok())
+                m_cache.remove("tracks:playlist:" + playlistId);
+            setMessage(r.ok() ? tr("Added “%1” to %2").arg(item.name, name) : r.error);
+        });
 }
 
 void SpotifyController::addRowToPlaylist(int row, const QString &playlistId) { addToPlaylist(m_items.at(row), playlistId); }
@@ -1251,29 +1684,25 @@ void SpotifyController::addBlendRowToPlaylist(int row, const QString &playlistId
 
 void SpotifyController::setPlayingLiked(bool liked) {
     const QString id = m_nowPlaying.value("uri").toString().section(':', 2);
-    QPointer<SpotifyController> self(this);
-    runControl([self, liked, id](Spotify::Backend &b) {
-        QString error;
-        const bool ok = b.like(liked, &error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, ok, error, liked, id] {
-                if (!self)
-                    return;
-                if (!ok) {
-                    self->setMessage(error);
-                    return;
-                }
+    request(
+        Spotify::Requests::Control, {},
+        [liked](Spotify::Backend &b, Spotify::Result &r) { b.like(liked, &r.error); },
+        [this, liked, id](const Spotify::Result &r) {
+            if (!r.ok()) {
+                setMessage(r.error);
+                return;
+            }
+            if (!id.isEmpty()) {
                 if (liked)
-                    self->m_liked.insert(id);
+                    m_liked.insert(id);
                 else
-                    self->m_liked.remove(id);
-                self->m_nowPlaying.insert("liked", liked);
-                emit self->nowPlayingChanged();
-                self->setMessage(liked ? tr("Saved to Liked Songs") : tr("Removed from Liked Songs"));
-            },
-            Qt::QueuedConnection);
-    });
+                    m_liked.remove(id);
+            }
+            m_cache.remove("library:liked");
+            m_nowPlaying.insert("liked", liked);
+            emit nowPlayingChanged();
+            setMessage(liked ? tr("Saved to Liked Songs") : tr("Removed from Liked Songs"));
+        });
 }
 
 // --- Blending -----------------------------------------------------------------------------
@@ -1294,38 +1723,33 @@ void SpotifyController::blendQuery(const QString &text) {
 }
 
 void SpotifyController::runBlend() {
-    const QString text = m_blendText;
     const int generation = ++m_blendGeneration;
     m_blendLoading = true;
     emit blendChanged();
-    QPointer<SpotifyController> self(this);
-    runData([self, text, generation](Spotify::Backend &b) {
-        QString error;
-        const Spotify::SearchResults r = b.search(text, &error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, r, error, generation] {
-                if (!self || generation != self->m_blendGeneration)
-                    return;
-                QList<Spotify::Item> items;
-                QStringList sections;
-                auto add = [&](const QList<Spotify::Item> &list, int max, const QString &heading) {
-                    for (int i = 0; i < list.size() && i < max; ++i) {
-                        items << list.at(i);
-                        sections << heading;
-                    }
-                };
-                add(r.tracks, 8, tr("Tracks"));
-                add(r.albums, 6, tr("Albums"));
-                add(r.artists, 4, tr("Artists"));
-                add(r.playlists, 4, tr("Playlists"));
-                self->rememberTracks(items);
-                self->m_blend.setItems(items, sections);
-                self->m_blendLoading = false;
-                self->m_blendError = error;
-                emit self->blendChanged();
-            },
-            Qt::QueuedConnection);
+    View v;
+    v.section = "search";
+    v.search = m_blendText;
+    // The same search as the palette's or the view's shares one request.
+    fetchList(v, false, [this, generation](const Spotify::Result &r) {
+        if (generation != m_blendGeneration)
+            return;
+        QList<Spotify::Item> items;
+        QStringList sections;
+        auto add = [&](const QList<Spotify::Item> &list, int max, const QString &heading) {
+            for (int i = 0; i < list.size() && i < max; ++i) {
+                items << list.at(i);
+                sections << heading;
+            }
+        };
+        add(r.search.tracks, 8, tr("Tracks"));
+        add(r.search.albums, 6, tr("Albums"));
+        add(r.search.artists, 4, tr("Artists"));
+        add(r.search.playlists, 4, tr("Playlists"));
+        rememberTracks(items);
+        m_blend.setItems(items, sections);
+        m_blendLoading = false;
+        m_blendError = r.cancelled ? QString() : r.error;
+        emit blendChanged();
     });
 }
 
@@ -1346,35 +1770,30 @@ void SpotifyController::paletteTextChanged() {
 void SpotifyController::runPaletteSearch() {
     const QString text = m_paletteText;
     const int generation = ++m_paletteGeneration;
-    QPointer<SpotifyController> self(this);
-    runData([self, text, generation](Spotify::Backend &b) {
-        QString error;
-        const Spotify::SearchResults r = b.search(text, &error);
-        QMetaObject::invokeMethod(
-            self,
-            [self, r, text, generation] {
-                if (!self || !self->m_palette || generation != self->m_paletteGeneration)
-                    return;
-                QList<Palette::Item> rows;
-                auto add = [&](const QList<Spotify::Item> &list, int max) {
-                    for (int i = 0; i < list.size() && i < max; ++i) {
-                        const Spotify::Item &s = list.at(i);
-                        Palette::Item p;
-                        p.title = s.name;
-                        p.subtitle = detailOf(s);
-                        p.detail = s.durationMs > 0 ? minutes(s.durationMs) : s.year;
-                        p.actionId = s.uri();
-                        p.kindLabel = kindLabel(s.kind);
-                        rows << p;
-                    }
-                };
-                add(r.tracks, 4);
-                add(r.albums, 2);
-                add(r.artists, 2);
-                add(r.playlists, 2);
-                self->rememberTracks(r.tracks);
-                self->m_palette->setExternalResults("Spotify", text, rows);
-            },
-            Qt::QueuedConnection);
+    View v;
+    v.section = "search";
+    v.search = text;
+    fetchList(v, false, [this, text, generation](const Spotify::Result &r) {
+        if (!m_palette || generation != m_paletteGeneration)
+            return;
+        QList<Palette::Item> rows;
+        auto add = [&](const QList<Spotify::Item> &list, int max) {
+            for (int i = 0; i < list.size() && i < max; ++i) {
+                const Spotify::Item &s = list.at(i);
+                Palette::Item p;
+                p.title = s.name;
+                p.subtitle = detailOf(s);
+                p.detail = s.durationMs > 0 ? minutes(s.durationMs) : s.year;
+                p.actionId = s.uri();
+                p.kindLabel = kindLabel(s.kind);
+                rows << p;
+            }
+        };
+        add(r.search.tracks, 4);
+        add(r.search.albums, 2);
+        add(r.search.artists, 2);
+        add(r.search.playlists, 2);
+        rememberTracks(r.search.tracks);
+        m_palette->setExternalResults("Spotify", text, rows);
     });
 }

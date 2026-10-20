@@ -20,6 +20,12 @@
 #include <QNetworkProxy>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusObjectPath>
+#include <QProcess>
+#include <QThread>
+#include <QTimeZone>
 #include <QtTest>
 
 #include "cli.h"
@@ -31,6 +37,8 @@
 #include "player.h"
 #include "spotify.h"
 #include "spotifycontroller.h"
+#include "spotifympris.h"
+#include "spotifyrequests.h"
 
 namespace {
 
@@ -138,6 +146,13 @@ struct FakeSpotify {
         set("OMAMP_SPOTIFAST", "");
         set("OMAMP_SPOTIFY_OEMBED", "off");
         set("OMAMP_SPOTIFY_TIMEOUT_MS", "5000");
+        set("OMAMP_SPOTIFY_LONG_TIMEOUT_MS", "8000");
+        // Never Matt's real players: no MPRIS by default (a test that wants
+        // one starts its own on a private bus), and no waiting.
+        set("OMAMP_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.omamp_test_absent");
+        set("OMAMP_SPOTIFY_MPRIS_BUS", "");
+        set("OMAMP_SPOTIFY_GAP_MS", "0");
+        set("OMAMP_SPOTIFY_WARMUP_MS", "0");
         set("XDG_CONFIG_HOME", root.filePath("xdg-config"));
         set("XDG_CACHE_HOME", root.filePath("xdg-cache"));
     }
@@ -208,6 +223,107 @@ QJsonValue readCli(const QString &file) {
 }
 
 } // namespace
+
+// A D-Bus of the tests' own, so a fake MPRIS player never appears on the
+// desktop's session bus (where the Omarchy bar and media keys would see it)
+// and Omamp never sees the real spotify_player there.
+struct PrivateBus {
+    QTemporaryDir dir;
+    QProcess daemon;
+    QString address;
+
+    PrivateBus() {
+        const QString config = dir.filePath("bus.conf");
+        QFile f(config);
+        f.open(QIODevice::WriteOnly);
+        f.write("<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\" "
+                "\"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n"
+                // An abstract socket: the scratch path would be too long
+                // for a socket's name.
+                "<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen><auth>EXTERNAL</auth><policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>"
+                "<allow receive_sender=\"*\"/><allow send_type=\"method_call\"/>"
+                "<allow own=\"*\"/></policy></busconfig>\n");
+        f.close();
+        daemon.start("dbus-daemon", {"--config-file=" + config, "--nofork", "--print-address=1"});
+        if (!daemon.waitForStarted(5000))
+            return;
+        for (int i = 0; i < 50 && address.isEmpty() && daemon.state() == QProcess::Running; ++i) {
+            daemon.waitForReadyRead(100);
+            address = QString::fromUtf8(daemon.readLine()).trimmed();
+        }
+    }
+    ~PrivateBus() {
+        daemon.kill();
+        daemon.waitForFinished(2000);
+    }
+    bool ok() const { return !address.isEmpty(); }
+};
+
+// spotify_player's MPRIS service as it looks on the bus: PlaybackStatus,
+// Metadata without an id ("mpris:trackid" is "/") and Position, with
+// PropertiesChanged for the first two.
+class FakeMpris : public QObject {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.mpris.MediaPlayer2.Player")
+    Q_PROPERTY(QString PlaybackStatus READ playbackStatus)
+    Q_PROPERTY(QVariantMap Metadata READ metadata)
+    Q_PROPERTY(qlonglong Position READ position)
+
+public:
+    FakeMpris(const QString &address, const QString &name) : m_bus(QDBusConnection::connectToBus(address, "fake-mpris")) {
+        m_bus.registerObject("/org/mpris/MediaPlayer2", this, QDBusConnection::ExportAllProperties);
+        m_registered = m_bus.registerService(name);
+        m_name = name;
+    }
+    ~FakeMpris() override {
+        m_bus.unregisterService(m_name);
+        m_bus.unregisterObject("/org/mpris/MediaPlayer2");
+        QDBusConnection::disconnectFromBus("fake-mpris");
+    }
+    bool registered() const { return m_registered; }
+    QString why() const { return m_bus.lastError().message() + " (" + QString(m_bus.isConnected() ? "connected" : "not connected") + ")"; }
+    QString playbackStatus() const { return m_status; }
+    QVariantMap metadata() const { return m_metadata; }
+    qlonglong position() const { return m_positionUs; }
+
+    // What spotify_player would show for a track.
+    void show(const QString &title, const QString &artists, const QString &album, qint64 lengthMs,
+              const QString &status, qint64 positionMs) {
+        m_metadata = {{"xesam:title", title},
+                      {"xesam:artist", QStringList{artists}},
+                      {"xesam:album", album},
+                      {"mpris:trackid", QVariant::fromValue(QDBusObjectPath("/"))},
+                      {"mpris:length", qlonglong(lengthMs * 1000)},
+                      {"mpris:artUrl", QString()}};
+        m_status = status;
+        m_positionUs = positionMs * 1000;
+        announce({{"PlaybackStatus", m_status}, {"Metadata", m_metadata}});
+    }
+    void setStatus(const QString &status, qint64 positionMs) {
+        m_status = status;
+        m_positionUs = positionMs * 1000;
+        announce({{"PlaybackStatus", m_status}});
+    }
+
+private:
+    void announce(const QVariantMap &changed) {
+        QDBusMessage m = QDBusMessage::createSignal("/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties",
+                                                    "PropertiesChanged");
+        m << QString("org.mpris.MediaPlayer2.Player") << changed << QStringList();
+        m_bus.send(m);
+    }
+
+    QDBusConnection m_bus;
+    QString m_name;
+    bool m_registered = false;
+    QString m_status = "Stopped";
+    QVariantMap m_metadata;
+    qint64 m_positionUs = 0;
+};
+
+// Counts the playback-state reads in the fake's log: each one is a Spotify
+// Web API request.
+int stateReads(const QStringList &calls) { return calls.filter("get key playback").size(); }
 
 class SpotifyTests : public QObject {
     Q_OBJECT
@@ -557,7 +673,12 @@ private slots:
         QCOMPARE(c.account(), QString("Matt Example"));
         QCOMPARE(c.premium(), QString("yes"));
         QVERIFY(c.statusText().contains("Connected as Matt Example"));
+        // The list loads when the view is shown, from the playlists the
+        // status check already read.
+        QCOMPARE(c.items()->count(), 0);
+        c.setViewVisible(true);
         QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000); // the playlists
+        QCOMPARE(fake.calls().filter("user-playlists").size(), 1);
         QCOMPARE(c.ownPlaylists().size(), 3); // Matt's own, not Spotify's or Kai's
 
         c.openRow(0);
@@ -903,6 +1024,442 @@ private slots:
             }
         QCOMPARE(oembeds, 1);
         NowPlaying::setReferenceArt({});
+    }
+    // --- Rate limits, the queue and MPRIS ----------------------------------------
+
+    void queueSharesSerialisesAndSpaces() {
+        FakeSpotify fake;
+        Spotify::Requests q;
+        q.setBackend(std::make_shared<Spotify::SpotifastBackend>());
+        q.setGapMs(200);
+        QAtomicInt runs = 0, running = 0, most = 0;
+        auto work = [&](Spotify::Backend &, Spotify::Result &r) {
+            ++runs;
+            const int now = ++running;
+            if (now > most.loadRelaxed())
+                most.storeRelaxed(now);
+            QThread::msleep(150);
+            --running;
+            r.extra.insert("t", QDateTime::currentMSecsSinceEpoch());
+        };
+        // Three asks for the same list: one command, three answers.
+        int answers = 0;
+        for (int i = 0; i < 3; ++i)
+            q.submit(Spotify::Requests::Data, "library:playlists", work, this, [&](const Spotify::Result &) { ++answers; });
+        // Two other lists: one at a time, 200 ms apart.
+        QList<qint64> starts;
+        for (const QString &key : {"a", "b"})
+            q.submit(Spotify::Requests::Data, key, work, this,
+                     [&](const Spotify::Result &r) { starts << r.extra.value("t").toLongLong(); });
+        q.waitForIdle();
+        QCOMPARE(answers, 3);
+        QCOMPARE(runs.loadRelaxed(), 3);
+        QCOMPARE(most.loadRelaxed(), 1);
+        QCOMPARE(starts.size(), 2);
+        QVERIFY2(starts[1] - starts[0] >= 190, qPrintable(QString::number(starts[1] - starts[0])));
+
+        // The control lane doesn't wait behind a long list.
+        runs = 0;
+        most = 0;
+        q.submit(Spotify::Requests::Data, "long", [](Spotify::Backend &, Spotify::Result &) { QThread::msleep(800); },
+                 this, {});
+        QElapsedTimer t;
+        t.start();
+        qint64 control = -1;
+        q.submit(Spotify::Requests::Control, {}, [](Spotify::Backend &, Spotify::Result &) {}, this,
+                 [&](const Spotify::Result &) { control = t.elapsed(); });
+        QTRY_VERIFY_WITH_TIMEOUT(control >= 0, 3000);
+        QVERIFY2(control < 600, qPrintable(QString::number(control)));
+        q.waitForIdle();
+
+        // Held back: nothing starts until the hold is over.
+        q.setGapMs(0);
+        q.holdData(600);
+        t.restart();
+        qint64 held = -1;
+        q.submit(Spotify::Requests::Data, "held", [](Spotify::Backend &, Spotify::Result &) {}, this,
+                 [&](const Spotify::Result &) { held = t.elapsed(); });
+        QTRY_VERIFY_WITH_TIMEOUT(held >= 0, 3000);
+        QVERIFY2(held >= 550, qPrintable(QString::number(held)));
+
+        // Cancelled while waiting and while running.
+        bool waitingCancelled = false, runningCancelled = false;
+        q.submit(Spotify::Requests::Data, "run", [](Spotify::Backend &, Spotify::Result &) {
+            for (int i = 0; i < 100 && !Spotify::CancelScope::cancelled(); ++i)
+                QThread::msleep(20);
+        }, this, [&](const Spotify::Result &r) { runningCancelled = r.cancelled; });
+        q.submit(Spotify::Requests::Data, "wait", [](Spotify::Backend &, Spotify::Result &) {}, this,
+                 [&](const Spotify::Result &r) { waitingCancelled = r.cancelled; });
+        QTest::qWait(100);
+        q.cancel("wait");
+        q.cancel("run");
+        QVERIFY(waitingCancelled);
+        QTRY_VERIFY_WITH_TIMEOUT(runningCancelled, 2000);
+    }
+
+    void aCancelledCommandStopsItsProcess() {
+        FakeSpotify fake;
+        Spotify::SpotifyPlayerBackend b;
+        QString error;
+        QVERIFY(b.start(&error));
+        fake.touch(fake.state() + "/slow-get", "5");
+        auto flag = Spotify::makeCancelFlag();
+        QElapsedTimer t;
+        t.start();
+        QThread *worker = QThread::create([&] {
+            Spotify::CancelScope scope(flag);
+            b.library("playlists", &error);
+        });
+        worker->start();
+        QTest::qWait(300);
+        flag->store(true);
+        QVERIFY(worker->wait(3000));
+        delete worker;
+        QVERIFY2(t.elapsed() < 2500, qPrintable(QString::number(t.elapsed())));
+        QCOMPARE(error, QString("cancelled"));
+    }
+
+    void readsRateLimitsFromTheLog() {
+        QTemporaryDir dir;
+        const QDateTime now = QDateTime::fromString("2026-10-20T02:12:30", Qt::ISODate);
+        QDateTime utc = now;
+        utc.setTimeZone(QTimeZone::UTC);
+        QFile log(dir.filePath("spotify-player-26-10-20-12-07.log"));
+        QVERIFY(log.open(QIODevice::WriteOnly));
+        // Lines as spotify_player 0.25.1 writes them (from Matt's log, with
+        // the request names kept and nothing personal).
+        log.write("2026-10-20T02:07:27.488290Z  INFO spotify_player: Configurations: ...\n"
+                  "2026-10-20T02:07:37.753933Z  WARN spotify_player::client::middleware: Spotify Web API rate limit "
+                  "encountered method=GET url=https://api.spotify.com/v1/me/player retry_after_secs=2\n"
+                  "2026-10-20T02:12:20.672865Z  WARN socket_request{request=Get(Item(Playlist, Id(\"x\")))}: "
+                  "spotify_player::client::middleware: Spotify Web API rate limit encountered method=GET "
+                  "url=https://api.spotify.com/v1/playlists/x retry_after_secs=19\n"
+                  "2026-10-20T02:12:21.000000Z  INFO spotify_player::client: unrelated\n");
+        log.close();
+        QString file;
+        qint64 offset = 0;
+        Spotify::LogNews news = Spotify::readLogNews(dir.path(), &file, &offset, 120, utc);
+        // The 02:07 line is older than two minutes; the 02:12 one counts.
+        QCOMPARE(news.rateLimits, 1);
+        QCOMPARE(news.retryUntil.toString(Qt::ISODate), QString("2026-10-20T02:12:39Z"));
+        // Read again: nothing new.
+        news = Spotify::readLogNews(dir.path(), &file, &offset, 120, utc);
+        QCOMPARE(news.rateLimits, 0);
+        QVERIFY(log.open(QIODevice::Append));
+        log.write("2026-10-20T02:12:25.000000Z  WARN spotify_player::client::spotify: Custom Spotify Web API request "
+                  "failed; retrying with ncspot client method=\"GET\" url=\"me/albums\" status=429 Too Many Requests\n");
+        log.close();
+        news = Spotify::readLogNews(dir.path(), &file, &offset, 120, utc);
+        QCOMPARE(news.rateLimits, 1);
+        QVERIFY(Spotify::isRateLimitText("search failed: 429 Too Many Requests"));
+        QVERIFY(!Spotify::isRateLimitText("Premium required"));
+    }
+
+    void aSlowRateLimitedListSaysSoAndArrives() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.setSlowMs(300);
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        c.setViewVisible(true);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        // Spotify rate-limits: spotify_player logs it and waits before it
+        // answers.
+        fake.touch(fake.state() + "/ratelimit", "8");
+        fake.touch(fake.state() + "/slow-get", "2.5");
+        c.openRow(0);
+        QVERIFY(c.loading());
+        QCOMPARE(c.viewTitle(), QString("Late Night Drive")); // shown at once
+        QTRY_VERIFY_WITH_TIMEOUT(c.loadingSlow(), 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(c.rateLimited(), 3000);
+        QVERIFY(c.retryIn() > 0);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 8000);
+        QVERIFY(!c.loading());
+        QVERIFY(c.viewError().isEmpty());
+        // Opened again: from the cache, nothing asked.
+        QFile::remove(fake.state() + "/ratelimit");
+        QFile::remove(fake.state() + "/slow-get");
+        c.back();
+        fake.clearCalls();
+        c.openRow(0);
+        QCOMPARE(c.items()->count(), 5);
+        QVERIFY(!c.loading());
+        c.waitForIdle();
+        QVERIFY(fake.calls().filter("get item").isEmpty());
+        // The refresh button reads it again.
+        c.reload();
+        QTRY_VERIFY_WITH_TIMEOUT(!fake.calls().filter("get item").isEmpty(), 5000);
+    }
+
+    void aRateLimitedFailureRetriesThenOffersRetry() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        // spotify_player gave up after its own retries; its log says to
+        // wait three seconds.
+        fake.touch(fake.state() + "/ratelimit", "3");
+        fake.touch(fake.state() + "/fail-get", "Bad request: 429 Too Many Requests\n");
+        fake.clearCalls();
+        c.openSection("liked");
+        QTRY_VERIFY_WITH_TIMEOUT(c.rateLimited(), 5000);
+        QVERIFY(c.loading()); // still waiting, to try again
+        QVERIFY(c.viewError().isEmpty());
+        // Spotify lets go before the retry: it arrives on its own.
+        QFile::remove(fake.state() + "/fail-get");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 8, 10000);
+        QCOMPARE(fake.calls().filter("user-liked-tracks").size(), 2);
+        QVERIFY(c.viewError().isEmpty());
+
+        // Failing every time: two retries, then an error and Retry.
+        fake.touch(fake.state() + "/fail-get", "Bad request: 429 Too Many Requests\n");
+        fake.clearCalls();
+        c.openSection("albums");
+        QTRY_VERIFY_WITH_TIMEOUT(!c.loading(), 20000);
+        QVERIFY2(c.viewError().contains("rate-limiting"), qPrintable(c.viewError()));
+        QCOMPARE(fake.calls().filter("user-saved-albums").size(), 3);
+    }
+
+    void cancelStopsALoad() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        fake.touch(fake.state() + "/slow-get", "6");
+        c.openSection("artists");
+        QTRY_VERIFY_WITH_TIMEOUT(c.loading(), 2000);
+        QTest::qWait(300);
+        QElapsedTimer t;
+        t.start();
+        c.cancelLoad();
+        QTRY_VERIFY_WITH_TIMEOUT(!c.loading(), 3000);
+        QVERIFY2(t.elapsed() < 2000, qPrintable(QString::number(t.elapsed())));
+        QVERIFY(c.viewError().contains("Stopped loading"));
+        QFile::remove(fake.state() + "/slow-get");
+        c.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 6, 5000);
+    }
+
+    void noBurstAtStartUp() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.setWarmupMs(1500);
+        QElapsedTimer t;
+        t.start();
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 10000);
+        // Omamp started spotify_player, then left it alone while it read
+        // the library itself, then asked twice: devices and playlists.
+        QVERIFY2(t.elapsed() >= 1400, qPrintable(QString::number(t.elapsed())));
+        const QStringList calls = fake.calls();
+        QCOMPARE(calls, (QStringList{"--daemon", "get key devices", "get key user-playlists"}));
+        // Liked Songs, albums and artists wait until they are looked at.
+        // Showing the view lists the playlists from what was read, and
+        // reads what plays now once (no MPRIS here).
+        c.setViewVisible(true);
+        c.waitForIdle();
+        QCOMPARE(c.items()->count(), 5);
+        QCOMPARE(fake.calls().mid(3), QStringList{"get key playback"});
+        c.setViewVisible(false);
+        c.setViewVisible(true);
+        c.waitForIdle();
+        QCOMPARE(fake.calls().size(), 4);
+    }
+
+    void ownClientIdIsWrittenCarefully() {
+        QTemporaryDir dir;
+        const QString folder = dir.path();
+        using B = Spotify::SpotifyPlayerBackend;
+        // Shaped like a real app.toml: a multi-line string holding a line
+        // that looks like a table, and tables after.
+        const QByteArray original = "theme = \"dracula\"\n"
+                                    "client_id = \"65b708073fc0480ea92a077233ca87bd\"\n"
+                                    "client_port = 8080\n"
+                                    "playback_format = \"\"\"\n"
+                                    "[not a table] {track}\n"
+                                    "client_id = \"inside a string\"\n"
+                                    "{album}\"\"\"\n"
+                                    "enable_media_control = true # MPRIS\n"
+                                    "\n"
+                                    "[device]\n"
+                                    "name = \"spotify-player\"\n"
+                                    "client_id = \"not the top level\"\n";
+        QFile f(folder + "/app.toml");
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(original);
+        f.close();
+        QCOMPARE(B::configuredClientId(folder), B::spotifyDesktopClientId());
+        QString backup, error;
+        QVERIFY(!B::writeClientId(folder, "not-an-id", &backup, &error));
+        QVERIFY(error.contains("isn't a Spotify client ID"));
+        const QString id = "0123456789ABCDEF0123456789abcdef";
+        QVERIFY2(B::writeClientId(folder, id, &backup, &error), qPrintable(error));
+        QVERIFY(backup.startsWith(folder + "/app.toml.omamp-backup-"));
+        QFile b(backup);
+        QVERIFY(b.open(QIODevice::ReadOnly));
+        QCOMPARE(b.readAll(), original);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QByteArray expected = original;
+        expected.replace("client_id = \"65b708073fc0480ea92a077233ca87bd\"",
+                         "client_id = \"0123456789abcdef0123456789abcdef\"");
+        QCOMPARE(f.readAll(), expected);
+        f.close();
+        QCOMPARE(B::configuredClientId(folder), id.toLower());
+
+        // Without a client_id: added above the first table.
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("theme = \"dracula\"\n[device]\nname = \"x\"\n");
+        f.close();
+        QVERIFY(B::writeClientId(folder, id, &backup, &error));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), QByteArray("theme = \"dracula\"\nclient_id = \"0123456789abcdef0123456789abcdef\"\n"
+                                         "[device]\nname = \"x\"\n"));
+        f.close();
+        // No file: one is made.
+        QTemporaryDir empty;
+        QVERIFY(B::writeClientId(empty.filePath("sp"), id, &backup, &error));
+        QCOMPARE(B::configuredClientId(empty.filePath("sp")), id.toLower());
+        // client_id_command wins over client_id, so it is refused.
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("client_id_command = { command = \"pass\", args = [\"spotify\"] }\n");
+        f.close();
+        QVERIFY(!B::writeClientId(folder, id, &backup, &error));
+        QVERIFY(error.contains("client_id_command"));
+    }
+
+    void ownClientIdStopsTheDaemonAndAsksForSignIn() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        fake.touch(fake.config() + "/app.toml", "theme = \"dracula\"\n[device]\nname = \"spotify-player\"\n");
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        QCOMPARE(c.clientIdKind(), QString("default"));
+        QVERIFY(!c.useOwnClientId("nope"));
+        QVERIFY(c.clientIdMessage().contains("isn't a Spotify client ID"));
+        const QString id = "abcdefabcdefabcdefabcdefabcdef12";
+        QVERIFY(c.useOwnClientId(id));
+        QTRY_VERIFY_WITH_TIMEOUT(!c.clientIdBusy(), 10000);
+        QVERIFY2(c.clientIdMessage().contains("spotify_player authenticate"), qPrintable(c.clientIdMessage()));
+        QCOMPARE(c.clientIdKind(), QString("own"));
+        QCOMPARE(c.clientId(), id);
+        QCOMPARE(Spotify::SpotifyPlayerBackend::configuredClientId(), id);
+        QVERIFY(!QDir(fake.config()).entryList({"app.toml.omamp-backup-*"}, QDir::Files).isEmpty());
+        // Stopped, and not started again: the new ID needs a sign-in first.
+        QTRY_VERIFY_WITH_TIMEOUT(!c.checking(), 8000);
+        QVERIFY(!Spotify::SpotifyPlayerBackend().running());
+        QVERIFY(!c.signedIn());
+        QVERIFY(!c.running());
+        QVERIFY(c.statusText().contains("Not signed in"));
+        // Signing in (the token for the new ID appears) starts it again.
+        fake.touch(fake.cache() + "/" + id + "_token.json");
+        c.refreshStatus();
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && c.signedIn() && !c.checking(), 8000);
+    }
+
+    void followsMprisWithoutAskingSpotify() {
+        PrivateBus bus;
+        if (!bus.ok())
+            QSKIP("dbus-daemon isn't available");
+        FakeSpotify fake;
+        fake.set("OMAMP_SPOTIFY_MPRIS_BUS", bus.address);
+        fake.set("OMAMP_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.spotify_player");
+        FakeMpris mpris(bus.address, "org.mpris.MediaPlayer2.spotify_player");
+        QVERIFY2(mpris.registered(), qPrintable(mpris.why() + " at " + bus.address));
+        QTemporaryDir dir;
+        auto *engine = new FakeEngine;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.playback()->setTimings(100, 4000); // would poll ten times a second
+        Player player(new HandoffEngine(engine, c.playback()), QString(),
+                      [](const QString &path, qint64, QString *) { return QUrl(path); });
+        c.setPlayer(&player);
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        QTRY_COMPARE_WITH_TIMEOUT(c.followMode(), QString("mpris"), 3000);
+        c.openSection("liked");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 8, 5000);
+        fake.clearCalls();
+
+        const QString one = fake.id("track:Tail Lights");
+        const Spotify::Item tail = c.knownTrack(one);
+        QVERIFY(!tail.name.isEmpty());
+        player.playTracks({{"spotify://track/" + one, "Tail Lights", "Lunar Drive", tail.durationMs, 0},
+                           {dir.filePath("b.flac"), "Local B", "Me", 1000, 0}},
+                          0);
+        QTRY_VERIFY_WITH_TIMEOUT(fake.calls().contains("playback start track --id " + one), 5000);
+        QVERIFY(player.buffering());
+        // spotify_player shows it: no id, so title and length match it.
+        mpris.show("Tail Lights", "Lunar Drive", tail.album, tail.durationMs, "Playing", 1000);
+        QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 3000);
+        QCOMPARE(player.state(), QString("playing"));
+        QCOMPARE(c.nowPlaying().value("title").toString(), QString("Tail Lights"));
+
+        // Paused on the phone.
+        QTest::qWait(300);
+        mpris.setStatus("Paused", 90000);
+        QTRY_COMPARE_WITH_TIMEOUT(player.state(), QString("paused"), 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(player.position() - 90000) < 1500, 3000);
+        mpris.setStatus("Playing", 90000);
+        QTRY_COMPARE_WITH_TIMEOUT(player.state(), QString("playing"), 3000);
+
+        // The end: the next local file plays.
+        mpris.setStatus("Paused", tail.durationMs);
+        QTRY_COMPARE_WITH_TIMEOUT(player.currentIndex(), 1, 3000);
+        QCOMPARE(engine->source(), dir.filePath("b.flac"));
+        // All of that without one read of Spotify's playback state.
+        QCOMPARE(stateReads(fake.calls()), 0);
+        player.stop();
+    }
+
+    void withoutMprisItPollsSlowly() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        auto *engine = new FakeEngine;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        // The defaults: 5 s between reads, sooner only while starting.
+        QCOMPARE(c.playback()->pollMs(), 5000);
+        Player player(new HandoffEngine(engine, c.playback()), QString(),
+                      [](const QString &path, qint64, QString *) { return QUrl(path); });
+        c.setPlayer(&player);
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        QCOMPARE(c.followMode(), QString("polling"));
+        const QString one = fake.id("track:Tail Lights");
+        player.playTracks({{"spotify://track/" + one, "Tail Lights", "Lunar Drive", 221000, 0}}, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 5000);
+        fake.clearCalls();
+        QTest::qWait(6000);
+        QVERIFY2(stateReads(fake.calls()) <= 2, qPrintable(fake.calls().join(" | ")));
+        player.stop();
+        // Nothing playing in Omamp: no reads at all.
+        c.waitForIdle();
+        fake.clearCalls();
+        QTest::qWait(1500);
+        QCOMPARE(stateReads(fake.calls()), 0);
+    }
+
+    void searchesShareOneRequest() {
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        Palette palette;
+        c.setPalette(&palette);
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        fake.clearCalls();
+        // The same words in the library search and the palette.
+        c.blendQuery("neon");
+        palette.setText("neon");
+        QTRY_COMPARE_WITH_TIMEOUT(c.blendResults()->count(), 11, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(palette.hasExternalRows(), 5000);
+        c.search("neon");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 11, 5000);
+        c.waitForIdle();
+        QCOMPARE(fake.calls().filter("search").size(), 1);
     }
 };
 

@@ -5,7 +5,9 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <QDateTime>
 #include <QVariantMap>
+#include <atomic>
 #include <memory>
 
 // Spotify, through a program that already speaks to it. Omamp never signs in
@@ -109,6 +111,43 @@ SearchResults parseSearch(const QJsonObject &o);
 // {artist, top_tracks, albums, related_artists}; the tracks.
 QList<Item> parseContextTracks(const QJsonObject &o);
 
+// --- Rate limits and slow answers ------------------------------------------------
+//
+// spotify_player talks to Spotify's Web API, which answers "429 Too Many
+// Requests" when a client ID asks too often. spotify_player then waits and
+// retries on its own, so a command that would take a second can take half a
+// minute, and only its log says why. Omamp reads that log (never writes it)
+// to tell "slow because Spotify is rate-limiting" from "broken".
+
+// Whether a message from spotify_player is about a rate limit.
+bool isRateLimitText(const QString &text);
+
+struct LogNews {
+    int rateLimits = 0;     // rate-limit lines newer than the window
+    QDateTime retryUntil;   // when Spotify said to try again, in UTC
+    QDateTime lastAt;       // the newest rate-limit line's time, in UTC
+};
+// Reads what spotify_player's newest log (spotify-player-*.log in its cache
+// folder) said about rate limits in the last windowSecs seconds. *file and
+// *offset remember where the last read stopped, so a call reads only what
+// is new; pass empty and 0 the first time.
+LogNews readLogNews(const QString &cacheFolder, QString *file, qint64 *offset, int windowSecs = 120,
+                    const QDateTime &now = QDateTime::currentDateTimeUtc());
+
+// A command can be cancelled from another thread: the worker running it
+// holds a CancelScope, and runProgram stops the process when the flag is
+// set.
+using CancelFlag = std::shared_ptr<std::atomic<bool>>;
+inline CancelFlag makeCancelFlag() { return std::make_shared<std::atomic<bool>>(false); }
+class CancelScope {
+public:
+    explicit CancelScope(CancelFlag flag);
+    ~CancelScope();
+    static bool cancelled();
+private:
+    CancelFlag m_previous;
+};
+
 // --- Settings ---------------------------------------------------------------
 //
 // ~/.config/omamp/spotify.conf. Switches only: no account, no token.
@@ -183,16 +222,26 @@ public:
     // The account's display name, when the backend can tell.
     virtual QString account(QString *error);
 
+    // The backend's MPRIS name on the session bus, where it announces what
+    // it plays without Omamp asking Spotify's Web API.
+    virtual QString mprisName() const = 0;
+
     static std::unique_ptr<Backend> create(const QString &id);
     static QStringList ids() { return {"spotify_player", "spotifast"}; }
-    // How long a command may take before it is stopped.
+    // How long a quick command (play, pause, the playback state) may take
+    // before it is stopped.
     static int timeoutMs();
+    // How long a list may take: a playlist, an album, the library or a
+    // search. Longer, because spotify_player waits out Spotify's rate
+    // limits before it answers.
+    static int longTimeoutMs();
 
 protected:
     // Runs program with arguments, stdin closed (a prompt then reads end of
     // file instead of waiting for ever), and returns what it printed.
     // false, with *error, on a failure to start, a timeout or a non-zero
     // exit (the program's own message, first line).
+    // A CancelScope on the calling thread stops it early ("cancelled").
     static bool runProgram(const QString &program, const QStringList &arguments, QByteArray *out,
                            QString *error, int timeoutMs = -1);
     static QString unsupported(const QString &what);
@@ -212,6 +261,7 @@ public:
     bool start(QString *error) override;
     QStringList signInCommand() const override;
     QString deviceName() const override;
+    QString mprisName() const override { return "org.mpris.MediaPlayer2.spotify_player"; }
 
     Playback playback(QString *error) override;
     bool playTrack(const QString &id, QString *error) override;
@@ -236,13 +286,44 @@ public:
     // Whether a process is spotify_player running as the app or a daemon
     // (not one of its CLI commands), by its executable and arguments.
     static bool isInstance(const QString &exe, const QStringList &arguments, const QString &program);
+    // Stops every running instance of this spotify_player (SIGTERM, then
+    // SIGKILL after five seconds). Only instances of m_program: a test's
+    // fake never touches the real one.
+    bool stopInstances(QString *error);
+
+    // --- The Web API client ID ---------------------------------------------
+    //
+    // spotify_player asks Spotify's Web API with a client ID: the client_id
+    // in app.toml, or ncspot's when there is none. Every person using the
+    // same ID shares one rate limit, so a busy shared ID answers "429 Too
+    // Many Requests". With your own ID (a free app on Spotify's developer
+    // dashboard) the limit is yours; spotify_player 0.25 still falls back
+    // to ncspot's ID when yours is refused, and always reads your playlist
+    // list through it.
+    static QString ncspotClientId() { return "d420a117a32841c2b3474932e49fb54b"; }
+    // Spotify's own desktop app ID, which librespot uses to sign in. Set as
+    // client_id it is shared by every librespot-based player.
+    static QString spotifyDesktopClientId() { return "65b708073fc0480ea92a077233ca87bd"; }
+    // The client_id in app.toml's top level, or empty.
+    static QString configuredClientId(const QString &configFolder = {});
+    // Whether app.toml sets client_id_command, which overrides client_id.
+    static bool hasClientIdCommand(const QString &configFolder = {});
+    // What spotify_player uses.
+    static QString effectiveClientId(const QString &configFolder = {});
+    // A Spotify client ID: 32 hexadecimal characters.
+    static bool isValidClientId(const QString &id);
+    // Sets client_id in app.toml and changes nothing else in it: the file
+    // is copied to app.toml.omamp-backup-<time> first, then the client_id
+    // line is replaced (or added above the first [table]), and the new file
+    // replaces the old in one step. *backup gets the copy's path.
+    static bool writeClientId(const QString &configFolder, const QString &id, QString *backup, QString *error);
 
 private:
     // Runs a command that needs the running instance: refuses before
     // signing in and while nothing runs, because spotify_player would
     // otherwise start a client of its own that may ask to sign in.
-    bool command(const QStringList &arguments, QByteArray *out, QString *error) const;
-    bool json(const QStringList &arguments, QJsonValue *value, QString *error) const;
+    bool command(const QStringList &arguments, QByteArray *out, QString *error, int timeoutMs = -1) const;
+    bool json(const QStringList &arguments, QJsonValue *value, QString *error, int timeoutMs = -1) const;
 
     QString m_program;
 };
@@ -259,6 +340,7 @@ public:
     bool start(QString *error) override;
     QStringList signInCommand() const override { return {}; }
     QString deviceName() const override { return "Spotifast"; }
+    QString mprisName() const override { return "org.mpris.MediaPlayer2.spotifast"; }
 
     Playback playback(QString *error) override;
     bool playTrack(const QString &id, QString *error) override;

@@ -12,6 +12,11 @@
 #include <QThread>
 #include <QUrl>
 #include <QHash>
+#include <QElapsedTimer>
+#include <QSaveFile>
+#include <QTimeZone>
+#include <csignal>
+#include <sys/types.h>
 
 namespace Spotify {
 
@@ -73,6 +78,7 @@ QString findProgram(const QString &given, const char *envName, const QString &na
 
 // Every running process: its executable and its arguments.
 struct Proc {
+    qint64 pid = 0;
     QString exe;
     QStringList arguments;
 };
@@ -91,6 +97,7 @@ QList<Proc> processes() {
         if (raw.isEmpty())
             continue;
         Proc p;
+        p.pid = pid.toLongLong();
         for (const QByteArray &part : raw.split('\0'))
             p.arguments << QString::fromLocal8Bit(part);
         if (!p.arguments.isEmpty() && p.arguments.last().isEmpty())
@@ -128,6 +135,75 @@ QString firstLine(const QByteArray &text) {
 }
 
 } // namespace
+
+// --- Rate limits and cancelling -------------------------------------------------
+
+namespace {
+thread_local CancelFlag t_cancel;
+}
+
+CancelScope::CancelScope(CancelFlag flag) : m_previous(t_cancel) { t_cancel = std::move(flag); }
+CancelScope::~CancelScope() { t_cancel = m_previous; }
+bool CancelScope::cancelled() { return t_cancel && t_cancel->load(); }
+
+bool isRateLimitText(const QString &text) {
+    return text.contains("429") || text.contains("Too Many Requests", Qt::CaseInsensitive) ||
+           text.contains("rate limit", Qt::CaseInsensitive) || text.contains("rate-limit", Qt::CaseInsensitive);
+}
+
+LogNews readLogNews(const QString &cacheFolder, QString *file, qint64 *offset, int windowSecs, const QDateTime &now) {
+    LogNews news;
+    // The newest log: spotify_player starts one per run.
+    const QFileInfoList logs = QDir(cacheFolder).entryInfoList({"spotify-player-*.log"}, QDir::Files, QDir::Time);
+    if (logs.isEmpty())
+        return news;
+    const QString newest = logs.first().absoluteFilePath();
+    QFile f(newest);
+    if (!f.open(QIODevice::ReadOnly))
+        return news;
+    qint64 from = *offset;
+    // A first look reads only the end; anything older is past the window.
+    if (newest != *file)
+        from = qMax<qint64>(0, f.size() - 256 * 1024);
+    if (from > f.size())
+        from = 0; // rotated or truncated
+    f.seek(from);
+    static const QRegularExpression stamp(R"(^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?Z)");
+    static const QRegularExpression retry(R"(retry_after_secs=(\d+))");
+    qint64 consumed = from;
+    while (!f.atEnd()) {
+        const QByteArray raw = f.readLine();
+        // A line still being written waits for the next read.
+        if (!raw.endsWith('\n'))
+            break;
+        consumed += raw.size();
+        const QString line = QString::fromUtf8(raw);
+        if (!line.contains("rate limit", Qt::CaseInsensitive) && !line.contains("429 Too Many Requests"))
+            continue;
+        QDateTime at;
+        const auto m = stamp.match(line);
+        if (m.hasMatch()) {
+            at = QDateTime::fromString(m.captured(1), "yyyy-MM-ddTHH:mm:ss");
+            at.setTimeZone(QTimeZone::UTC);
+        }
+        if (at.isValid() && at.secsTo(now) > windowSecs)
+            continue;
+        if (!at.isValid())
+            at = now;
+        ++news.rateLimits;
+        if (!news.lastAt.isValid() || at > news.lastAt)
+            news.lastAt = at;
+        const auto r = retry.match(line);
+        if (r.hasMatch()) {
+            const QDateTime until = at.addSecs(r.captured(1).toInt());
+            if (!news.retryUntil.isValid() || until > news.retryUntil)
+                news.retryUntil = until;
+        }
+    }
+    *file = newest;
+    *offset = consumed;
+    return news;
+}
 
 // --- Items --------------------------------------------------------------------
 
@@ -408,6 +484,11 @@ int Backend::timeoutMs() {
     return env > 0 ? env : 20000;
 }
 
+int Backend::longTimeoutMs() {
+    const int env = qEnvironmentVariableIntValue("OMAMP_SPOTIFY_LONG_TIMEOUT_MS");
+    return env > 0 ? env : 60000;
+}
+
 QString Backend::unsupported(const QString &what) { return tr("%1 can't do that: %2").arg(what); }
 
 QList<Item> Backend::library(const QString &, QString *error) {
@@ -460,12 +541,19 @@ bool Backend::runProgram(const QString &program, const QStringList &arguments, Q
             *error = tr("could not start %1").arg(QFileInfo(program).fileName());
         return false;
     }
-    if (!p.waitForFinished(timeout < 0 ? timeoutMs() : timeout)) {
-        p.kill();
-        p.waitForFinished(1000);
-        if (error)
-            *error = tr("%1 did not answer in time").arg(QFileInfo(program).fileName());
-        return false;
+    // In short steps, so a cancel from the window stops it soon.
+    const int limit = timeout < 0 ? timeoutMs() : timeout;
+    QElapsedTimer clock;
+    clock.start();
+    while (!p.waitForFinished(100) && p.state() != QProcess::NotRunning) {
+        if (CancelScope::cancelled() || clock.elapsed() >= limit) {
+            p.kill();
+            p.waitForFinished(1000);
+            if (error)
+                *error = CancelScope::cancelled() ? tr("cancelled")
+                                                  : tr("%1 did not answer in time").arg(QFileInfo(program).fileName());
+            return false;
+        }
     }
     const QByteArray stdoutText = p.readAllStandardOutput();
     if (p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0) {
@@ -502,8 +590,195 @@ QString SpotifyPlayerBackend::cacheFolder() {
 bool SpotifyPlayerBackend::signedIn() const {
     // librespot's credentials.json and a Web API <client id>_token.json.
     // Only their names are looked at; Omamp never opens them.
+    // With a client_id in app.toml, its own token must be there: a new ID
+    // needs `spotify_player authenticate` again.
     const QDir cache(cacheFolder());
-    return cache.exists("credentials.json") && !cache.entryList({"*_token.json"}, QDir::Files).isEmpty();
+    if (!cache.exists("credentials.json"))
+        return false;
+    const QString id = configuredClientId();
+    if (!id.isEmpty())
+        return cache.exists(id + "_token.json");
+    return !cache.entryList({"*_token.json"}, QDir::Files).isEmpty();
+}
+
+bool SpotifyPlayerBackend::stopInstances(QString *error) {
+    if (m_program.isEmpty())
+        return true;
+    QList<qint64> pids;
+    for (const Proc &p : processes())
+        if (isInstance(p.exe, p.arguments, m_program))
+            pids << p.pid;
+    for (qint64 pid : pids)
+        ::kill(pid_t(pid), SIGTERM);
+    QElapsedTimer t;
+    t.start();
+    while (running() && t.elapsed() < 5000)
+        QThread::msleep(100);
+    if (running()) {
+        for (qint64 pid : pids)
+            ::kill(pid_t(pid), SIGKILL);
+        QThread::msleep(300);
+    }
+    if (running()) {
+        if (error)
+            *error = tr("spotify_player is still running and wouldn't stop.");
+        return false;
+    }
+    return true;
+}
+
+namespace {
+
+// app.toml's lines, marking the key lines of the top level (before any
+// [table], outside a multi-line string), which is where client_id lives.
+struct TomlLine {
+    QByteArray text;
+    bool topLevelKey = false;
+    bool tableHeader = false;
+};
+
+QList<TomlLine> tomlLines(const QByteArray &data) {
+    static const QByteArray quotes[] = {QByteArray(R"(""")"), QByteArray("'''")};
+    QList<TomlLine> out;
+    bool inTable = false;
+    QByteArray openQuote; // the quote of a multi-line string we are inside
+    const QList<QByteArray> lines = data.split('\n');
+    for (const QByteArray &text : lines) {
+        TomlLine l;
+        l.text = text;
+        const QByteArray t = text.trimmed();
+        if (openQuote.isEmpty()) {
+            if (t.startsWith('[')) {
+                inTable = true;
+                l.tableHeader = true;
+            } else if (!inTable && !t.isEmpty() && !t.startsWith('#')) {
+                l.topLevelKey = true;
+            }
+            for (const QByteArray &q : quotes)
+                if (text.count(q) % 2 == 1) {
+                    openQuote = q;
+                    break;
+                }
+        } else if (text.count(openQuote) % 2 == 1) {
+            openQuote.clear();
+        }
+        out << l;
+    }
+    return out;
+}
+
+// A top-level key's value, unquoted; " " for a key with an empty value,
+// empty when the key isn't there.
+QString topLevelValue(const QString &configFolder, const QString &key) {
+    QFile f((configFolder.isEmpty() ? SpotifyPlayerBackend::configFolder() : configFolder) + "/app.toml");
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    const QRegularExpression re(R"(^\s*)" + QRegularExpression::escape(key) + R"(\s*=\s*(.*)$)");
+    for (const TomlLine &l : tomlLines(f.readAll())) {
+        if (!l.topLevelKey)
+            continue;
+        const auto m = re.match(QString::fromUtf8(l.text).trimmed());
+        if (!m.hasMatch())
+            continue;
+        QString v = m.captured(1).trimmed();
+        if (v.startsWith('"') || v.startsWith('\'')) {
+            const int end = v.indexOf(v.at(0), 1);
+            v = end > 0 ? v.mid(1, end - 1) : v.mid(1);
+        } else if (v.contains('#')) {
+            v = v.left(v.indexOf('#'));
+        }
+        v = v.trimmed();
+        return v.isEmpty() ? QString(" ") : v;
+    }
+    return {};
+}
+
+} // namespace
+
+QString SpotifyPlayerBackend::configuredClientId(const QString &folder) {
+    return topLevelValue(folder, "client_id").trimmed();
+}
+
+bool SpotifyPlayerBackend::hasClientIdCommand(const QString &folder) {
+    return !topLevelValue(folder, "client_id_command").isEmpty();
+}
+
+QString SpotifyPlayerBackend::effectiveClientId(const QString &folder) {
+    const QString id = configuredClientId(folder);
+    return id.isEmpty() ? ncspotClientId() : id;
+}
+
+bool SpotifyPlayerBackend::isValidClientId(const QString &id) {
+    static const QRegularExpression re("^[0-9a-fA-F]{32}$");
+    return re.match(id.trimmed()).hasMatch();
+}
+
+bool SpotifyPlayerBackend::writeClientId(const QString &folder, const QString &givenId, QString *backup, QString *error) {
+    const QString id = givenId.trimmed().toLower();
+    const QString dir = folder.isEmpty() ? configFolder() : folder;
+    const QString path = dir + "/app.toml";
+    auto fail = [error](const QString &why) {
+        if (error)
+            *error = why;
+        return false;
+    };
+    if (!isValidClientId(id))
+        return fail(tr("That isn't a Spotify client ID. A client ID is 32 letters and digits, shown on your app's "
+                       "page at developer.spotify.com."));
+    if (hasClientIdCommand(dir))
+        return fail(tr("app.toml sets client_id_command, which spotify_player uses instead of client_id. Remove "
+                       "that line from %1 first.")
+                        .arg(path));
+    QByteArray data;
+    QFile in(path);
+    if (in.exists()) {
+        if (!in.open(QIODevice::ReadOnly))
+            return fail(tr("Couldn't read %1.").arg(path));
+        data = in.readAll();
+        in.close();
+        const QString stem = path + ".omamp-backup-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
+        QString copy = stem;
+        for (int n = 2; QFileInfo::exists(copy); ++n)
+            copy = stem + '-' + QString::number(n);
+        if (!QFile::copy(path, copy))
+            return fail(tr("Couldn't back up %1, so it was left alone.").arg(path));
+        if (backup)
+            *backup = copy;
+    } else if (!QDir().mkpath(dir)) {
+        return fail(tr("Couldn't make %1.").arg(dir));
+    }
+
+    const QByteArray line = "client_id = \"" + id.toLatin1() + '"';
+    QList<TomlLine> lines = tomlLines(data);
+    static const QRegularExpression key(R"(^\s*client_id\s*=)");
+    bool done = false;
+    for (TomlLine &l : lines)
+        if (l.topLevelKey && key.match(QString::fromUtf8(l.text)).hasMatch()) {
+            l.text = line + (l.text.endsWith('\r') ? "\r" : "");
+            done = true;
+            break;
+        }
+    QList<QByteArray> out;
+    for (const TomlLine &l : lines) {
+        if (!done && l.tableHeader) {
+            out << line;
+            done = true;
+        }
+        out << l.text;
+    }
+    if (!done) {
+        // No table to go above: at the end, before the final newline.
+        if (data.isEmpty())
+            out = {line, QByteArray()};
+        else if (out.last().isEmpty())
+            out.insert(out.size() - 1, line);
+        else
+            out << line << QByteArray();
+    }
+    QSaveFile save(path);
+    if (!save.open(QIODevice::WriteOnly) || save.write(out.join('\n')) < 0 || !save.commit())
+        return fail(tr("Couldn't write %1.").arg(path));
+    return true;
 }
 
 bool SpotifyPlayerBackend::isInstance(const QString &exe, const QStringList &arguments, const QString &program) {
@@ -587,7 +862,7 @@ QString SpotifyPlayerBackend::deviceName() const {
     return "spotify-player";
 }
 
-bool SpotifyPlayerBackend::command(const QStringList &arguments, QByteArray *out, QString *error) const {
+bool SpotifyPlayerBackend::command(const QStringList &arguments, QByteArray *out, QString *error, int timeout) const {
     if (m_program.isEmpty()) {
         if (error)
             *error = tr("spotify_player isn't installed.");
@@ -604,7 +879,7 @@ bool SpotifyPlayerBackend::command(const QStringList &arguments, QByteArray *out
         return false;
     }
     QString why;
-    if (runProgram(m_program, arguments, out, &why))
+    if (runProgram(m_program, arguments, out, &why, timeout))
         return true;
     if (error) {
         if (why.contains("PREMIUM", Qt::CaseInsensitive))
@@ -615,9 +890,9 @@ bool SpotifyPlayerBackend::command(const QStringList &arguments, QByteArray *out
     return false;
 }
 
-bool SpotifyPlayerBackend::json(const QStringList &arguments, QJsonValue *value, QString *error) const {
+bool SpotifyPlayerBackend::json(const QStringList &arguments, QJsonValue *value, QString *error, int timeout) const {
     QByteArray out;
-    if (!command(arguments, &out, error))
+    if (!command(arguments, &out, error, timeout))
         return false;
     QJsonParseError parseError;
     const QJsonDocument doc = QJsonDocument::fromJson("[" + repair(out) + "]", &parseError);
@@ -688,7 +963,7 @@ QList<Item> SpotifyPlayerBackend::library(const QString &section, QString *error
         return {};
     }
     QJsonValue v;
-    if (!json({"get", "key", key.first}, &v, error))
+    if (!json({"get", "key", key.first}, &v, error, longTimeoutMs()))
         return {};
     return parseItems(v.toArray(), key.second);
 }
@@ -700,14 +975,14 @@ QList<Item> SpotifyPlayerBackend::tracksOf(const Item &container, QString *error
         return {};
     }
     QJsonValue v;
-    if (!json({"get", "item", "--id", container.id, container.kind}, &v, error))
+    if (!json({"get", "item", "--id", container.id, container.kind}, &v, error, longTimeoutMs()))
         return {};
     return parseContextTracks(v.toObject());
 }
 
 SearchResults SpotifyPlayerBackend::search(const QString &text, QString *error) {
     QJsonValue v;
-    if (text.trimmed().isEmpty() || !json({"search", "--", text.trimmed()}, &v, error))
+    if (text.trimmed().isEmpty() || !json({"search", "--", text.trimmed()}, &v, error, longTimeoutMs()))
         return {};
     return parseSearch(v.toObject());
 }
@@ -724,7 +999,7 @@ bool SpotifyPlayerBackend::addToPlaylist(const QString &playlistId, const Item &
 
 Item SpotifyPlayerBackend::track(const QString &id, QString *error) {
     QJsonValue v;
-    if (!json({"get", "item", "--id", id, "track"}, &v, error))
+    if (!json({"get", "item", "--id", id, "track"}, &v, error, longTimeoutMs()))
         return {};
     return parseTrack(v.toObject());
 }

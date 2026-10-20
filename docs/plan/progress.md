@@ -4808,3 +4808,201 @@ was squeezed by a text Refresh button, so it became an icon with a tooltip.
 - **The view's playing-now line without MPRIS** updates only when the view
   is shown or while Omamp plays a Spotify track.
 - **Translations**: the new strings are English only.
+
+## Spotify: restricted endpoints (20 October 2026)
+
+**With his own client ID, Matt's artists and Spotify's own playlists still
+waited on rate limits.** Matt's spotify_player 0.25.1 daemon runs with his
+own client ID (`c789e607…`) and `ncspot_only_get_endpoints = []`. His
+playlists, Liked Songs, albums and search are fast. Opening the artist
+"Brian Fallon" or the playlist "This Is Brian Fallon" showed "Spotify is
+rate-limiting requests. Retrying in 16 s…". The daemon's log showed why:
+Spotify refuses apps made after November 2024 some reads, spotify_player
+then asks again with ncspot's shared ID, and that ID is rate-limited
+(429, `retry_after_secs` 15–20).
+
+### What the log and the probes showed
+
+Five read-only CLI calls against Matt's daemon, at least 5 s apart, with
+his log read after each. Nothing was started, stopped or reconfigured, and
+nothing played.
+
+| Request | Web API call | With his own ID |
+|---|---|---|
+| `get item … artist` (from his log) | `artists/<id>/top-tracks` | 403 Forbidden, then ncspot, 429 |
+| | `artists/<id>/related-artists` | 403 Forbidden, then ncspot, 429 |
+| | `artists/<id>/albums?include_groups=album,single` (limit 50) | 400 Bad Request, then ncspot, 429 |
+| `get item … playlist` on "This Is Brian Fallon" (from his log) | `playlists/37i9dQZF1DZ06evO2aJbod`, `/items` | 404 Not Found, then ncspot, 429; 8 s |
+| `get item … album` (from his log) | `albums/<id>`, `/tracks` | 200, 0.5 s |
+| `search 'artist:"Brian Fallon"'` (probe 1) | `search` (limit 10) | 200, 0.66 s: 5 tracks, 10 albums, 2 artists, 0 playlists |
+| `search 'Brian Fallon'` (probe 2) | `search` | 200, 1.0 s: 10 of each kind but playlists (7); no Spotify-made playlist among them |
+| `get item --id <track> track` (probe 3) | `tracks/<id>` | 200, 0.2 s |
+| `get item … playlist` on another user's public playlist (probe 4) | `playlists/<id>` | no answer in 90 s; the CLI was stopped; nothing more in the log |
+| `get key playback` (probe 5, to check the daemon) | none from the daemon | answered in 1.6 s by a client the CLI started itself |
+
+Reading spotify_player 0.25.1's source (`cli/client.rs`,
+`client/mod.rs`, `client/spotify.rs`):
+
+- The daemon handles CLI commands **one at a time**: its socket loop waits
+  for each to finish. A request stuck on ncspot's rate limit holds up every
+  later command, play and pause included.
+- `playback start context --id <id> <kind> [--shuffle]` looks nothing up:
+  it sends `PUT me/player/play` with the context, and `PUT me/player/shuffle`
+  when a playback exists (so `--shuffle` does nothing before anything has
+  played on the device). The command returns at once; the request runs in
+  the background.
+- `playback start track` reads `tracks/<id>` first (allowed, 0.2 s).
+- `search` asks for 10 of each kind; Spotify answered 5 to 10.
+- `playback start radio` reads `hm://` autoplay data and `tracks` in bulk;
+  Omamp never used it.
+- Any 4xx except a 429 from your own ID makes spotify_player log "Custom
+  Spotify Web API request failed; retrying with ncspot client method=… url=…
+  status=…" and ask again with ncspot's ID. Only ncspot's requests go
+  through the rate-limit middleware, so only they log their URLs.
+
+**After probe 4, the daemon's CLI socket was gone.** UDP port 8080 (his
+`client_port`) has no listener, and the daemon (`spotify_player -d`, still
+running) holds TCP sockets only. Probe 5 was answered by a client the CLI
+started itself, which is what spotify_player does when nothing listens.
+Until the daemon is restarted, every Omamp command starts a fresh
+spotify_player client. The cause is unproven: the socket went quiet while
+it waited on the other user's playlist, after `timeout` stopped the CLI.
+Omamp also stops a CLI command on Cancel and on its time limit, so that
+may do the same. The daemon was left alone, as the brief required.
+
+### What changed
+
+- **Artist pages from search** (`SpotifyPlayerBackend::artistPage`): two
+  searches, the plain name (best-known tracks first) and `artist:"name"`
+  (more albums), keeping only the artist's own items by id and dropping
+  repeated names; albums newest first; headings "Popular tracks" and
+  "Albums". An artist known only by id takes its name from your followed
+  artists, Spotify's oEmbed page, or its own tracks. `tracksOf(artist)`
+  and `omamp spotify tracks <artist>` use it too. Nothing in Omamp sends
+  `get item … artist` any more.
+- **A catalogue** (`Spotify::Catalogue`, `WebApiCatalogue`): artist pages
+  and playlist tracks come through one interface, owned by the backend, so
+  a better source replaces the Web API without touching the views.
+- **Spotify's own playlists play as a whole.** `Item::spotifyMade()` (owner
+  id `spotify`, or an id starting `37i9dQZF1`) or a refusal learned today
+  marks a playlist restricted. Its view shows a bar with a sentence on why,
+  **Play playlist**, **Shuffle**, **Play it next**, **Add it to Now
+  Playing** and **Show tracks (slow)**, and reads nothing until asked.
+  Artist views get the same bar (**Play artist**). Rows: an artist or a
+  restricted playlist goes in as one entry.
+- **Context entries in Now Playing**: `spotify://playlist/<id>`
+  (`?shuffle=1` to shuffle), also album and artist.
+  `SpotifyPlayback` starts one with `Backend::playContext` (`playback start
+  context`). It counts the start as confirmed when the playback state names
+  the context, or, through MPRIS (which names none), when something other
+  than what played before starts, or after 6 s of playing. From then on the
+  deck shows each track Spotify moves to: title, artist, album, length and
+  position. The entry ends when Spotify stops at the end of a track, as a
+  track entry does. `parsePlayback` reads `context.uri`; `parseReference`
+  ignores the `?shuffle=1`. Context entries' pictures are the playlist's,
+  album's or artist's.
+- **Refusals remembered** (`Spotify::Refusals`, `refusalKey`):
+  `readLogNews` collects today's refusal lines (a 429 there counts as a rate
+  limit, not a refusal). The controller learns them per client ID for the
+  day, in `~/.cache/omamp/spotify/refused.json`, and lists them in Settings
+  → Spotify ("Refused today"). A playlist that turns out refused while it
+  loads stops waiting within about a second (the next log read), opens
+  restricted, and is not asked for again that day. The running request
+  still finishes and fills the cache.
+- **omamp-spotify-session** (`sidecar/omamp-spotify-session`, added at the
+  coordinator's request after a study of Spotifast): a Rust helper on
+  librespot-core 0.8.0 from crates.io. It signs in with spotify_player's
+  `credentials.json` (read only, nothing stored), opens a session without
+  Spotify Connect, and answers JSON lines: `playlist` (`GET
+  /playlist/v2/playlist/<id>?decorate=…&from=…&length=…` in windows of 500,
+  then `TRACK_V4` extended metadata in batches of 100) and `artist-top`
+  (`ARTIST_V4`, the account's country, else worldwide, top ten). It also
+  answers one request from its command line. `Cargo.lock` started from
+  Spotifast's lock. The ten crates it has that Spotifast's lacks are
+  older releases (the rustls 0.22 family, through librespot 0.8.0's
+  hyper-proxy2), and none comes from git. `bin/build` builds it with
+  `--locked` when `cargo` is installed and skips it otherwise.
+  `bin/install-user` and `pkgbuild/PKGBUILD` (makedepends `cargo`) install
+  it beside `omamp`.
+- **Omamp's side** (`src/core/spotify/spotifysession.*`): `SessionReader`
+  runs the helper on a thread of its own, one request at a time, started on
+  first use and kept running; Cancel and time limits stop the wait, not the
+  helper. `SessionCatalogue` reads every playlist through it (Web API on
+  failure, except Spotify's own, which then open as a whole) and artist
+  pages as top tracks plus albums from search. Settings: `session_reads`
+  (on), "Read Spotify-made playlists and artists' top tracks the way
+  Spotify's own app does", with a note that these are private endpoints.
+  The CLI uses it too. `OMAMP_SPOTIFY_SESSION` names the helper (`off` for
+  none); otherwise Omamp looks beside its own program, then on PATH.
+- **Retry** on a playlist shown whole because reading it failed reads it
+  again. A dev hook step `accept:<objectName>` presses Enter in a text
+  field (for the screenshots).
+
+### Smoke run of the helper (once, read only)
+
+One `serve` session with Matt's credential, two requests, then `quit`:
+signed in after 1.16 s; "This Is Brian Fallon" (owner `spotify`, 33 rows):
+33 tracks 1.44 s later; Brian Fallon's top tracks: 10, 0.52 s later. No
+429. `credentials.json` was unchanged and nothing else of his was touched.
+
+### Test results
+
+`OMAMP_TESTS=spotify`: 39 passed (37 tests plus set-up and tidy-up),
+0 failed. The fake `spotify_player` now logs refusals as 0.25.1 does and
+answers late for `get item … artist` and for playlists listed in
+`restricted`. It also starts contexts (`context-track`). A fake
+`omamp-spotify-session` answers from the fixtures (`session-fail`,
+`session-signin`, `session-slow`). Every test sets
+`OMAMP_SPOTIFY_SESSION=off` unless it brings the fake.
+
+| Test | What it shows |
+|---|---|
+| Refusals kept | `refusalKey` for each kind; today's refusal lines from Matt's real log lines, not yesterday's, not a 429; kept per client ID, in a file, for the day only; `spotifyMade()`; context queue paths |
+| Artist page | `search -- Neon Coast` and `search -- artist:"Neon Coast"` and nothing else, under 1.5 s; 4 tracks then 1 album with headings; Play artist is one `spotify://artist/<id>` entry and `playback start context … artist`; no `get item … artist` anywhere; an artist link by id gets its name |
+| Spotify's own playlist | Opens at once with no `get item`; Play is one entry played by context; the deck follows its track and the next one (polling, context URI); the end moves on to a local file; Shuffle adds `--shuffle`; Show tracks reads it once, slowly |
+| Refused while loading | Someone else's playlist refused today: restricted within 3.5 s of a 5 s answer, listed in `refused`, not asked again, still restricted in a new controller |
+| Context through MPRIS | Not confirmed while the old song shows; confirmed when a new one plays; the deck follows a track change; no state reads |
+| Another catalogue | A swapped-in catalogue lists Spotify's own playlist and the artist page; no `get item`, no search |
+| Session reader | Spotify's own playlist and an artist's top tracks through the reader, one process for all; reader failing: your playlist falls back to the Web API, Spotify's opens whole with the error, Retry reads it; switched off: whole again, saved; `omamp spotify tracks` uses it |
+| Reader can't sign in | The artist page still comes from search |
+
+`cargo test`: 3 passed (track shape, Spotify's status kept, bad ids
+refused). `runsCommandsAgainstTheDaemon` now also checks that an artist's
+tracks never use `get item … artist`.
+
+`bin/test` with JOBS=4: every class passed (28 Totals lines, 0 failed; the
+5 skips are the existing opt-in benchmarks and live web test).
+
+### Screenshots (not committed)
+
+Offscreen, in a throwaway HOME with the fake daemon: a Spotify-made
+playlist opened whole (with the helper failing to sign in on the fake
+credential, and without the helper) and an artist page from search.
+
+### Known gaps
+
+- **The daemon's CLI socket on Matt's machine is gone** (above). Restart
+  spotify_player (Omamp's Settings → Spotify → Start after stopping it, or
+  log out and in). Whether Omamp's own Cancel can cause the same is not
+  known; if it can, Cancel should stop waiting without stopping the CLI
+  process.
+- **Playing a Spotify-made playlist by context is unverified on the real
+  account**: no playback was allowed. spotify_player's source shows only
+  player requests; if Spotify refused the start, spotify_player retries
+  with ncspot's ID in the background, and Omamp says the start failed
+  after 12 s.
+- **Shuffle may be ignored** when nothing has played on the device since
+  spotify_player started (spotify_player sets shuffle only with an existing
+  playback).
+- **Through MPRIS, a context entry can't tell its own tracks from
+  something started elsewhere**, and Spotify's autoplay after the
+  playlist's end may keep it going as the same entry.
+- **The deck's cover for a context entry** is the playlist's picture, not
+  the playing track's album.
+- **Someone else's public playlist** hung on Matt's daemon (probe 4) and is
+  not treated as restricted until a refusal shows in the log. With the
+  helper installed, every playlist goes through it instead.
+- **The helper is not on Matt's machine yet**: it needs `bin/install-user`
+  or the package. The AUR PKGBUILD builds the released v0.2.0 tarball and
+  gains the helper and `cargo` at the next release.
+- **Translations**: the new strings are English only.

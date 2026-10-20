@@ -88,6 +88,70 @@ loading, and **Cancel** stops it. A list that fails shows why, with **Retry**.
 Omamp reads spotify_player's log (`~/.cache/spotify-player/spotify-player-*.log`)
 to tell a rate limit from a fault; it never writes to it.
 
+## What Spotify lets your own app do
+
+Spotify limits what a Web API app made after November 2024 may read. Your
+own client ID is such an app. With it, spotify_player reads your playlists,
+Liked Songs, saved albums, followed artists, albums and search quickly, and
+plays anything. Spotify refuses it:
+
+- **an artist's top tracks, related artists and full album list**
+  (403 Forbidden, 400 Bad Request);
+- **the details and tracks of playlists Spotify makes**: "This Is …", the
+  Daily Mixes, Discover Weekly and the editorial lists (404 Not Found);
+- recommendations and radio.
+
+When Spotify refuses your ID, spotify_player asks again with ncspot's shared
+ID, which is nearly always rate-limited, so the answer takes up to a minute.
+spotify_player answers one command at a time, so while it waits, play and
+pause wait too. Omamp therefore avoids those requests:
+
+- **An artist's page comes from search**: the artist's best-known tracks,
+  then their albums. **Play artist** asks Spotify to play the artist, which
+  needs no reading.
+- **A playlist Spotify made opens as a whole.** It shows **Play playlist**,
+  **Shuffle**, **Play it next** and **Add it to Now Playing**. Each puts one
+  entry in Now Playing (`spotify://playlist/<id>`). When its turn comes,
+  Spotify plays the playlist on its device and the deck follows whichever
+  track plays, through MPRIS. **Show tracks (slow)** lists the tracks
+  anyway, the slow way.
+- **Omamp learns what Spotify refused.** It reads the refusals in
+  spotify_player's log, for your client ID, and does not ask for them again
+  that day. A playlist that turns out to be refused while it loads stops
+  waiting and opens as a whole instead. Settings → Spotify lists what was
+  refused today. The list is kept in `~/.cache/omamp/spotify/refused.json`.
+
+### Reading them the way Spotify's own app does
+
+Spotify's own apps read those playlists and top tracks through Spotify's
+private endpoints, which have no per-app limit. Spotifast does the same.
+Omamp comes with a small helper, `omamp-spotify-session`, that does it too:
+
+- It signs in with the sign-in spotify_player already keeps
+  (`~/.cache/spotify-player/credentials.json`). It only reads that file and
+  stores nothing.
+- It opens no Spotify Connect device and plays nothing. Omamp starts it the
+  first time it is needed and keeps it running while Omamp runs.
+- Through it, every playlist lists quickly, Spotify's own included, and an
+  artist's page shows their top tracks (albums still come from search).
+- If it can't sign in or answer, Omamp falls back to the Web API, and a
+  playlist Spotify made opens as a whole again.
+
+Switch it off in Settings → Spotify: **Read Spotify-made playlists and
+artists' top tracks the way Spotify's own app does**. It is on by default
+when the helper is installed. These are Spotify's private endpoints:
+Spotify's developer terms don't cover them, and Spotify can change them at
+any time.
+
+The helper is built from `sidecar/omamp-spotify-session` (Rust, librespot)
+when `cargo` is installed, and installed beside `omamp`. It also answers on
+its own:
+
+```text
+omamp-spotify-session playlist <id>      a playlist's name, owner and tracks
+omamp-spotify-session artist-top <id>    an artist's top ten tracks
+```
+
 ## What you can do
 
 In the Spotify node:
@@ -96,8 +160,9 @@ In the Spotify node:
 - **Search Spotify**: tracks, albums, artists and playlists, under headings.
 - **Play**, **Play next**, **Add to Now Playing** and **Add to playlist** act
   on the chosen row. A track row plays the list from that track, as the
-  library does. A playlist, album or artist row plays all of its tracks;
-  Enter or a double-click opens it instead. Backspace or **‹ Back** returns.
+  library does. A playlist or album row plays all of its tracks; an artist,
+  and a playlist Spotify made, go in as one entry that Spotify plays. Enter
+  or a double-click opens the row instead. Backspace or **‹ Back** returns.
 - **Play a Spotify link**: paste an `open.spotify.com` link or a `spotify:`
   URI. A track plays next; an album, playlist or artist opens.
 - The line along the top shows what Spotify is playing, whoever started it,
@@ -125,7 +190,7 @@ command:
 omamp spotify status              installed, signed in, running, account, Premium, devices
 omamp spotify search <text>       tracks, albums, artists and playlists
 omamp spotify playlists|liked|albums|artists
-omamp spotify tracks <uri>        a playlist's or album's tracks, an artist's top tracks
+omamp spotify tracks <uri>        a playlist's or album's tracks, an artist's best-known tracks
 omamp spotify play <uri or link>  play it on the backend's Spotify Connect device
 omamp spotify now                 what is playing
 omamp spotify pause|resume
@@ -268,7 +333,11 @@ made-up artists and albums. The tests never reach Spotify, never start the
 real programs and play no sound.
 
 The fake can be slow (`slow-<verb>`) and can write spotify_player's
-rate-limit warning to a log (`ratelimit`). MPRIS is tested with a fake
+rate-limit warning to a log (`ratelimit`). It also behaves as Spotify does
+with your own client ID: `get item … artist` logs the three refusals and
+answers late, and so does `get item` on a playlist listed in `restricted`.
+A fake `omamp-spotify-session` answers the helper's line protocol from the
+same fixtures. The real helper's own tests run with `cargo test`. MPRIS is tested with a fake
 spotify_player MPRIS service on a private `dbus-daemon`, so nothing appears
 on the desktop's session bus; every other test points Omamp at a bus name
 that doesn't exist. The client ID writer is tested on `app.toml` files in
@@ -286,3 +355,8 @@ check:
 4. Open a long playlist. With a shared client ID it may say Spotify is
    rate-limiting; with your own it should open in a second or two.
 5. Settings → Spotify → Status shows **Follows playback: Through MPRIS**.
+6. Open an artist: the page shows tracks and albums at once, with no
+   rate-limit message.
+7. Open a "This Is …" playlist and press **Play playlist**: Spotify plays it,
+   and the deck shows each track as it changes. With the helper installed,
+   the playlist's tracks list instead.

@@ -262,6 +262,71 @@ FocusScope {
                 }
             }
 
+            // A playlist Spotify keeps from your app, or an artist: plays as a
+            // whole on Spotify, with a sentence on why.
+            Rectangle {
+                objectName: "spotifyContextBar"
+                Layout.fillWidth: true
+                Layout.leftMargin: 12
+                Layout.rightMargin: 12
+                Layout.topMargin: 6
+                visible: spotify.viewNote !== ""
+                implicitHeight: contextColumn.implicitHeight + 20
+                radius: Math.min(4, theme.radius)
+                color: theme.c.dark_background
+                border.width: 1
+                border.color: theme.c.lighter_background
+                ColumnLayout {
+                    id: contextColumn
+                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
+                              leftMargin: 12; rightMargin: 12 }
+                    spacing: 8
+                    Text {
+                        objectName: "spotifyContextNote"
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        text: spotify.viewNote
+                        font.pixelSize: 13
+                        color: theme.c.foreground
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        visible: spotify.viewRestricted || spotify.viewKind === "artist"
+                        Button {
+                            objectName: "spotifyContextPlay"
+                            text: qsTr("Play")
+                            font.pixelSize: 12
+                            onClicked: spotify.playView(false)
+                        }
+                        Button {
+                            objectName: "spotifyContextShuffle"
+                            text: qsTr("Shuffle")
+                            font.pixelSize: 12
+                            onClicked: spotify.playView(true)
+                        }
+                        Button {
+                            text: qsTr("Play next")
+                            font.pixelSize: 12
+                            onClicked: spotify.enqueueView(true)
+                        }
+                        Button {
+                            text: qsTr("Add to Now Playing")
+                            font.pixelSize: 12
+                            onClicked: spotify.enqueueView(false)
+                        }
+                        Button {
+                            objectName: "spotifyShowTracks"
+                            visible: spotify.viewRestricted
+                            flat: true
+                            text: qsTr("Show tracks (slow)")
+                            font.pixelSize: 12
+                            onClicked: spotify.showRestrictedTracks()
+                        }
+                    }
+                }
+            }
+
             // Where the list stands: loading, slow, rate-limited, or failed.
             Rectangle {
                 objectName: "spotifyLoadState"

@@ -1787,6 +1787,53 @@ private slots:
         QCOMPARE(stateReads(fake.calls()), 0);
         player.stop();
     }
+
+    void anotherCatalogueReplacesTheWebApi() {
+        // A source that may read Spotify's own playlists (as Spotify's own
+        // apps do) replaces the Web API for artist pages and playlist
+        // tracks; the views don't change.
+        struct Shelf : Spotify::Catalogue {
+            QString id() const override { return "test-shelf"; }
+            bool listsQuickly(const Spotify::Item &) const override { return true; }
+            QList<Spotify::Item> artistPage(const Spotify::Item &artist, QStringList *sections, QString *) override {
+                Spotify::Item t;
+                t.kind = "track";
+                t.id = "shelfTrack0000000000001";
+                t.name = "From the shelf";
+                t.artists = {artist.name};
+                if (sections)
+                    *sections = {"Popular tracks"};
+                return {t};
+            }
+            QList<Spotify::Item> playlistTracks(const Spotify::Item &, QString *) override {
+                Spotify::Item t;
+                t.kind = "track";
+                t.id = "shelfTrack0000000000002";
+                t.name = "Shelved";
+                return {t};
+            }
+        };
+        FakeSpotify fake;
+        QTemporaryDir dir;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.backend()->setCatalogue(std::make_unique<Shelf>());
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        c.setViewVisible(true);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        fake.clearCalls();
+        c.openRow(3); // Spotify's own playlist lists now
+        QVERIFY(!c.viewRestricted());
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 1, 5000);
+        QCOMPARE(c.items()->at(0).name, QString("Shelved"));
+        c.openSection("artists");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 6, 5000);
+        c.openRow(0);
+        QTRY_VERIFY_WITH_TIMEOUT(c.items()->count() == 1 && c.items()->at(0).name == "From the shelf", 5000);
+        c.waitForIdle();
+        QVERIFY2(fake.calls().filter("get item").isEmpty() && fake.calls().filter("search").isEmpty(),
+                 qPrintable(fake.calls().join(" | ")));
+    }
 };
 
 int runSpotifyTests(int argc, char **argv) {

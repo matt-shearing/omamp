@@ -631,6 +631,20 @@ QList<Item> Backend::tracksOf(const Item &, QString *error) { return library({},
 
 QList<Item> Backend::artistPage(const Item &, QStringList *, QString *error) { return library({}, error); }
 
+Catalogue *Backend::catalogue() {
+    if (!m_catalogue)
+        m_catalogue = std::make_unique<WebApiCatalogue>(this);
+    return m_catalogue.get();
+}
+
+QList<Item> WebApiCatalogue::artistPage(const Item &artist, QStringList *sections, QString *error) {
+    return m_backend->artistPage(artist, sections, error);
+}
+
+QList<Item> WebApiCatalogue::playlistTracks(const Item &playlist, QString *error) {
+    return m_backend->tracksOf(playlist, error);
+}
+
 bool Backend::playContext(const Item &context, bool, QString *error) { return playItem(context, error); }
 
 SearchResults Backend::search(const QString &, QString *error) {

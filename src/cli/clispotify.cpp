@@ -155,7 +155,16 @@ int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err)
             Spotify::Item container;
             if (!Spotify::parseReference(argument, &container.kind, &container.id))
                 return fail("tracks needs a Spotify playlist, album or artist URI or link");
-            items = backend->tracksOf(container, &error);
+            // Artists and playlists through the catalogue, albums directly.
+            if (container.kind == "artist") {
+                for (const Spotify::Item &i : backend->catalogue()->artistPage(container, nullptr, &error))
+                    if (i.kind == "track")
+                        items << i;
+            } else if (container.kind == "playlist") {
+                items = backend->catalogue()->playlistTracks(container, &error);
+            } else {
+                items = backend->tracksOf(container, &error);
+            }
         } else {
             items = backend->library(verb, &error);
         }

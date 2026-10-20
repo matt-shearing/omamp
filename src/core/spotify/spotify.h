@@ -231,6 +231,42 @@ struct Settings {
 
 // --- Backends ---------------------------------------------------------------
 
+class Backend;
+
+// Where artist pages and playlist tracks come from. The window and the
+// command line ask only this, so a better source than the Web API (one
+// that Spotify lets read its own playlists) can replace it without
+// touching the views. Runs on a worker thread, like the backend.
+class Catalogue {
+public:
+    virtual ~Catalogue() = default;
+    // "web-api" for the Web API through the backend.
+    virtual QString id() const = 0;
+    // Whether this source lists a playlist's tracks quickly. When it can't,
+    // the playlist plays as a whole and its tracks are listed on request.
+    virtual bool listsQuickly(const Item &playlist) const = 0;
+    // An artist's best-known tracks, then their albums, with a heading for
+    // each item in *sections.
+    virtual QList<Item> artistPage(const Item &artist, QStringList *sections, QString *error) = 0;
+    virtual QList<Item> playlistTracks(const Item &playlist, QString *error) = 0;
+};
+
+// The Web API, through the backend's command line. Spotify refuses apps
+// made since November 2024 an artist's top tracks, related artists and
+// album list, and the tracks of the playlists Spotify makes, so artist pages
+// come from search and Spotify's own playlists don't list quickly.
+class WebApiCatalogue : public Catalogue {
+public:
+    explicit WebApiCatalogue(Backend *backend) : m_backend(backend) {}
+    QString id() const override { return "web-api"; }
+    bool listsQuickly(const Item &playlist) const override { return !playlist.spotifyMade(); }
+    QList<Item> artistPage(const Item &artist, QStringList *sections, QString *error) override;
+    QList<Item> playlistTracks(const Item &playlist, QString *error) override;
+
+private:
+    Backend *m_backend;
+};
+
 class Backend {
 public:
     struct Caps {
@@ -301,6 +337,11 @@ public:
     // it plays without Omamp asking Spotify's Web API.
     virtual QString mprisName() const = 0;
 
+    // Where artist pages and playlist tracks come from: the Web API through
+    // this backend unless another source is set.
+    Catalogue *catalogue();
+    void setCatalogue(std::unique_ptr<Catalogue> catalogue) { m_catalogue = std::move(catalogue); }
+
     static std::unique_ptr<Backend> create(const QString &id);
     static QStringList ids() { return {"spotify_player", "spotifast"}; }
     // How long a quick command (play, pause, the playback state) may take
@@ -320,6 +361,9 @@ protected:
     static bool runProgram(const QString &program, const QStringList &arguments, QByteArray *out,
                            QString *error, int timeoutMs = -1);
     static QString unsupported(const QString &what);
+
+private:
+    std::unique_ptr<Catalogue> m_catalogue;
 };
 
 class SpotifyPlayerBackend : public Backend {

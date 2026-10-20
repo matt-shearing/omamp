@@ -137,6 +137,14 @@ ScrollView {
                          : qsTr("Not yet")
                 }
                 Fact {
+                    objectName: "spotifyRefused"
+                    visible: spotify.enabled && spotify.refused.length > 0
+                    label: qsTr("Refused today")
+                    value: qsTr("Spotify refused your app %n kind(s) of request today, so Omamp doesn't ask for them: %1", "",
+                                spotify.refused.length).arg(spotify.refused.join(", "))
+                    valueColor: theme.c.muted
+                }
+                Fact {
                     label: qsTr("Plays on")
                     value: spotify.device !== "" ? spotify.device : qsTr("“%1” on this computer").arg(spotify.deviceName)
                 }

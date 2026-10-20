@@ -827,6 +827,8 @@ void SpotifyController::waitForIdle() {
 
 void SpotifyController::makeBackend() {
     m_backend = Spotify::Backend::create(m_settings.backend);
+    // Made here, on this thread, before any worker can ask for it.
+    m_backend->catalogue();
     m_requests.cancelAll();
     m_requests.setBackend(m_backend);
 }
@@ -1028,7 +1030,11 @@ void SpotifyController::learnRefusals(const Spotify::LogNews &news) {
 }
 
 bool SpotifyController::isRestricted(const Spotify::Item &item) const {
-    return item.kind == "playlist" && (item.spotifyMade() || m_refusals.refused("playlist:" + item.id));
+    if (item.kind != "playlist")
+        return false;
+    Spotify::Catalogue *catalogue = m_backend->catalogue();
+    // What the Web API refused counts only while the Web API is the source.
+    return !catalogue->listsQuickly(item) || (catalogue->id() == "web-api" && m_refusals.refused("playlist:" + item.id));
 }
 
 QString SpotifyController::viewNote() const {
@@ -1415,8 +1421,11 @@ void SpotifyController::fetchList(const View &view, bool force, std::function<vo
                 add(r.search.artists, tr("Artists"));
                 add(r.search.playlists, tr("Playlists"));
             } else if (view.section == "tracks" && view.container.kind == "artist") {
-                // From search only: never `get item … artist`.
-                r.items = b.artistPage(view.container, &r.sections, &r.error);
+                // Through the catalogue: from search on the Web API, never
+                // `get item … artist`.
+                r.items = b.catalogue()->artistPage(view.container, &r.sections, &r.error);
+            } else if (view.section == "tracks" && view.container.kind == "playlist") {
+                r.items = b.catalogue()->playlistTracks(view.container, &r.error);
             } else if (view.section == "tracks") {
                 r.items = b.tracksOf(view.container, &r.error);
             } else {

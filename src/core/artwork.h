@@ -70,9 +70,10 @@ private:
         QString mime;
     };
     QString albumPicture(qint64 albumId, int size);
+    bool hasServerTracks(qint64 albumId);
     QString fromArtworkRow(qint64 artworkId, int size);
     Picture findAlbumPicture(qint64 albumId);
-    static Picture readSource(const QString &source);
+    Picture readSource(const QString &source);
     qint64 store(const Picture &picture, int size, QString *path);
     QString thumbnailPath(const QString &hash, int size) const;
 

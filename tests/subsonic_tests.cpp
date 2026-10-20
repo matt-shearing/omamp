@@ -20,6 +20,7 @@
 
 #include <sys/stat.h>
 
+#include "artwork.h"
 #include "cli.h"
 #include "library.h"
 #include "query.h"
@@ -337,6 +338,17 @@ private slots:
         QVERIFY(cover.endsWith(".png"));
         QCOMPARE(RemoteSources::coverArt(library, highway, 256, &error), cover);
         QCOMPARE(server.count("getCoverArt"), 1);
+
+        // The album's cover (album grid, info panel) comes from the server
+        // too: a server album has no folder to look in.
+        server.realPictures = true;
+        ArtworkCache art(library, m_xdg.path() + "/art");
+        const qint64 album = value(library, QString("SELECT album_id FROM tracks WHERE id = %1").arg(highway)).toLongLong();
+        QVERIFY(album > 0);
+        const QString albumCover = art.artworkFor(ArtworkCache::Kind::Album, album, 256);
+        QVERIFY2(!albumCover.isEmpty(), qPrintable(art.lastError()));
+        QVERIFY(QFileInfo::exists(albumCover));
+        QCOMPARE(value(library, QString("SELECT artwork_id IS NOT NULL FROM albums WHERE id = %1").arg(album)).toInt(), 1);
 
         // Plays and ratings go back to the server.
         QVERIFY(RemoteSources::scrobble(library, highway, true, 1760000000000, &error));

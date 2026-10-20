@@ -2,6 +2,7 @@
 
 #include "job.h"
 #include "library.h"
+#include "remote.h"
 #include "tagreader.h"
 
 #include <QBuffer>
@@ -158,6 +159,15 @@ QString ArtworkCache::fromArtworkRow(qint64 artworkId, int size) {
     return store(picture, size, &made) ? made : QString();
 }
 
+// Whether any of an album's tracks come from a Navidrome (Subsonic) server.
+bool ArtworkCache::hasServerTracks(qint64 albumId) {
+    QSqlQuery q(m_library.db());
+    q.prepare("SELECT 1 FROM tracks t JOIN volumes v ON v.id = t.volume_id WHERE t.album_id = ? "
+              "AND v.kind = 'subsonic' LIMIT 1");
+    q.addBindValue(albumId);
+    return q.exec() && q.next();
+}
+
 QString ArtworkCache::albumPicture(qint64 albumId, int size) {
     QSqlDatabase db = m_library.db();
     QSqlQuery q(db);
@@ -171,7 +181,7 @@ QString ArtworkCache::albumPicture(qint64 albumId, int size) {
     const bool checked = !q.value(1).isNull();
     q.finish();
     if (checked) {
-        if (!artwork)
+        if (!artwork && !hasServerTracks(albumId))
             return {}; // searched before and nothing found
         const QString made = fromArtworkRow(artwork, size);
         if (!made.isEmpty())
@@ -199,7 +209,7 @@ QString ArtworkCache::albumPicture(qint64 albumId, int size) {
 ArtworkCache::Picture ArtworkCache::findAlbumPicture(qint64 albumId) {
     QSqlQuery q(m_library.db());
     q.prepare("SELECT v.root_path, t.rel_path, t.has_embedded_art FROM tracks t JOIN volumes v ON v.id = t.volume_id "
-              "WHERE t.album_id = ? AND v.online AND t.availability = 'online' "
+              "WHERE t.album_id = ? AND v.online AND t.availability = 'online' AND v.kind != 'subsonic' "
               "ORDER BY t.disc_no, t.track_no, t.rel_path");
     q.addBindValue(albumId);
     q.exec();
@@ -214,8 +224,20 @@ ArtworkCache::Picture ArtworkCache::findAlbumPicture(qint64 albumId) {
     }
     q.finish();
     Picture picture;
-    if (folders.isEmpty())
+    if (folders.isEmpty()) {
+        // An album from a Navidrome (Subsonic) server has no folder on disk:
+        // the server has the cover, so ask it for one of the album's tracks.
+        QSqlQuery r(m_library.db());
+        r.prepare("SELECT t.id FROM tracks t JOIN volumes v ON v.id = t.volume_id "
+                  "WHERE t.album_id = ? AND v.kind = 'subsonic' ORDER BY t.disc_no, t.track_no LIMIT 1");
+        r.addBindValue(albumId);
+        if (r.exec() && r.next()) {
+            const qint64 track = r.value(0).toLongLong();
+            r.finish();
+            return readSource("subsonic:" + QString::number(track));
+        }
         return picture;
+    }
     picture.source = "none";
 
     // A disc folder ("CD1", "Disc 2") often has the cover one level up.
@@ -251,6 +273,17 @@ ArtworkCache::Picture ArtworkCache::readSource(const QString &source) {
             picture.bytes = file.readAll();
     } else if (source.startsWith("embedded:")) {
         picture.bytes = TagReader::embeddedPicture(source.mid(9), &picture.mime);
+    } else if (source.startsWith("subsonic:")) {
+        // The server's cover, fetched once into its own cache, then read
+        // like any picture file. An unreachable server gives no bytes, so
+        // the album is looked at again another time.
+        QString error;
+        const QString file = RemoteSources::coverArt(m_library, source.mid(9).toLongLong(), 600, &error);
+        QFile f(file);
+        if (!file.isEmpty() && f.open(QIODevice::ReadOnly) && f.size() <= maxPictureBytes)
+            picture.bytes = f.readAll();
+        else
+            picture.source.clear();
     }
     return picture;
 }

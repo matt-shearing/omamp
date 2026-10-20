@@ -5143,3 +5143,109 @@ do.
   selection takes a while; spotify_player has no batch add.
 - **Not tried on Matt's account**: every run used the fake spotify_player.
 - **Translations**: the new strings are English only.
+
+## Mini players on Hyprland (20 October 2026)
+
+Matt, using Omamp for real: "mini and micro players glitch out when you
+select them, then just appear in the same box". His window was tiled and
+large. `Ctrl+M` drew the small strip in the middle of the big tile with
+empty space around it.
+
+Two causes. A Hyprland window rule applies only when a window opens, so
+his rule for the titles `Omamp mini` and `Omamp micro` never touched a
+window that switched later. And the compact layouts filled the window but
+centred their rows vertically, so in a big tile the strip sat in the middle.
+
+### What changed
+
+- **Omamp asks Hyprland itself.** `WindowPlacement` (`src/app/windowplacement.*`)
+  gained `enterCompact(title, width, height, fresh)` and `leaveCompact()`.
+  Entering reads `hyprctl -j clients` (this process's window, by pid;
+  retried for two seconds while a new window maps), then `hyprctl -j
+  monitors`, keeps the window's floating, pinned, position and size, and
+  sends one `hyprctl --batch` of four Lua dispatches: float on, resize
+  exact, move exact, pin on. The place is the rule's: (monitor width −
+  window width − 24, monitor height × 0.05) on the window's own monitor, in
+  layout pixels (scale and rotation applied). Leaving sends pin off, then
+  float off for a window that was tiled, or resize and move back for one
+  that was floating. Mini to micro keeps the state from before the first
+  compact player.
+- **Hyprland's "ok" is checked.** It answers "ok" even for an address it
+  does not know, so after the batch Omamp reads the clients again and
+  counts the switch done only when the window floats at about the compact
+  size. A Lua error line, a failed `hyprctl` or a missing monitor counts as
+  refused.
+- **Title first, content hidden until the size arrives.** `NowPlayingModes`
+  sets the mode (and so the title) before asking, sets `placing`, and
+  Main.qml's root item has opacity 0 while it is set (the menu bar stays
+  hidden too). It clears once Hyprland has answered and the window's size
+  matches the mode, or after one second.
+- **Fallback.** Without `hyprctl`, or when Hyprland refuses, the window asks
+  for the size itself as before. A window that stays more than 40 px taller
+  than the strip shows the strip along the top, full width, and the line
+  "Your window manager keeps this window large. Make it floating to shrink
+  it."
+- **`omamp mini` / `omamp micro`.** The mode now comes from `startMode`
+  when `NowPlayingModes` is created, so the window's first title and size
+  are the compact ones and the rule applies on opening. Omamp also asks
+  Hyprland (for a desktop without the rule); leaving tiles the window, as a
+  new window would be.
+
+### Checked on this machine
+
+Hyprland 0.56.2. The dispatch forms were tried by hand on a throwaway
+`foot` window opened on workspace 9 with `cua-bg-launch`: float on, resize
+and move exact, pin on and off, float off, and a move back to workspace 9.
+A bad address answers "ok"; an unknown dispatcher answers `error: …`, and
+`hyprctl` exits 0 either way.
+
+A test build of Omamp (temporary XDG folders, `OMAMP_NO_AUDIO_DEVICE=1`, a
+private D-Bus session, on workspace 9) was driven through `OMAMP_DEMO`
+actions with a `hyprctl` on `PATH` that logs every call and turns "pin on"
+into a harmless dispatch, so the window could not follow Matt onto his
+workspace. `hyprctl clients -j` showed:
+
+| Step | Floating | Position | Size |
+| --- | --- | --- | --- |
+| Deck, tiled | no | 12, 42 | 6120 × 2506 |
+| Mini player | yes | 5700, 128 | 420 × 64 |
+| Micro player | yes | 5845, 128 | 275 × 28 |
+| Back to the deck | no | 12, 42 | 6120 × 2506 |
+| Library → mini → back | as above | | |
+| Floated by hand at 400, 300, 900 × 700 → mini → back | yes | 400, 300 | 900 × 700 |
+
+`hyprctl configerrors` was empty before and after. Matt's own Omamp window
+was not touched.
+
+### Tests
+
+`tests/menu_tests.cpp` (`OMAMP_TESTS=menu`), five new cases with a fake
+`hyprctl` that keeps one client's state in files, applies the dispatches it
+is sent, logs each batch and can be told to fail:
+
+- `placementCommands`: finding the client, the exact Lua for entering on a
+  plain, a scaled and a rotated monitor, leaving to tiled and to floating,
+  the batch string, and reading Hyprland's reply;
+- `compactPlayersOnHyprlandTiled`: title at once, content hidden, the exact
+  batch, still hidden until the size arrives, mini to micro, back to tiled
+  with the menu bar;
+- `compactPlayersOnHyprlandFloating`: back to 1100 × 760 at 100, 200;
+- `compactPlayerAtStartUp`: `startMode` "mini" gives the title and 420 × 64
+  when the window is created, asks Hyprland, and leaving tiles;
+- `compactPlayerFallsBackWhenKeptLarge`: Hyprland refusing leaves the tile
+  at 1700 × 1000 with the strip along the top and the hint; and with no
+  `hyprctl` the window shrinks itself to 420 × 64.
+
+### Known gaps
+
+- **Start-up with Matt's rule was not run for real**: his rule pins the
+  window, which would have put a test window on his screen. The offscreen
+  test covers the title and size of the first frame.
+- **Pin on was never sent to the test Omamp**, for the same reason; it was
+  checked once by hand on the `foot` window, which showed on Matt's
+  workspace for under a second before it was unpinned and sent back.
+- **Leaving puts the window on the workspace you are on**, not the one it
+  came from, because a pinned window travels with you.
+- **A window in fullscreen** is first returned to normal by Qt; if Hyprland
+  still reports it fullscreen when Omamp asks, it counts as tiled.
+- **Translations**: the hint is English only.

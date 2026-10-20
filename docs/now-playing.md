@@ -96,11 +96,51 @@ back to the full window. Each player remembers its own size.
 
 ### Floating and pinning them in Hyprland
 
-Wayland lets no window place itself or keep itself on top, so a window rule
-does it. The compact players have fixed titles, `Omamp mini` and
-`Omamp micro`, for the rule to match. On Omarchy 4 (Hyprland's Lua
-configuration), put this in a file of your own in `~/.config/hypr/`, such
-as `omamp.lua`, and add `require("omamp")` to `~/.config/hypr/hyprland.lua`:
+Wayland lets no window place itself or keep itself on top, so on Hyprland
+Omamp asks Hyprland to do it. When you switch to a compact player, Omamp:
+
+1. sets the window's title to `Omamp mini` or `Omamp micro`;
+2. finds its own window in `hyprctl clients -j`, by its process ID;
+3. asks Hyprland to float it, size it, move it to the top right of its
+   monitor under the bar, and pin it to every workspace.
+
+When you switch back, Omamp unpins the window and puts it back as it was
+before the first compact player: a tiled window tiles again, and a floating
+window returns to its old size and place. Going from the mini player to the
+micro player keeps that earlier state.
+
+The window's content stays hidden while Hyprland moves it, so you never see
+the deck squeezed into a strip or the strip stretched across the deck. It
+shows again when the new size arrives, or after one second.
+
+Hyprland 0.56 reads dispatches as Lua, so Omamp sends one batch such as:
+
+```sh
+hyprctl --batch 'dispatch hl.dsp.window.float({ window = "address:0x…", action = "on" });
+  dispatch hl.dsp.window.resize({ window = "address:0x…", x = 420, y = 64, exact = true });
+  dispatch hl.dsp.window.move({ window = "address:0x…", x = 5700, y = 128, exact = true });
+  dispatch hl.dsp.window.pin({ window = "address:0x…", action = "on" })'
+```
+
+The place is the rule's below: the monitor's width less the window's width
+less 24 pixels across, and 5% of the monitor's height down, measured on the
+window's own monitor.
+
+If there is no `hyprctl`, or Hyprland refuses, the window asks for the
+compact size itself. A window manager that keeps the window large gets the
+strip along the top, full width, with the line "Your window manager keeps
+this window large. Make it floating to shrink it." below it, never a small
+strip in the middle of empty space.
+
+#### A window rule for `omamp mini`
+
+`omamp mini` and `omamp micro` open the window with its compact title and
+size from the first frame, so a window rule can float and place it as it
+opens. Omamp asks Hyprland as well, so the rule is optional. With the rule,
+the player never shows tiled, even for a moment. On Omarchy 4 (Hyprland's
+Lua configuration), put this in a file of your own in `~/.config/hypr/`,
+such as `omamp.lua`, and add `require("omamp")` to
+`~/.config/hypr/hyprland.lua`:
 
 ```lua
 -- Omamp's mini and micro players: floating, on every workspace, top right
@@ -125,11 +165,9 @@ On a Hyprland that still reads `hyprland.conf`, write the same rule in its
 `windowrule` syntax: match the class `omamp` and the title, then float, pin,
 size and move.
 
-Hyprland applies `float`, `size` and `move` when a window opens. A window
-that opens as a compact player, with `omamp mini`, gets the whole rule. A
-full window that you switch to the mini player keeps floating or tiling as
-it was. If it is tiled, `Super+T` floats it so it can shrink, and
-`Super+O` floats and pins it in one go.
+Hyprland applies a rule only when a window opens, which is why switching
+asks Hyprland directly. A window opened with `omamp mini` goes back to
+tiling when you leave the player, as a new window would.
 
 ## Visualisers
 

@@ -85,10 +85,8 @@ window size for each.
   `Ctrl+Enter` for **Show tracks**. Covers come from `cover.jpg`, `folder.jpg`
   or `front.jpg` beside the music, or from the files' own tags, and fill in
   while you look.
-- **The info panel** (`I`, or **Info**) shows the cover and everything the
-  library knows about the chosen track, or the one playing: tags, format,
-  ReplayGain, rating, plays, when it last played, whether it has lyrics, and
-  where the file is.
+- **The sidebar** (`I`, or **Sidebar**) shows the chosen track, or the one
+  playing. See [The sidebar](#the-sidebar) below.
 - **The command palette** (`Ctrl+K`) finds actions, artists, albums and
   tracks as you type. `Enter` runs the action or goes to the artist, album or
   track. Start with `>` for actions only.
@@ -101,10 +99,102 @@ window size for each.
 
 ![The command palette over the library](command-palette-live.png)
 
+### The Art column
+
+Every track list starts with a small cover of the track's album: the
+library, playlists, Now Playing and the Spotify lists. In a playlist, a
+Spotify track shows its Spotify cover and a radio station shows its tile.
+Covers load in the background, one per album, so the list scrolls at full
+speed while they arrive.
+
+Drag any column's header sideways to move the column; Omamp remembers the
+order. Right-click a header, or press **Columns**, to hide the Art column.
+**View → Row height** offers Compact, Comfortable and Large rows; taller
+rows show bigger covers.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="art-column-dark.png">
+  <img alt="The track list with a small album cover at the start of each row, in comfortable rows" src="art-column-light.png">
+</picture>
+
+### The sidebar
+
+The sidebar sits on the right, as in Spotify's desktop app. Press `I`, click
+**Sidebar**, or use **View → Sidebar** to show or hide it, and drag its edge
+to change its width. It has these sections:
+
+- **Cover**: click it for the big Now Playing view.
+- **Title, artist and rating**: click a star to rate the track.
+- **Lyrics**: timed lyrics follow the song and light the line being sung.
+  Lyrics come from a `.lrc` file beside the track, from the file's tags, or
+  from LRCLIB when you press **Fetch from LRCLIB**.
+- **About the artist** and **About the album**: notes packaged with the
+  album come first, then a summary from Wikipedia with a **Read more** link.
+- **Credits**: composer, label, year and ISRC from the tags, then producers,
+  engineers, ISRCs and labels from MusicBrainz when the track carries its
+  MusicBrainz IDs.
+- **Up next**: the next five tracks in Now Playing.
+- **Track details**: format, bitrate, ReplayGain, plays and where the file is.
+
+Click a section's heading to fold it away. The **⋮** button lists the
+sections: untick one to hide it, or choose **Order the sections…** to move
+them up and down. **Following selection** shows the track under the cursor;
+click it to show the track that is playing instead.
+
+The sidebar also works for Spotify tracks, radio stations (the station and
+its current song) and Navidrome tracks.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="sidebar-dark.png">
+  <img alt="The sidebar showing a made-up album's cover, the track, about the artist and the album's own notes" src="sidebar-light.png">
+</picture>
+
+**Notes packaged with the album.** Omamp reads text files in the album's
+folder (and, for a `CD1` folder, the folder above): `album.txt`,
+`about.txt`, `liner notes.*`, `notes.md`, `info.txt`, `credits.txt`,
+`README*` and `.nfo` files, then the file's comment tag. Nothing leaves your
+computer for these.
+
+**Where the online summaries come from.** Omamp asks MusicBrainz for the
+artist (by the MusicBrainz ID in the tags, or by an exact name match) and the
+album's release group. It follows their links to Wikidata, then to the
+Wikipedia article in your Omarchy language, or in English when there is
+none. It shows Wikipedia's summary of the article, with its picture, under
+Wikipedia's CC BY-SA licence. Each service gets its own polite pace and
+Omamp's User-Agent, and the answers are kept for 30 days in
+`~/.cache/omamp/http`. When a look-up fails or finds nothing, the section says
+**No info found** with a **Retry** button. Turn the look-ups off in
+**Settings → Appearance → Layout**; `net.offline` or `OMAMP_OFFLINE=1` stops
+them too.
+
+### The large now playing bar
+
+**View → Now playing bar** swaps the strip for a large bar like Spotify's,
+and puts either one at the top or the bottom of the window. The large bar has
+the cover, the title and artist with the rating (or Like, for a Spotify
+track) on the left; shuffle, previous, a big play button, next and repeat in
+the middle, with the position under them; and lyrics, Now Playing, the
+sidebar, the mini player and the volume on the right. It takes its colours
+from the deck style.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="big-bar-bottom-dark.png">
+  <img alt="The library with the large now playing bar at the bottom of the window" src="big-bar-bottom-light.png">
+</picture>
+
+### Layout settings
+
+**Settings → Appearance → Layout** collects all of these: the Art column and
+the row height, the sidebar, what it follows, its sections and the online
+look-ups, and the bar's size and place. **Reset layout** puts the columns,
+the sidebar and the bar back as they start. Everything is kept in
+`~/.config/omamp/window.conf`, under `[layout]` and `[window]`.
+
 It stays quick with big libraries. With 200,000 tracks, the library opens
 in about a third of a second. A search, a sort, a choice in the column
 browser and the album grid all reach the screen in under 150 ms, most in
-under 100 ms.
+under 100 ms. With the Art column on, scrolling 200,000 tracks draws a frame
+in about 9 ms, as it does without the column.
 
 ![The library with 200,000 generated tracks](advanced-mode-200k.png)
 

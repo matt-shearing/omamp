@@ -437,7 +437,7 @@ Rectangle {
                 Layout.preferredWidth: 64
                 Layout.preferredHeight: 64
                 Layout.alignment: Qt.AlignTop
-                radius: 32
+                radius: Math.min(4, theme.radius)
                 color: theme.c.lighter_background
                 Image {
                     objectName: "aboutPicture"

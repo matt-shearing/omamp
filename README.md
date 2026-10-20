@@ -69,14 +69,35 @@ with its key.
 ### The library
 
 Press `Tab` for the library: a tree on the left, a column browser of genres,
-album artists and albums, the tracks or an album grid, and an info panel with
-everything Omamp knows about a track. Search takes plain words or a query such
+album artists and albums, the tracks or an album grid, and a sidebar with the
+cover, lyrics, notes about the artist and the album, credits and what plays
+next. Search takes plain words or a query such
 as `artist:"neon coast" year:1990..1999 rating:4..`, and stays quick with
 200,000 tracks.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/library-dark.png">
   <img alt="The library with Synthwave chosen in the column browser, the track list and the info panel" src="docs/library-light.png">
+</picture>
+
+### Your layout
+
+The library is laid out the way you like it. A small cover starts each row
+of every track list; rows come compact, comfortable or large, and columns
+move when you drag their headers. The sidebar's sections fold, hide and
+change order. The now playing bar can be the slim strip or a large bar like
+Spotify's, at the top or the bottom. **Settings → Appearance → Layout** has
+all of it, and **Reset layout** puts it back. See
+[docs/library.md](docs/library.md#the-art-column).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/sidebar-dark.png">
+  <img alt="The library with the Art column, the sidebar with notes about a made-up artist, and its album's own liner notes" src="docs/sidebar-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/big-bar-bottom-dark.png">
+  <img alt="The large now playing bar across the bottom of the library" src="docs/big-bar-bottom-light.png">
 </picture>
 
 ### Now Playing, big and small

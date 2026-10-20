@@ -5143,3 +5143,180 @@ do.
   selection takes a while; spotify_player has no batch add.
 - **Not tried on Matt's account**: every run used the fake spotify_player.
 - **Translations**: the new strings are English only.
+
+## Layout: art column, sidebar, big bar (20 October 2026)
+
+Matt asked for album art as the first column of the track lists, a sidebar
+like Spotify's with lyrics and information about the artist and the album,
+and the option of a much larger now playing bar at the top or the bottom.
+"The key here is customisability." All three are built, with a Layout
+section in Settings to choose them. User documentation is in
+[docs/library.md](../library.md#the-art-column).
+
+### What was built
+
+```
+src/app/layoutprefs.{h,cpp}     the choices, as appearance.layout, in window.conf [layout]
+src/core/net/about.{h,cpp}      packaged album notes; MusicBrainz → Wikidata → Wikipedia; credits
+src/app/aboutcontroller.{h,cpp} library.about: the sidebar's look-ups on a low-priority thread
+src/app/SidePanel.qml           the sidebar (InfoPanel.qml is gone)
+src/app/SideSection.qml, SectionOrder.qml   a folding section; the list that hides and orders them
+src/app/BigBar.qml              the large now playing bar
+src/app/LayoutSettings.qml      Settings > Appearance > Layout
+src/app/ArtThumb.qml            a list row's cover, by track id or queue entry
+tests/layout_tests.cpp          OMAMP_TESTS=layout
+```
+
+- **The Art column.** `TrackListModel::Art` is the last model column, so
+  every other column keeps its number, and the view shows it first. Its
+  `ArtRole` is the album's picture (`image://omamp-art/album/<id>/96?v=<artwork>`),
+  so an album's tracks share one request; an album searched and found bare
+  asks for nothing. Settings saved before the column existed get it at the
+  start, once. Dragging a header moves a column (`movableColumns`), and the
+  order is saved with the widths in `window/columns`. The playlist view, Now
+  Playing and the Spotify lists show the same thumbnail; a playlist's Spotify
+  entry shows its Spotify cover and a radio station its tile, through the
+  new `entry/<base64 path>` picture, which uses `NowPlaying::resolve`.
+- **Thumbnails.** `?r=<px>` asks the picture provider for a square crop with
+  rounded corners at the requested size, made on its worker threads, so rows
+  need no clipping effect. A request for a row scrolled past before a thread
+  was free is dropped (`cancel()`). A thumbnail with no picture comes back as
+  a clear square, so the row's placeholder shows and nothing is logged.
+- **Row height**: compact (24 px), comfortable (32) or large (44), with
+  covers of 20, 28 and 40 px. Every list follows it.
+- **The sidebar** replaces the info panel and keeps its key (`I`), its
+  width setting and its object names. Sections: cover (a click opens the big
+  view), title with rating, lyrics (the existing `LyricsView`), about the
+  artist, about the album, credits, up next and track details. Each folds,
+  hides and moves; it follows the selection or the playing track. Radio shows
+  the station and its song; Spotify and files outside the library show what
+  the player knows.
+- **About.** `About::Client` finds the artist on MusicBrainz by the MBID in
+  the tags, or by a search that scores 100 with the same name; the album by
+  its release's release group, or by a search. It follows the `wikidata`
+  url relation, asks Wikidata (`wbgetentities`, sitelinks only) for the
+  article in the Omarchy language or English, and reads Wikipedia's REST
+  summary. Disambiguation pages count as nothing. Wikidata and Wikipedia are
+  two new `Net::Service`s at five requests a second, cached for 30 days;
+  MusicBrainz keeps its one a second and week. `OMAMP_WIKIDATA_URL` and
+  `OMAMP_WIKIPEDIA_URL` (with `{lang}`) point them elsewhere for tests.
+- **Packaged notes** come first in About the album: `album.txt`,
+  `about.txt`, `liner notes.*`, `notes.md`, `info.txt`, `credits.txt`,
+  `README*` and `.nfo` files in the album's folder (or above a `CD1` folder),
+  read as UTF-8 or else Latin-1, then the comment tag.
+- **Credits**: composer, label, year and ISRC from the tags, then producers,
+  engineers, ISRCs and labels from MusicBrainz when the track has its
+  recording and release MBIDs.
+- **The large bar** (`BigBar.qml`) in the deck style's palette: the cover,
+  title and artist with rating or Like, shuffle, previous, a 44 px play
+  button, next and repeat over the position, then lyrics, Now Playing,
+  sidebar, mini player and volume. The strip or the bar sits at the top or
+  the bottom of the library.
+- **View menu**: Sidebar, Art column, Now playing bar (compact, large, top,
+  bottom) and Row height. **Settings → Appearance → Layout** has all of them,
+  the sidebar's sections, what it follows, the online look-ups and **Reset
+  layout**.
+- **Main.qml** changed in one block (a `Binding` and a `Connections` on
+  `appearance.layout`) and one line (the sidebar's default width, 340).
+  `main.cpp` and the test harnesses needed nothing: the layout hangs off
+  `appearance` and About off `library`.
+
+### Fixes found on the way
+
+- **A fake cover ended the program.** A `cover.jpg` holding text reached
+  KDE's raw image plugin, which threw from a worker thread. Pictures are now
+  decoded only in the formats their first bytes name (JPEG, PNG, WebP, GIF,
+  BMP): `ArtworkCache::pictureFormat`, used by the artwork cache, Now
+  Playing and the About pictures.
+- **Saved columns were never restored** when Omamp started in the library:
+  the window's settings arrive after the view is made. The view now applies
+  them when they come.
+- **Qt 6.12**: after a column moves, `TableView` sizes its row order once
+  and reads past it when the list grows (`std::out_of_range` from
+  `getRowHeight`). The list clears the row order on every reset. One move
+  also sends `columnMoved` for every column that shifts, not once.
+
+### Tests
+
+`tests/layout_tests.cpp`, offscreen in software with no audio device, against
+a `MockHttp` for MusicBrainz, Wikidata and Wikipedia:
+
+- `LayoutPrefs` defaults, every choice persisted, refused values, unknown and
+  missing sections, Reset;
+- packaged notes (order, Latin-1, a disc folder), language codes, Wikidata
+  links, picture formats;
+- the whole route against the mock: the summary, its picture, the
+  User-Agent, a German reader falling back to English, the cache answering
+  the second time, and a name with no match;
+- in the window: old column settings gaining the Art column at the start with
+  the other widths kept, thumbnails loaded, the column off and on, large
+  rows; `I` showing the sidebar with the album's `album.txt` and both
+  Wikipedia summaries; a section hidden, moved and folded and all three
+  saved; the palette's Lyrics unfolding the lyrics; the large bar at the
+  bottom, saved; its sidebar button; Reset layout;
+- a column moved by a header drag (`moveColumn`), saved, and back after a
+  restart.
+
+`p45window_tests` now leaves the Art column's cover requests out of the
+Navidrome sync's request count, and `librarywindow_tests` measures the header
+from the third column.
+
+`bin/test` with JOBS=4: 30 Totals lines, 434 passed, 0 failed, 6 skipped (the
+existing opt-in benchmarks and live web test, and the new opt-in layout
+benchmark).
+
+### Performance
+
+`OMAMP_LAYOUT_BENCH=1 OMAMP_TESTS=layout build/tests/omamp_tests artColumnAt200k`
+builds a library of 199,991 tracks in 18,181 albums, each with its own
+`cover.png`, then scrolls the list three rows a frame for 400 frames in a
+1,400 × 860 window, offscreen in software, on the development machine with
+other work running. `OMAMP_LAYOUT_BENCH_ART=0` runs it without the column.
+
+| | Art column off | Art column on |
+|---|---:|---:|
+| Scroll, covers not made yet: median / 95th / worst frame | 8.8 / 10.6 / 20.8 ms | 9.0 / 10.1 / 23.2 ms |
+| The same scroll again: median / 95th / worst | 8.9 / 10.4 / 30.0 ms | 9.3 / 11.3 / 23.8 ms |
+| Jump to anywhere in the list: median / worst | 18.0 / 66.3 ms | 19.9 / 64.8 ms |
+
+The scroll asked for 113 pictures for 1,200 rows (one per album) and all of
+them were on screen 2 ms after it stopped. The column costs no measurable
+frame time.
+
+### Screenshots
+
+`docs/art-column-{light,dark}.png`, `docs/sidebar-{light,dark}.png` and
+`docs/big-bar-bottom-{light,dark}.png`, in OneQode Light Glass and Night
+Ride, from `tests/make-demo-library`, offscreen in software in a throwaway
+HOME. The sidebar's Wikipedia text came from a local server with made-up
+answers; Night Drive's `album.txt` was written for the shot. Looking at them
+led to the sidebar's buttons being drawn by hand (Material's flat buttons
+drew no text there in software rendering) and a square, lightly rounded
+artist picture.
+
+### Decisions
+
+- **Art stays last in the model.** Tests, reports and the sort code use the
+  column numbers; the view owns the order.
+- **One picture per album** in the list, not per track: a track with its own
+  embedded cover shows its album's in the list, and its own in the sidebar.
+- **Look-ups follow links, not names alone.** A name search must score 100
+  and match, and the article comes through MusicBrainz's Wikidata link, so a
+  common name doesn't land on the wrong page. More artists show "No info
+  found" as a result; that is the safer mistake.
+- **On by default**, as the request asked, with a switch in Layout and
+  respect for `net.offline`. The look-up waits until the cursor rests for
+  350 ms, and runs only while an About or Credits section shows.
+- **The sidebar is the info panel's successor**: same key, same width
+  setting, same object names, so nothing else had to change.
+
+### Known gaps
+
+- **Not seen on a real screen**, and the online look-ups ran only against
+  the mock and the made-up server. No live Wikipedia check was run.
+- **Artist pictures** come from the Wikipedia summary's thumbnail, which is
+  often absent or a logo.
+- **Navidrome albums' covers** in the Art column come from the server on
+  first sight, one request per album.
+- **Up next** follows list order, as the big view does, even with shuffle on.
+- **Translations**: the new strings are English only.

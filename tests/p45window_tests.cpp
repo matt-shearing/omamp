@@ -796,7 +796,8 @@ private slots:
         QVERIFY(nas->syncServer(s.value("id").toLongLong(), false));
         QVERIFY(seen(jobs));
         QCOMPARE(jobs.first().at(1).toJsonObject().value("tracks_added").toInt(), 0);
-        QCOMPARE(server.methods.size(), 2);
+        // (The list's Art column may fetch covers meanwhile; they aren't the sync's.)
+        QCOMPARE(server.methods.size() - server.count("getCoverArt"), 2);
 
         // A sync that can't reach the server says so on the page.
         server.refuse = true;

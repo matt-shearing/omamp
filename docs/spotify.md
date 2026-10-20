@@ -249,8 +249,14 @@ has the Spotify URI in `xesam:url`.
 **Settings and files.** The switches live in `~/.config/omamp/spotify.conf`:
 whether Spotify is on, the backend, the two kinds of blending and whether to
 start spotify_player. Nothing about the account is stored. The only file
-outside Omamp's own that Omamp writes is spotify_player's `app.toml`, and only
-its `client_id` line, when you press **Use this client ID**.
+outside Omamp's own that Omamp writes is spotify_player's `app.toml`, when you
+press **Use this client ID**. It sets `client_id` and sets
+`ncspot_only_get_endpoints = []`, after backing the file up. spotify_player
+0.25 otherwise sends every playlist request through ncspot's shared client ID,
+which is rate-limited across everyone who uses it. With the empty list, playlist
+requests use your ID first and fall back to ncspot's only when Spotify refuses
+yours (Spotify's own playlists, such as "This Is…", for apps made after late 2024).
+On 20 October 2026 this took listing playlists from 26 s to 0.5 s.
 
 ## Testing
 

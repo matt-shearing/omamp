@@ -748,9 +748,19 @@ bool SpotifyPlayerBackend::writeClientId(const QString &folder, const QString &g
         return fail(tr("Couldn't make %1.").arg(dir));
     }
 
-    const QByteArray line = "client_id = \"" + id.toLatin1() + '"';
+    // spotify_player 0.25 sends playlist reads through ncspot's shared
+    // client ID whatever client_id says (ncspot_only_get_endpoints), and that
+    // ID is rate-limited across everyone who uses it. An empty list sends
+    // them through this ID too; spotify_player still falls back to ncspot's
+    // when this one is refused (Spotify's own playlists, for new apps).
+    const QByteArray line = "client_id = \"" + id.toLatin1() + "\"\nncspot_only_get_endpoints = []";
     QList<TomlLine> lines = tomlLines(data);
     static const QRegularExpression key(R"(^\s*client_id\s*=)");
+    static const QRegularExpression endpoints(R"(^\s*ncspot_only_get_endpoints\s*=)");
+    // The old endpoint list goes; the line above brings the new one.
+    for (int i = lines.size() - 1; i >= 0; --i)
+        if (lines[i].topLevelKey && endpoints.match(QString::fromUtf8(lines[i].text)).hasMatch())
+            lines.removeAt(i);
     bool done = false;
     for (TomlLine &l : lines)
         if (l.topLevelKey && key.match(QString::fromUtf8(l.text)).hasMatch()) {

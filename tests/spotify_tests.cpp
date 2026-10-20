@@ -1305,7 +1305,7 @@ private slots:
         QVERIFY(f.open(QIODevice::ReadOnly));
         QByteArray expected = original;
         expected.replace("client_id = \"65b708073fc0480ea92a077233ca87bd\"",
-                         "client_id = \"0123456789abcdef0123456789abcdef\"");
+                         "client_id = \"0123456789abcdef0123456789abcdef\"\nncspot_only_get_endpoints = []");
         QCOMPARE(f.readAll(), expected);
         f.close();
         QCOMPARE(B::configuredClientId(folder), id.toLower());
@@ -1317,7 +1317,17 @@ private slots:
         QVERIFY(B::writeClientId(folder, id, &backup, &error));
         QVERIFY(f.open(QIODevice::ReadOnly));
         QCOMPARE(f.readAll(), QByteArray("theme = \"dracula\"\nclient_id = \"0123456789abcdef0123456789abcdef\"\n"
-                                         "[device]\nname = \"x\"\n"));
+                                         "ncspot_only_get_endpoints = []\n[device]\nname = \"x\"\n"));
+        // An existing endpoint list is replaced, not doubled.
+        f.close();
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("ncspot_only_get_endpoints = [\"me/playlists\"]\nclient_id = \"x\"\n");
+        f.close();
+        QVERIFY(B::writeClientId(folder, id, &backup, &error));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), QByteArray("client_id = \"0123456789abcdef0123456789abcdef\"\n"
+                                         "ncspot_only_get_endpoints = []\n"));
+        f.close();
         f.close();
         // No file: one is made.
         QTemporaryDir empty;

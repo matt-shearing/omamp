@@ -159,7 +159,7 @@ In the Spotify node:
 - **Your playlists, Liked Songs, Saved albums, Followed artists** on the left.
 - **Search Spotify**: tracks, albums, artists and playlists, under headings.
 - **Play**, **Play next**, **Add to Now Playing** and **Add to playlist** act
-  on the chosen row. A track row plays the list from that track, as the
+  on the chosen rows (below). A track row plays the list from that track, as the
   library does. A playlist or album row plays all of its tracks; an artist,
   and a playlist Spotify made, go in as one entry that Spotify plays. Enter
   or a double-click opens the row instead. Backspace or **‹ Back** returns.
@@ -167,6 +167,44 @@ In the Spotify node:
   URI. A track plays next; an album, playlist or artist opens.
 - The line along the top shows what Spotify is playing, whoever started it,
   with **Like** for Liked Songs.
+
+### Choosing several rows
+
+![Five tracks chosen in Liked Songs, with Add to playlist open](spotify-multiselect.png)
+
+Every Spotify list (your playlists' tracks, Liked Songs, an album, an
+artist's page, search results) and the Spotify strip under the library
+search choose rows as the library's track list does:
+
+| Do | To |
+|---|---|
+| Click | choose one row |
+| `Shift`+click, `Shift+↑` `Shift+↓` | choose a range from the last plain or `Ctrl` click |
+| `Ctrl`+click, `Ctrl+Space` | add or take away one row |
+| `Ctrl+A` | choose every row |
+| `Esc` | let go of them all |
+| `Enter`, double-click | play (several chosen rows: just those) |
+
+The list's heading and the status bar say how many are chosen ("5
+selected"). With one row chosen, the buttons and the row menu act on that
+row as before: an album or playlist row plays all its tracks. With several,
+they act on the tracks among them, in list order:
+
+- **Play**, **Play next** and **Add to Now Playing**.
+- **Add to playlist ▸** in two groups. **Omamp playlists** puts the tracks
+  in one of Omamp's own playlists, which then mixes them with your files
+  ([playlists.md](playlists.md#mixed-playlists)); **New Omamp playlist…**
+  makes one first. **Spotify playlists** adds them to one of your Spotify
+  playlists (`spotify_player playlist edit … add`, one track at a time);
+  **New Spotify playlist…** makes a private one first
+  (`spotify_player playlist new`).
+- **Copy Spotify links** puts their `open.spotify.com` links on the
+  clipboard, one a line.
+- **Dragging** the chosen tracks onto an Omamp playlist in the tree adds
+  them, as dragging library tracks does.
+
+**Like** still acts on the playing track only: spotify_player's command
+line can save nothing else to Liked Songs.
 
 Elsewhere:
 
@@ -341,7 +379,9 @@ same fixtures. The real helper's own tests run with `cargo test`. MPRIS is teste
 spotify_player MPRIS service on a private `dbus-daemon`, so nothing appears
 on the desktop's session bus; every other test points Omamp at a bus name
 that doesn't exist. The client ID writer is tested on `app.toml` files in
-temporary folders.
+temporary folders. `tests/mixed_tests.cpp` covers choosing rows, adding them
+to Omamp playlists, dragging them onto the tree, mixed playlists, playing
+them and the command line, against the same fake.
 
 ## Things to check by hand
 

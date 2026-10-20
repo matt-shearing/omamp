@@ -252,6 +252,10 @@ window size for each.
   them out. A track that is in the list twice is marked **repeat**; an entry
   whose file isn't in the library stays, marked **not in library**, so an
   exported playlist is never shorter than the one you imported.
+- **Mixed playlists.** With Spotify on, a playlist can hold Spotify tracks
+  beside your own files. They carry Spotify's mark, play on Spotify when
+  their turn comes, and are greyed and left out while Spotify is off
+  ([docs/playlists.md](docs/playlists.md#mixed-playlists)).
 - **Auto-playlists** are a query that updates by itself
   ([docs/query-language.md](docs/query-language.md)). The editor checks the
   query as you type, says how many tracks it picks and shows them. Below
@@ -396,7 +400,16 @@ Spotify Premium; a Free account can browse and search. Gapless joins,
 crossfade, the equaliser and the visualiser stay with your own files.
 [docs/spotify.md](docs/spotify.md) has the details and the reasons.
 
+In the Spotify lists you choose several rows as in the track list (`Shift`
+and `Ctrl` with a click or the arrows, `Ctrl+A`, `Esc`), then play them,
+queue them, copy their links, drag them onto a playlist in the tree, or use
+**Add to playlist** for an Omamp playlist or one of your Spotify playlists.
+
 ![The Spotify node](docs/spotify-panel.png)
+
+![Five Spotify tracks chosen, with Add to playlist open](docs/spotify-multiselect.png)
+
+![A playlist of local files and Spotify tracks](docs/mixed-playlist.png)
 
 ## Omarchy bar plugin
 
@@ -449,9 +462,11 @@ instead of the playlist, and these keys work too:
 | `↑` `↓` `Page Up` `Page Down` `Home` `End` | Move through the tree or the list |
 | `→` `←` in the tree | Open or close a node, or step into it or out to its parent |
 | `Enter` in the tree, `←` in the list | Go from the tree to the list, and back |
-| `Shift+↑` `Shift+↓` | Select a range of tracks |
+| `Shift+↑` `Shift+↓` | Select a range of tracks (in the Spotify lists too) |
+| `Shift`+click, `Ctrl`+click | Select a range; add or take away one track |
 | `Ctrl+Space` | Select or unselect the track under the cursor |
 | `Ctrl+A` | Select every track in the list |
+| `Esc` in a list | Unselect everything |
 | `Enter` | Play the list from the selected track (or play the selected tracks) |
 | `Menu` | Play next, add to Now Playing or show in folder |
 | `O` | Add a folder to the library |
@@ -471,7 +486,7 @@ instead of the playlist, and these keys work too:
 | `Ctrl+Enter` or `Ctrl+S` in an editor | Save, organise or tag |
 | `Esc` in an editor | Close it (asking first if there are unsaved changes) |
 | `Menu` in the tree | New playlist, auto-playlist or folder; rename, move, export or delete |
-| Drag from the list | Add the selected tracks to a playlist in the tree |
+| Drag from the list | Add the selected tracks to a playlist in the tree (Spotify tracks too) |
 | `Alt+↑` `Alt+↓` in a playlist | Move the chosen entries up or down |
 | `Delete` in a playlist | Remove the chosen entries from the playlist |
 | `Delete` in the tree | Delete the chosen playlist, folder or collection (asks first) |
@@ -527,6 +542,7 @@ omamp sync run Phone
 omamp report 'rating:5' --out five-stars.csv
 omamp spotify status                     # is spotify_player signed in and running? Premium?
 omamp spotify search 'neon coast' --json # Spotify's tracks, albums, artists and playlists
+omamp playlist add 'Road trip' spotify:track:<id>  # a Spotify track in an Omamp playlist
 omamp radio list --group nightride       # the Nightride FM channels
 omamp radio play darksynth               # tune the running Omamp in
 omamp radio search 'jazz'                # find stations on radio-browser.info

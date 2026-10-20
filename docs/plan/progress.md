@@ -5006,3 +5006,140 @@ credential, and without the helper) and an artist page from search.
   or the package. The AUR PKGBUILD builds the released v0.2.0 tarball and
   gains the helper and `cargo` at the next release.
 - **Translations**: the new strings are English only.
+
+## Spotify multi-select and mixed playlists (20 October 2026)
+
+Matt asked for two things after using the Spotify view for real: to hold
+Shift (or Ctrl) and click several Spotify tracks, then add them all to a
+playlist; and to add Spotify tracks to Omamp's own playlists, so one
+playlist can mix Spotify and local songs. Both are built.
+
+### What was built
+
+- **Choosing rows in the Spotify lists.** `SpotifyItemsModel` now keeps a
+  selection, a cursor and an anchor with the same rules as
+  `TrackListModel`: click, `Shift`+click, `Ctrl`+click, `Shift+↑/↓`,
+  `Ctrl+Space`, `Ctrl+A`, and `Esc` to let go. The view's rows use the
+  library's selection colour and cursor lines; the heading and the status
+  bar say "N selected". The Spotify strip under the library search chooses
+  tiles the same way (`←`/`→` move). `Esc` now also lets go of the library
+  track list's selection, so the two lists behave alike.
+- **Acting on the chosen rows.** `SpotifyController::playChosen`,
+  `addChosenToSpotifyPlaylist`, `addChosenToNewSpotifyPlaylist`,
+  `addChosenToOmampPlaylist` and `copyChosenLinks` take the list (the
+  view's or the strip's). One chosen row behaves as before (an album or
+  playlist row means all its tracks); several mean the tracks among them,
+  in list order. The header buttons and the row menu call them.
+- **Add to playlist ▸** (`SpotifyAddMenu.qml`) has two groups: Omamp
+  playlists, with **New Omamp playlist…**, and your Spotify playlists, with
+  **New Spotify playlist…**. spotify_player 0.25.1 has `playlist new
+  [name] [description]` (checked with `--help`), so the backend gained
+  `createPlaylist`; the new playlist's id is found by reading the playlist
+  list again, since the command's output is not a contract. The window asks
+  for names through the existing name sheet (`SpotifyHooks`).
+- **Dragging** the chosen Spotify tracks onto a playlist node in the tree
+  adds them (`LibraryTreePane.dropSpotifyAt`).
+- **Mixed playlists.** A Spotify entry is a `playlist_items` row with no
+  `track_id` and the path `spotify://track/<id>`, the path Now Playing
+  already uses. Schema step 11 adds `album` and `art` (the Spotify album id,
+  or a picture URL) so an entry shows and finds its cover without asking
+  Spotify. `Playlists::Item` reports availability `spotify`; such entries
+  are not counted as "not in the library".
+- **The playlist view** marks Spotify entries with Spotify's glyph, counts
+  them in the summary ("4 from Spotify"), and greys them with a tooltip
+  while `spotify.unavailableReason` is set (Spotify off, not installed, not
+  signed in, or Spotifast closed). Moves, removal and repeats work as for
+  any entry.
+- **Playing.** `PlaylistsController::playable` keeps Spotify entries while
+  Spotify can play and tells `SpotifyController` each track's stored name,
+  length and album, so the handover and the deck's cover need no lookup.
+  The HandoffEngine does the rest, as for any Spotify track in Now Playing.
+  While Spotify can't play, its entries are left out and one toast says how
+  many and why; a playlist of only Spotify tracks says why and plays
+  nothing.
+- **M3U and PLS.** Export writes `https://open.spotify.com/track/<id>`
+  after the usual `#EXTINF`; import turns those links and `spotify:track:`
+  URIs back into Spotify entries and never matches them to local files.
+  `ImportResult` counts them as `spotify`.
+- **The command line.** `omamp playlist add <playlist> <links…>` takes
+  Spotify URIs and links. It asks spotify_player for names only when
+  Spotify is on in Omamp and spotify_player is signed in and running, and
+  otherwise adds the ids and says so. `playlist show` prints the link and
+  `[Spotify]`; JSON entries carry `spotify` and `url`.
+- **Saving Now Playing as a playlist** keeps its Spotify tracks' album and
+  art.
+- **Demo verbs** `spotifysection:<section>` and `spotifyselect:<rows>` for
+  screenshots.
+
+### Tests
+
+`tests/mixed_tests.cpp` (11 with set-up), against the fake spotify_player
+and offscreen in software:
+
+- links and URIs recognised;
+- storing Spotify entries with their album and art, `Alt+↓`, a drag to the
+  top, removal, repeats and the model's counts;
+- an M3U round trip, and a hand-written file with a `spotify:` URI and a
+  shared link;
+- `playlist add` with Spotify off (ids only, a note, no call to the fake)
+  and on (names from `get item`), and `playlist show` in text and JSON;
+- a mixed playlist handing over to the fake device and back, with the
+  track's name known only from the stored entry;
+- Spotify off: two Spotify entries left out, one notice, and a
+  Spotify-only playlist refused with the reason;
+- in the real window: `Shift+↓`, `Ctrl+A`, `Esc`, click, `Shift`+click and
+  `Ctrl`+click in Liked Songs, `Enter` playing just the chosen rows, a
+  double-click playing the list, and Copy Spotify links;
+- the header's **Add to playlist** menu showing both groups and adding a
+  four-track range to an Omamp playlist with names, albums and art; a new
+  Spotify playlist made through the name sheet with the four tracks;
+- three Spotify tracks dragged onto a playlist node, then the playlist view
+  showing the mark and "(off)" once Spotify is switched off.
+
+`bin/test` with JOBS=4: 29 Totals lines, 426 passed, 0 failed, 5 skipped
+(the existing opt-in benchmarks and live web test).
+
+The Spotify fakes moved from `spotify_tests.cpp` to `tests/spotify_fakes.h`
+so both files use them. The fake spotify_player gained `playlist new`. The
+radio test's schema check now accepts later steps.
+
+### Screenshots
+
+`docs/spotify-multiselect.png` (five Liked Songs chosen, the Add to
+playlist menu open with both groups) and `docs/mixed-playlist.png` (an
+Omamp playlist of five local files and four Spotify tracks), in Matt's
+light theme (OneQode Light Glass), with `*-night-ride.png` copies.
+Offscreen in software, in a throwaway HOME on a `dbus-run-session` bus, with
+the made-up demo library, made-up covers and the fake spotify_player; the
+mixed playlist was filled with `omamp playlist add`. Looking at them found
+that Material's menu items were 48 pixels tall with 16-pixel text, and the
+menu had no background in software rendering; the menu now has compact
+lines, a plain panel and the width of its widest line, as the menu bar's
+do.
+
+### Decisions
+
+- **No schema rebuild:** Spotify entries reuse the trackless entries step 7
+  made for missing files, plus two columns.
+- **Left out, not failed:** while Spotify is off, a mixed playlist plays its
+  files and says once what it left out, rather than stopping at each
+  Spotify track.
+- **Several rows mean tracks.** With several rows chosen, albums, artists
+  and playlists among them are ignored; one chosen album still means all
+  its tracks.
+- **The command line never starts spotify_player** to look names up, and
+  asks it only when Spotify is on in Omamp.
+
+### Known gaps
+
+- **Like for chosen tracks**: spotify_player's command line can only like
+  the playing track, so there is no Like for a selection.
+- **Add to Spotify playlist for local tracks** (matching by artist and
+  title) is not built: it needs a search per track and a confirmation
+  list, which did not fit this change.
+- **Spotify entries added from the command line with Spotify off** keep
+  only their id; nothing fills the name in later.
+- **Adding to a Spotify playlist** sends one command per track, so a long
+  selection takes a while; spotify_player has no batch add.
+- **Not tried on Matt's account**: every run used the fake spotify_player.
+- **Translations**: the new strings are English only.

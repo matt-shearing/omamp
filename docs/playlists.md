@@ -97,6 +97,54 @@ file is deleted, it shows as missing. If the track leaves the library
 altogether, the entry stays, marked unmatched, and still exports with its old
 path. Nothing disappears from a playlist unless you remove it.
 
+## Mixed playlists
+
+With Spotify switched on ([spotify.md](spotify.md)), a playlist can hold
+Spotify tracks beside your own files.
+
+![A playlist of local files and Spotify tracks](mixed-playlist.png)
+
+- **Adding them.** In the Spotify view or the Spotify strip under the
+  library search, choose tracks and use **Add to playlist ▸ Omamp
+  playlists**, or drag them onto a playlist in the tree. **New Omamp
+  playlist…** makes one and adds them. One album row adds the album's
+  tracks.
+- **What is kept.** Each Spotify entry stores the track's link
+  (`spotify://track/<id>`), title, artists, album, length and album id, so
+  the playlist shows it without asking Spotify, and the deck finds its
+  cover.
+- **In the playlist view** a Spotify entry has Spotify's mark before its
+  title. Moving, removing and repeats work as for any entry; the summary
+  line counts the Spotify entries. While Spotify is off or not signed in,
+  they are greyed, and hovering one says why: "Spotify is off — turn it on
+  in Settings → Spotify".
+- **Playing.** The playlist goes into Now Playing in its order. Your files
+  play in Omamp; when a Spotify track's turn comes, Spotify plays it on its
+  device and Omamp follows, then goes back to the next file. Shuffle and
+  Repeat work across both. While Spotify can't play, its entries are left
+  out of Now Playing, and one notice says how many and why. A playlist of
+  only Spotify tracks says why and plays nothing.
+- **Files.** Exporting writes a Spotify entry as its `#EXTINF` line and its
+  `https://open.spotify.com/track/<id>` link, which other players and a
+  browser understand. Importing reads those links, and `spotify:track:<id>`
+  URIs, back as Spotify entries; they are never matched to local files.
+- **The command line.**
+
+  ```sh
+  omamp playlist add Summer spotify:track:<id> https://open.spotify.com/track/<id>
+  omamp playlist show Summer
+  ```
+
+  `playlist add` takes Spotify links instead of a query. When Spotify is on
+  in Omamp and spotify_player is running, it asks spotify_player for each
+  track's name, artists, album and length; otherwise it adds the tracks by
+  id alone and says so. `playlist show` lists a Spotify entry with its
+  link and `[Spotify]`; with `--json` each entry has `"spotify": true` and
+  its `url`.
+
+Auto-playlists, Auto-DJ and device syncing stay local: they pick from the
+library, so a playlist's Spotify entries are left out of them.
+
 ## Auto-playlists
 
 ```sh
@@ -265,7 +313,9 @@ leave. Party mode holds across a restart.
 | `src/app/djcontroller.h` | Auto-DJ refills and party mode for the window |
 | `src/app/playrecorder.h` | play counts and the scrobble queue from the player |
 
-Schema step 7 added `playlists.position`, `seed`, `note` and `source`;
+Schema step 11 added `playlist_items.album` and `art` for Spotify entries
+(a Spotify entry is an entry with no track whose path is
+`spotify://track/<id>`). Schema step 7 added `playlists.position`, `seed`, `note` and `source`;
 rebuilt `playlist_items` so `track_id` may be NULL and each entry keeps its
 path, title, artist and length; added `play_history.source`; and added
 `import_journal`. The tests are in `tests/playlist_tests.cpp`. How the

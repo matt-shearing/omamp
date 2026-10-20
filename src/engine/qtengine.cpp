@@ -1,11 +1,20 @@
 #include "qtengine.h"
 
+#include <QAudioDevice>
+#include <QMediaDevices>
 #include <QMediaMetaData>
 #include <QUrl>
 
+#include "outputfollower.h"
+
 QtEngine::QtEngine(bool withDevice, QObject *parent) : AudioEngine(parent) {
-    if (withDevice && !qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"))
+    if (withDevice && !qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE")) {
         m_player.setAudioOutput(&m_output);
+        // QAudioOutput has the same blind spot as the native engine's sink:
+        // Qt pins the stream to one device and its idea of the default can
+        // go stale, so the default comes from the sound server.
+        setOutputFollower(OutputFollower::createForDesktop());
+    }
     m_player.setAudioBufferOutput(&m_bufferOutput);
 
     connect(&m_bufferOutput, &QAudioBufferOutput::audioBufferReceived, this, [this](const QAudioBuffer &buffer) {
@@ -57,6 +66,29 @@ QtEngine::QtEngine(bool withDevice, QObject *parent) : AudioEngine(parent) {
         if (error != QMediaPlayer::NoError)
             emit errorOccurred(redact(text));
     });
+}
+
+void QtEngine::setOutputFollower(OutputFollower *follower) {
+    delete m_follower;
+    m_follower = follower;
+    if (!follower)
+        return;
+    follower->setParent(this);
+    follower->setCurrent(m_output.device().id());
+    connect(follower, &OutputFollower::switchTo, this, [this](const QByteArray &id) {
+        for (const QAudioDevice &device : QMediaDevices::audioOutputs()) {
+            if (device.id() == id) {
+                m_output.setDevice(device);
+                break;
+            }
+        }
+        m_follower->setCurrent(m_output.device().id());
+    });
+    // Following only while something is loaded and playing or paused, so an
+    // idle player runs no pactl.
+    auto update = [this] { m_follower->setActive(m_player.playbackState() != QMediaPlayer::StoppedState); };
+    connect(&m_player, &QMediaPlayer::playbackStateChanged, follower, update);
+    update();
 }
 
 void QtEngine::load(const QString &path, const QUrl &url) {

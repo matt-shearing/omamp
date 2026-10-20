@@ -10,7 +10,7 @@
 
 class QAudioDevice;
 class QAudioSink;
-class QMediaDevices;
+class OutputFollower;
 
 // Where the native engine's audio goes. The engine hands the sink a reader;
 // the sink pulls interleaved float stereo from it at its own pace.
@@ -50,7 +50,8 @@ public:
 // It follows the default output: when the desktop's default device changes
 // (headphones plugged in, a Bluetooth speaker connecting or leaving), the
 // stream is opened again on the new default, at the same rate, and carries
-// on from the same reader.
+// on from the same reader. The default comes from the sound server, not
+// Qt's cache, through an OutputFollower (outputfollower.h).
 class DeviceSink : public QObject, public PcmSink {
     Q_OBJECT
 
@@ -69,6 +70,8 @@ public:
     // Opens the stream again on the current default output, if it differs
     // from the one in use. Returns false if the new device won't open.
     bool followDefaultOutput();
+    // The device the stream is on (QAudioDevice::id()), empty when closed.
+    QByteArray deviceId() const { return m_deviceId; }
 
     // The latency estimate on its own: frames pulled since the stream
     // started, less what the device says it has processed, kept between
@@ -78,6 +81,7 @@ public:
 private:
     class Pull;
     bool openOn(const QAudioDevice &device);
+    bool openOnId(const QByteArray &id);
     void closeSink();
 
     int m_rate = 48000;
@@ -85,8 +89,11 @@ private:
     std::unique_ptr<Pull> m_device;
     QAudioSink *m_sink = nullptr;
     QByteArray m_deviceId;
-    QMediaDevices *m_devices = nullptr;
+    OutputFollower *m_follower = nullptr;
     bool m_suspended = false;
+    // Reopens after the stream failed on a device that is still listed; a
+    // device that keeps failing is left alone until the next change.
+    int m_errorReopens = 0;
 };
 
 // Wraps another sink and reports a fixed amount of audio as still in the

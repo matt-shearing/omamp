@@ -5143,3 +5143,114 @@ do.
   selection takes a while; spotify_player has no batch add.
 - **Not tried on Matt's account**: every run used the fake spotify_player.
 - **Translations**: the new strings are English only.
+
+## Audio: following the default output (20 October 2026)
+
+On Matt's desktop the Jabra Link 390 dongle, the default output, dropped
+off and came back. Omamp moved to the SteelSeries Arctis when the dongle
+left, as designed, but stayed there when it came back and was the default
+again, so nothing was heard. Its PipeWire stream showed
+`node.target = "103"` (the Arctis) and `node.dont-reconnect = "true"`, and
+`pactl move-sink-input` was refused. Only a restart helped.
+
+### What went wrong
+
+- **Qt pins every stream.** Qt 6.12 talks to PipeWire directly (its new
+  PipeWire backend, which it prefers over PulseAudio). `QPipewireAudioStream::connectStream`
+  calls `pw_stream_connect` with the chosen node's id and the flags
+  `AUTOCONNECT | MAP_BUFFERS | RT_PROCESS | DONT_RECONNECT`. PipeWire turns
+  the id into `node.target` and the last flag into `node.dont-reconnect`.
+  So the stream is fixed to one device: WirePlumber never moves it when
+  the default changes, a move from `pactl` is refused, and when the device
+  goes away the stream fails (Qt reports an IOError). Opening "the default"
+  is no escape: a null `QAudioDevice` means Qt's own default, pinned the
+  same way. The PulseAudio backend (`QT_AUDIO_BACKEND=pulseaudio`) passes
+  the sink name to `pa_stream_connect_playback`, which pins it too.
+- **Qt's idea of the default went stale.** Omamp followed
+  `QMediaDevices::defaultAudioOutput()` on `audioOutputsChanged`. Qt's
+  device monitor learns the default from PipeWire's `default` metadata but
+  lists a node only after it has enumerated the node's formats; the
+  default name and the device list are applied in batches on a timer. When
+  the dongle came back, Qt kept reporting the Arctis as the default, even
+  after Matt flipped the default away and back. Reading Qt's source, a
+  default named before its node is ready should be applied once it is, so
+  the exact path inside Qt wasn't pinned down (the dongle re-enumerates in
+  several steps, which may leave Qt's record for it pending). What matters
+  is that Qt's answer can't be trusted after a device comes back, and a
+  pinned stream can't be rescued from outside.
+- `QAudioDevice::id()` is the sink's name on both backends
+  (`alsa_output.usb-_Jabra_Link_390_…analog-stereo`), the same string
+  `pactl get-default-sink` prints. Checked read-only on Matt's desktop.
+
+### The fix
+
+`src/engine/outputfollower.{h,cpp}`, used by both engines.
+
+- **The sound server says which output is the default.**
+  `PactlDefaultSource` runs `pactl get-default-sink` (300 ms to start, 500 ms
+  to finish, a few milliseconds normally). pactl reaches PipeWire through
+  pipewire-pulse and also works on plain PulseAudio, and needs no new
+  library. When it can't be run the follower falls back to Qt's default,
+  as before.
+- **The name is matched against what Qt can open**
+  (`QMediaDevices::audioOutputs()` by id). If Qt doesn't list the default
+  yet, the follower asks Qt again (recreating its `QMediaDevices`), stays on
+  the device that is playing while that one is still listed, and retries
+  after 0.5, 1, 2, 4, 8 and 15 s. Recreating `QMediaDevices` is cheap but
+  probably doesn't help much, because Qt keeps one device monitor per
+  process; the retries are what catch Qt up. If the playing device has gone
+  too, Qt's default is used if listed, otherwise any listed output.
+- **When to look**: on `audioOutputsChanged` and on `pactl subscribe` events
+  (a server change, which is how a new default shows, and a sink added or
+  removed), 150 ms after the last event and again 2 s later, since a
+  device often appears in two steps. If `pactl subscribe` dies (it does
+  when pipewire-pulse restarts), it is started again after 1 s, doubling
+  to 30 s, and the default is polled every 3 s meanwhile. All of this runs
+  only while a stream is open (native) or the player is playing or paused
+  (Qt), so an idle Omamp runs no pactl.
+- **Moving**: `DeviceSink` reopens on the new device through its existing
+  path (same rate, same reader, so position and gapless state carry on; the
+  up to 100 ms in the old device's buffer is lost). It also watches its
+  `QAudioSink`: a stream that fails with an IOError (its device vanished)
+  is marked as on no device, so the next check reopens it even if the
+  default is unchanged; three failures in a row without the stream going
+  active stop that until the next device change. `QtEngine` sets its
+  `QAudioOutput`'s device, which QMediaPlayer applies while playing.
+- Under `OMAMP_NO_AUDIO_DEVICE` neither engine builds a follower.
+
+### Tests
+
+`OutputFollowerTests` in `tests/engine_tests.cpp` (run with
+`OMAMP_TESTS=engine`), with a fake sound server and a fake Qt device list;
+nothing talks to PipeWire.
+
+| Test | What it shows |
+|---|---|
+| Default disappears | The server falls back to the Arctis; the stream follows |
+| Default returns | The Jabra is back and the server's default, Qt still says Arctis; the stream moves to the Jabra (the bug) |
+| Without the server | Qt's default is used; with nothing listed, no switch |
+| Stale list refreshed | The default isn't listed; recreating the list finds it |
+| Stale list retried | Still missing after a refresh: stays on the Arctis, then moves when Qt lists the Jabra, with no signal from Qt; if the playing device is gone too, Qt's default or any listed output |
+| Default changes, list doesn't | A server event alone moves the stream |
+| Lost stream | A stream on no device is reopened, even on the same device |
+| Subscription restarts | pactl dying is restarted with a back-off; changes are polled meanwhile |
+| Inactive | No pactl, no switching while idle |
+| pactl lines | Server changes and sink add/remove count; volume changes, sink inputs and clients don't |
+| Qt engine | Follows only while playing or paused |
+
+`bin/test` with JOBS=4: every class passes.
+
+### Known gaps
+
+- **Not tried with a real unplug.** The device path, the IOError on a
+  vanished device, and QMediaPlayer applying a new device mid-track are
+  untested on hardware; doing so would move Matt's other audio. The pactl
+  and id checks were read-only.
+- **Qt's stale state isn't fully explained**; if Qt never lists the
+  returned device, the follower gives up after about 30 s of retries
+  (with a warning) and tries again at the next device event. A restart is
+  then still the cure.
+- **pactl must be installed** (libpulse, part of Omarchy) for the server's
+  answer; without it Omamp behaves as before.
+- **No output picker.** If one is added, a chosen device should switch the
+  follower off.

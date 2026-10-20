@@ -5,6 +5,8 @@
 #include <QAudioSink>
 #include <QMediaDevices>
 
+#include "outputfollower.h"
+
 // QAudioSink reads from a QIODevice; this one asks the engine's reader and
 // never runs dry (silence fills an underrun), so the sink never goes idle.
 class DeviceSink::Pull : public QIODevice {
@@ -39,12 +41,12 @@ DeviceSink::DeviceSink() {
     const int preferred = QMediaDevices::defaultAudioOutput().preferredFormat().sampleRate();
     if (preferred >= 8000 && preferred <= 384000)
         m_rate = preferred;
-    // A new default output (headphones, a Bluetooth speaker) takes over
-    // the stream while it plays.
-    m_devices = new QMediaDevices(this);
-    connect(m_devices, &QMediaDevices::audioOutputsChanged, this, [this] {
+    // A new default output (headphones, a Bluetooth speaker, a dongle that
+    // comes back) takes over the stream while it is open.
+    m_follower = OutputFollower::createForDesktop(this);
+    connect(m_follower, &OutputFollower::switchTo, this, [this](const QByteArray &id) {
         if (m_sink)
-            followDefaultOutput();
+            openOnId(id);
     });
 }
 
@@ -57,7 +59,22 @@ bool DeviceSink::start(PcmReader *reader) {
         qFatal("DeviceSink: refusing to open the sound card under OMAMP_NO_AUDIO_DEVICE");
     m_reader = reader;
     m_suspended = false;
-    return openOn(QMediaDevices::defaultAudioOutput());
+    m_errorReopens = 0;
+    m_follower->setCurrent({});
+    const QByteArray target = m_follower->resolve();
+    const bool opened = target.isEmpty() ? openOn(QMediaDevices::defaultAudioOutput()) : openOnId(target);
+    if (opened)
+        m_follower->setActive(true);
+    return opened;
+}
+
+bool DeviceSink::openOnId(const QByteArray &id) {
+    const QList<QAudioDevice> outputs = QMediaDevices::audioOutputs();
+    for (const QAudioDevice &device : outputs)
+        if (device.id() == id)
+            return openOn(device);
+    // Gone between the check and now; the next change tries again.
+    return m_sink != nullptr;
 }
 
 bool DeviceSink::openOn(const QAudioDevice &device) {
@@ -77,6 +94,25 @@ bool DeviceSink::openOn(const QAudioDevice &device) {
     m_device->pulled = 0;
     m_sink = new QAudioSink(device, format);
     m_deviceId = device.id();
+    m_follower->setCurrent(m_deviceId);
+    // Qt pins the stream to this device and tells PipeWire not to move it,
+    // so when the device goes away the stream just fails. Mark it as on no
+    // device and let the follower pick the new default.
+    QAudioSink *sink = m_sink;
+    connect(sink, &QAudioSink::stateChanged, this, [this, sink](QtAudio::State state) {
+        if (sink != m_sink)
+            return;
+        if (state == QtAudio::ActiveState) {
+            m_errorReopens = 0;
+            return;
+        }
+        const QtAudio::Error error = sink->error();
+        if (state != QtAudio::StoppedState || (error != QtAudio::IOError && error != QtAudio::FatalError))
+            return;
+        if (m_errorReopens++ < 3)
+            m_follower->setCurrent({});
+        m_follower->checkSoon();
+    });
     // About 100 ms in the device: enough to ride out a busy desktop, short
     // enough that pause and seek feel immediate.
     m_sink->setBufferSize(qsizetype(m_rate / 10) * 2 * qsizetype(sizeof(float)));
@@ -91,19 +127,23 @@ bool DeviceSink::openOn(const QAudioDevice &device) {
 }
 
 bool DeviceSink::followDefaultOutput() {
-    const QAudioDevice device = QMediaDevices::defaultAudioOutput();
-    if (!m_sink || device.id() == m_deviceId)
+    if (!m_sink)
+        return true;
+    const QByteArray target = m_follower->resolve();
+    if (target.isEmpty() || target == m_deviceId)
         return true;
     // The audio still in the old device's buffer (at most 100 ms) is lost;
     // the reader carries on where it was.
-    return openOn(device);
+    return openOnId(target);
 }
 
 void DeviceSink::closeSink() {
     if (m_sink) {
-        m_sink->stop();
-        delete m_sink;
+        QAudioSink *sink = m_sink;
         m_sink = nullptr;
+        sink->disconnect(this);
+        sink->stop();
+        delete sink;
     }
     m_deviceId.clear();
 }
@@ -134,6 +174,10 @@ void DeviceSink::resume() {
 }
 
 void DeviceSink::stop() {
+    if (m_follower) {
+        m_follower->setActive(false);
+        m_follower->setCurrent({});
+    }
     closeSink();
     m_device.reset();
 }

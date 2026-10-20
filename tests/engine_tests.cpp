@@ -16,6 +16,7 @@
 #include "decoder.h"
 #include "equalizer.h"
 #include "nativeengine.h"
+#include "outputfollower.h"
 #include "player.h"
 #include "qtengine.h"
 
@@ -125,6 +126,54 @@ struct Rig {
 };
 } // namespace
 
+// The sound server and Qt's device list, as the output follower sees them.
+// Nothing here talks to PipeWire or opens a device.
+class FakeDefaultSource : public DefaultOutputSource {
+    Q_OBJECT
+
+public:
+    QString name;
+    int starts = 0, queries = 0;
+    bool live = false, startFails = false;
+    QString defaultSinkName() override {
+        ++queries;
+        return name;
+    }
+    void startWatching() override {
+        ++starts;
+        live = !startFails;
+    }
+    void stopWatching() override { live = false; }
+    bool watching() const override { return live; }
+    // pactl exiting, as when pipewire-pulse restarts.
+    void die() {
+        live = false;
+        emit watchStopped();
+    }
+    void announce() { emit changed(); }
+};
+
+class FakeOutputList : public OutputList {
+    Q_OBJECT
+
+public:
+    QList<QByteArray> ids, afterRefresh;
+    QByteArray qtDefault;
+    int refreshes = 0;
+    QList<QByteArray> outputIds() override { return ids; }
+    QByteArray qtDefaultId() override { return qtDefault; }
+    void refresh() override {
+        ++refreshes;
+        if (!afterRefresh.isEmpty())
+            ids = afterRefresh;
+    }
+    void set(const QList<QByteArray> &list, const QByteArray &def) {
+        ids = list;
+        qtDefault = def;
+        emit changed();
+    }
+};
+
 class EngineTests : public QObject {
     Q_OBJECT
 
@@ -148,6 +197,8 @@ private slots:
         NativeEngine fallback;
         QCOMPARE(fallback.sink()->kind(), QString("buffer"));
         QtEngine qt;
+        // No device, so nothing follows the default output either.
+        QVERIFY(!qt.outputFollower());
         QVERIFY(!qt.hasDevice());
     }
 
@@ -672,6 +723,28 @@ private slots:
         QVERIFY(engine.position() > 9000);
     }
 
+    // The Qt engine follows the default output only while it plays or is
+    // paused, and moves its QAudioOutput when told to.
+    void qtEngineFollowsWhilePlaying() {
+        QtEngine engine(false);
+        auto *source = new FakeDefaultSource;
+        auto *outputs = new FakeOutputList;
+        source->name = QStringLiteral("jabra");
+        outputs->ids = {"jabra", "arctis"};
+        auto *follower = new OutputFollower(outputs, source);
+        engine.setOutputFollower(follower);
+        QCOMPARE(engine.outputFollower(), follower);
+        QVERIFY(!follower->active());
+        QCOMPARE(source->starts, 0);
+        engine.load(fx("short1.flac"));
+        engine.play();
+        QTRY_VERIFY_WITH_TIMEOUT(follower->active(), 3000);
+        QCOMPARE(source->starts, 1);
+        engine.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!follower->active(), 3000);
+        QVERIFY(!source->live);
+    }
+
     // The same interface on QMediaPlayer, with no audio output: it plays in
     // real time, so these files are short.
     void qtEngineThroughTheInterface() {
@@ -699,9 +772,186 @@ private slots:
     }
 };
 
+// Following the desktop's default output (outputfollower.h), with a fake
+// sound server and a fake Qt device list. The ids are sink names, as Qt's
+// PipeWire and PulseAudio backends report them.
+class OutputFollowerTests : public QObject {
+    Q_OBJECT
+
+    struct Rig {
+        FakeDefaultSource *source = new FakeDefaultSource;
+        FakeOutputList *outputs = new FakeOutputList;
+        std::unique_ptr<OutputFollower> follower;
+        std::unique_ptr<QSignalSpy> switched;
+        Rig(const QList<QByteArray> &ids, const QString &serverDefault, const QByteArray &qtDefault,
+            const QByteArray &current) {
+            outputs->ids = ids;
+            outputs->qtDefault = qtDefault;
+            source->name = serverDefault;
+            follower = std::make_unique<OutputFollower>(outputs, source);
+            OutputFollower::Timing timing;
+            timing.debounceMs = 10;
+            timing.secondMs = 60;
+            timing.pollMs = 40;
+            timing.retryMs = {30, 30, 30};
+            timing.restartMinMs = 50;
+            timing.restartMaxMs = 200;
+            follower->setTiming(timing);
+            follower->setCurrent(current);
+            switched = std::make_unique<QSignalSpy>(follower.get(), &OutputFollower::switchTo);
+            // The engine's side: it reopens and reports the new device.
+            QObject::connect(follower.get(), &OutputFollower::switchTo, follower.get(),
+                             [f = follower.get()](const QByteArray &id) { f->setCurrent(id); });
+        }
+        QByteArray last() const { return switched->isEmpty() ? QByteArray() : switched->last().at(0).toByteArray(); }
+    };
+
+private slots:
+    // Matt's evening: the Jabra dongle (the default) drops off, the server
+    // falls back to the Arctis, and the stream follows.
+    void defaultDisappearsFallsBack() {
+        Rig rig({"jabra", "arctis"}, "jabra", "jabra", "jabra");
+        rig.follower->setActive(true);
+        QCOMPARE(rig.switched->count(), 0);
+        rig.source->name = QStringLiteral("arctis");
+        rig.outputs->set({"arctis"}, "arctis");
+        QTRY_COMPARE(rig.switched->count(), 1);
+        QCOMPARE(rig.last(), QByteArray("arctis"));
+        QCOMPARE(rig.follower->current(), QByteArray("arctis"));
+    }
+
+    // The dongle comes back and is the default again, but Qt's default is
+    // still the Arctis (the bug). The server's answer wins.
+    void defaultReturnsMovesBack() {
+        Rig rig({"arctis"}, "arctis", "arctis", "arctis");
+        rig.follower->setActive(true);
+        rig.source->name = QStringLiteral("jabra");
+        rig.outputs->set({"arctis", "jabra"}, "arctis");
+        QTRY_COMPARE(rig.switched->count(), 1);
+        QCOMPARE(rig.last(), QByteArray("jabra"));
+        // The second look a moment later finds nothing more to do.
+        QTest::qWait(150);
+        QCOMPARE(rig.switched->count(), 1);
+    }
+
+    // Without a sound server to ask, Qt's default is used, as before.
+    void withoutTheServerQtDecides() {
+        Rig rig({"jabra", "arctis"}, QString(), "jabra", "jabra");
+        rig.follower->setActive(true);
+        rig.outputs->set({"arctis"}, "arctis");
+        QTRY_COMPARE(rig.switched->count(), 1);
+        QCOMPARE(rig.last(), QByteArray("arctis"));
+        // Nothing listed at all: stay put rather than switch to nothing.
+        Rig empty({}, QString(), QByteArray(), "x");
+        QCOMPARE(empty.follower->resolve(), QByteArray());
+    }
+
+    // Qt's list doesn't have the default yet; asking Qt again does.
+    void staleListIsRefreshed() {
+        Rig rig({"arctis"}, "jabra", "arctis", "arctis");
+        rig.outputs->afterRefresh = {"arctis", "jabra"};
+        QCOMPARE(rig.follower->resolve(), QByteArray("jabra"));
+        QCOMPARE(rig.outputs->refreshes, 1);
+        // A fresh list isn't asked again.
+        QCOMPARE(rig.follower->resolve(), QByteArray("jabra"));
+        QCOMPARE(rig.outputs->refreshes, 1);
+    }
+
+    // Qt is still behind after refreshing: stay on the device that is
+    // heard, and retry until Qt lists the default, with no signal from Qt.
+    void staleListIsRetried() {
+        Rig rig({"arctis"}, "jabra", "arctis", "arctis");
+        rig.follower->setActive(true);
+        QCOMPARE(rig.switched->count(), 0);
+        QVERIFY(rig.outputs->refreshes >= 1);
+        rig.outputs->ids = {"arctis", "jabra"};
+        QTRY_COMPARE(rig.switched->count(), 1);
+        QCOMPARE(rig.last(), QByteArray("jabra"));
+        // The current device has gone too while Qt lags: Qt's default, if
+        // it lists it, else anything listed.
+        Rig lost({"hdmi"}, "jabra", "hdmi", "arctis");
+        QCOMPARE(lost.follower->resolve(), QByteArray("hdmi"));
+        Rig lost2({"hdmi", "speakers"}, "jabra", "arctis", "arctis");
+        QCOMPARE(lost2.follower->resolve(), QByteArray("hdmi"));
+    }
+
+    // A new default with the same set of devices: only the server says so.
+    void defaultChangeWithoutListChange() {
+        Rig rig({"jabra", "arctis"}, "jabra", "jabra", "jabra");
+        rig.follower->setActive(true);
+        rig.source->name = QStringLiteral("arctis");
+        rig.source->announce();
+        QTRY_COMPARE(rig.switched->count(), 1);
+        QCOMPARE(rig.last(), QByteArray("arctis"));
+    }
+
+    // The stream failed on its device (Qt marks it on none): the next check
+    // reopens it, even on the same device.
+    void lostStreamIsReopened() {
+        Rig rig({"jabra", "arctis"}, "jabra", "jabra", "jabra");
+        rig.follower->setActive(true);
+        rig.follower->setCurrent({});
+        rig.follower->checkSoon();
+        QTRY_COMPARE(rig.switched->count(), 1);
+        QCOMPARE(rig.last(), QByteArray("jabra"));
+    }
+
+    // pactl dies: it is started again with a back-off, and polled meanwhile.
+    void subscriptionRestarts() {
+        Rig rig({"jabra", "arctis"}, "jabra", "jabra", "jabra");
+        rig.follower->setActive(true);
+        QCOMPARE(rig.source->starts, 1);
+        QVERIFY(rig.source->live);
+        rig.source->startFails = true;
+        rig.source->die();
+        // While it is down, a change is still noticed, by polling.
+        rig.source->name = QStringLiteral("arctis");
+        QTRY_COMPARE(rig.switched->count(), 1);
+        QCOMPARE(rig.last(), QByteArray("arctis"));
+        QTRY_COMPARE(rig.source->starts, 2);
+        // A start that doesn't stick leaves polling on; the next stop backs
+        // off further.
+        rig.source->die();
+        QTRY_COMPARE_WITH_TIMEOUT(rig.source->starts, 3, 2000);
+        rig.source->startFails = false;
+        rig.source->die();
+        QTRY_COMPARE_WITH_TIMEOUT(rig.source->starts, 4, 2000);
+        QVERIFY(rig.source->live);
+    }
+
+    // An idle player runs no pactl and switches nothing.
+    void inactiveDoesNothing() {
+        Rig rig({"jabra", "arctis"}, "jabra", "jabra", "jabra");
+        rig.follower->setActive(true);
+        rig.follower->setActive(false);
+        QVERIFY(!rig.source->live);
+        const int queries = rig.source->queries;
+        rig.source->name = QStringLiteral("arctis");
+        rig.outputs->set({"arctis"}, "arctis");
+        rig.source->die();
+        QTest::qWait(200);
+        QCOMPARE(rig.switched->count(), 0);
+        QCOMPARE(rig.source->queries, queries);
+        QCOMPARE(rig.source->starts, 1);
+    }
+
+    void pactlLinesAreClassified() {
+        using E = PactlDefaultSource::Event;
+        QCOMPARE(PactlDefaultSource::classify("Event 'change' on server #-1"), E::Server);
+        QCOMPARE(PactlDefaultSource::classify("Event 'change' on server"), E::Server);
+        QCOMPARE(PactlDefaultSource::classify("Event 'new' on sink #2194460"), E::Sinks);
+        QCOMPARE(PactlDefaultSource::classify("Event 'remove' on sink #185"), E::Sinks);
+        QCOMPARE(PactlDefaultSource::classify("Event 'change' on sink #185"), E::None);
+        QCOMPARE(PactlDefaultSource::classify("Event 'new' on sink-input #12"), E::None);
+        QCOMPARE(PactlDefaultSource::classify("Event 'remove' on client #2204751"), E::None);
+        QCOMPARE(PactlDefaultSource::classify("garbage"), E::None);
+    }
+};
+
 int runEngineTests(int argc, char **argv) {
     EngineTests tests;
-    return QTest::qExec(&tests, argc, argv);
+    OutputFollowerTests follower;
+    return QTest::qExec(&tests, argc, argv) + QTest::qExec(&follower, argc, argv);
 }
 
 #include "engine_tests.moc"

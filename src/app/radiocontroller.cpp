@@ -133,7 +133,7 @@ RadioController::RadioController(const QString &databasePath, QObject *parent)
             else
                 errors << r.value("error").toString();
         }
-        emit toast(errors.isEmpty() ? tr("Added %n station(s)", "", added) : errors.join('\n'));
+        emit toast(errors.isEmpty() ? (added == 1 ? tr("Added 1 station") : tr("Added %1 stations").arg(added)) : errors.join('\n'));
     });
     connect(&m_exportPicker, &FolderPicker::picked, this, [this](const QStringList &folders) {
         if (folders.isEmpty())
@@ -980,7 +980,7 @@ void RadioController::refreshCatalog(bool force) {
                 return;
             const int added = Radio::Stations(*lib).mergeNightrideCatalog(site, feedIds);
             if (added > 0) {
-                emit toast(tr("Nightride added %n channel(s)", "", added));
+                emit toast(added == 1 ? tr("Nightride has a new channel") : tr("Nightride has %1 new channels").arg(added));
                 reload();
             }
         });

@@ -21,6 +21,7 @@ Rectangle {
     property bool party: false
     property bool fullScreen: false
     signal close()
+    signal openRadio()
     signal toggleFullScreen()
     signal unlock()
 
@@ -213,16 +214,27 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.topMargin: 6
                 spacing: 2
+                // A radio station: the dial instead of the position.
+                LiveBar {
+                    objectName: "bigLiveBar"
+                    skin: view.skin
+                    fontSize: 14
+                    Layout.fillWidth: true
+                    visible: backend.live
+                    onOpenPicker: view.openRadio()
+                }
                 Bar {
                     objectName: "bigSeek"
                     skin: view.skin
                     Layout.fillWidth: true
+                    visible: !backend.live
                     active: backend.duration > 0 && view.allowed("seek")
                     value: backend.duration > 0 ? backend.position / backend.duration : 0
                     onReleased: (v) => backend.seek(v * backend.duration)
                 }
                 RowLayout {
                     Layout.fillWidth: true
+                    visible: !backend.live
                     Text {
                         text: view.clock(backend.position)
                         font.family: "JetBrainsMono Nerd Font"

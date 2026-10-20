@@ -40,7 +40,9 @@ FocusScope {
     // A playlist, auto-playlist or playlist folder shows the playlist view.
     readonly property bool playlistNode: library.currentKind === "playlist" || library.currentKind === "autoplaylist"
                                          || library.currentKind === "plfolder"
-    readonly property bool special: nowPlaying || duplicatesNode || playlistNode
+    // Radio, and its groups, show the channel picker.
+    readonly property bool radioNode: library.currentKind === "radio" || library.currentKind === "radiogroup"
+    readonly property bool special: nowPlaying || duplicatesNode || playlistNode || radioNode
     // Party mode locks changing playlists.
     readonly property bool playlistsLocked: library.dj.partyOn && !library.dj.allowed("edit-playlists")
     readonly property bool showingBrowser: browserVisible && !special
@@ -50,6 +52,7 @@ FocusScope {
     function focusList() {
         if (nowPlaying) nowPlayingList.forceActiveFocus()
         else if (duplicatesNode) duplicatesView.forceActiveFocus()
+        else if (radioNode) radioView.focusGrid()
         else if (playlistNode) playlistView.forceActiveFocus()
         else if (showingGrid) grid.forceActiveFocus()
         else table.forceActiveFocus()
@@ -94,6 +97,13 @@ FocusScope {
         focusList()
     }
 
+    // The chosen radio group fills the picker.
+    Connections {
+        target: library
+        function onCurrentNodeChanged() {
+            if (view.radioNode) radio.group = library.tree.value(library.currentNode) || "nightride"
+        }
+    }
     Connections {
         target: library
         function onSearchSet(text) {
@@ -118,6 +128,7 @@ FocusScope {
             Layout.bottomMargin: 6
             showRemaining: view.showRemaining
             onClockClicked: view.clockClicked()
+            onOpenRadio: view.action("radio")
             onAutoDjClicked: view.autoDjClicked()
             onPartyClicked: view.partyClicked()
             onCoverClicked: view.action("big-view")
@@ -361,6 +372,15 @@ FocusScope {
                         locked: view.playlistsLocked
                         onLeave: view.focusTree()
                         onAction: (id) => view.action(id)
+                    }
+                    RadioView {
+                        id: radioView
+                        anchors.fill: parent
+                        visible: view.radioNode
+                        showTabs: false
+                        onLeave: view.focusTree()
+                        onFindStations: view.action("radio-find")
+                        onAddStation: view.action("radio-add")
                     }
                     DuplicatesView {
                         id: duplicatesView

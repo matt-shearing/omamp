@@ -137,6 +137,15 @@ QVector<LibraryTree::Node> LibraryTree::topLevel() const {
     group("playlists", tr("Playlists"));
     group("filestoedit", tr("Files to Edit"));
     group("devices", tr("Devices"));
+    // Internet radio: the channel picker, by group.
+    Node radio;
+    radio.key = "radio";
+    radio.kind = "radio";
+    radio.label = tr("Radio");
+    radio.expandable = true;
+    radio.where = "0";
+    radio.value = QStringLiteral("nightride");
+    out << radio;
     return out;
 }
 
@@ -505,6 +514,29 @@ QVector<LibraryTree::Node> LibraryTree::children(const Node &parent) const {
             n.description = a.description;
             n.value = a.id;
             n.dim = m_auditCounts.contains(a.id) && m_auditCounts.value(a.id) == 0;
+            out << n;
+        }
+    } else if (parent.key == "radio") {
+        // The stations live in radio_stations (RadioController); the tree
+        // only names the groups, with how many each holds.
+        const QList<QPair<QString, QString>> groups = {{"nightride", tr("Nightride FM")},
+                                                       {"rekt", tr("Rekt Network")},
+                                                       {"favourites", tr("Favourites")},
+                                                       {"mine", tr("My stations")}};
+        for (const auto &g : groups) {
+            const QString where = g.first == "favourites" ? "favourite = 1"
+                                : g.first == "mine"       ? "network IN ('radio-browser', 'custom')"
+                                                          : "network = '" + g.first + "'";
+            qint64 count = -1;
+            QSqlQuery q(m_db);
+            if (q.exec("SELECT count(*) FROM radio_stations WHERE " + where) && q.next())
+                count = q.value(0).toLongLong();
+            // The Nightride channels are added the first time the radio
+            // opens; until then, no number rather than a wrong 0.
+            if (count == 0 && (g.first == "nightride" || g.first == "rekt"))
+                count = -1;
+            Node n = make("radiogroup", "radio:" + g.first, g.second, count, "0", {});
+            n.value = g.first;
             out << n;
         }
     } else if (parent.key == "devices") {

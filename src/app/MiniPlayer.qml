@@ -26,6 +26,7 @@ Rectangle {
     readonly property bool micro: mode === "micro"
     readonly property string line: backend.currentIndex < 0 ? qsTr("Omamp — drop some music in")
                                   : (backend.artist ? backend.artist + " - " : "") + backend.title
+                                    + (backend.live && backend.album ? "  ·  " + backend.album : "")
     function clock(ms) {
         if (ms === undefined || ms < 0 || isNaN(ms)) ms = 0
         const total = Math.floor(ms / 1000)
@@ -119,7 +120,9 @@ Rectangle {
                     Text {
                         id: miniClock
                         anchors.centerIn: parent
-                        text: (mini.showRemaining ? "-" : "") + mini.clock(mini.showRemaining ? backend.duration - backend.position
+                        // A live station: LIVE and the time listened.
+                        text: backend.live ? qsTr("LIVE") + " " + mini.clock(backend.position)
+                              : (mini.showRemaining ? "-" : "") + mini.clock(mini.showRemaining ? backend.duration - backend.position
                                                                                            : backend.position)
                         font.family: mini.mono
                         font.pixelSize: 13
@@ -195,7 +198,8 @@ Rectangle {
             Text {
                 id: microClock
                 anchors.verticalCenter: parent.verticalCenter
-                text: (mini.showRemaining ? "-" : "") + mini.clock(mini.showRemaining ? backend.duration - backend.position
+                text: backend.live ? qsTr("LIVE") + " " + mini.clock(backend.position)
+                      : (mini.showRemaining ? "-" : "") + mini.clock(mini.showRemaining ? backend.duration - backend.position
                                                                                    : backend.position)
                 font.family: mini.mono
                 font.pixelSize: 11

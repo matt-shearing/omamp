@@ -512,6 +512,58 @@ static const QStringList version9 = {
     "CREATE INDEX remote_tracks_album ON remote_tracks(source_id, album_id)",
 };
 
+// Internet radio (docs/radio.md).
+//
+// - radio_stations holds every station Omamp knows: the built-in Nightride FM
+//   and Rekt Network channels (builtin = 1, refreshed from nightride.fm), the
+//   ones found on radio-browser.info, and addresses the user typed or
+//   imported. key is stable ("nightride/darksynth", "rb/<station uuid>",
+//   "my/<n>") and is what the play queue holds as radio://<key>. streams is a
+//   JSON array of URLs, best first; the player falls back along it.
+//   meta_kind says where the playing song's name comes from: the Nightride
+//   feed (meta_key is the station's id there), the ICY titles inside the
+//   stream, or nowhere.
+// - radio_heard is what was heard on the radio, one row per song, for
+//   "recently on the radio" and the optional scrobbling of radio songs. A
+//   radio song is never a library play.
+static const QStringList version10 = {
+    R"(CREATE TABLE radio_stations (
+        id INTEGER PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        network TEXT NOT NULL CHECK (network IN ('nightride', 'rekt', 'radio-browser', 'custom')),
+        streams TEXT NOT NULL DEFAULT '[]',
+        homepage TEXT,
+        art_url TEXT,
+        art_path TEXT,
+        color TEXT,
+        description TEXT,
+        tags TEXT,
+        country TEXT,
+        codec TEXT,
+        bitrate INTEGER,
+        meta_kind TEXT NOT NULL DEFAULT 'icy' CHECK (meta_kind IN ('nightride', 'icy', 'none')),
+        meta_key TEXT,
+        builtin INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        favourite INTEGER NOT NULL DEFAULT 0,
+        last_played INTEGER,
+        listened_ms INTEGER NOT NULL DEFAULT 0,
+        added INTEGER NOT NULL
+    ))",
+    "CREATE INDEX radio_stations_network ON radio_stations(network, position)",
+    R"(CREATE TABLE radio_heard (
+        id INTEGER PRIMARY KEY,
+        station_id INTEGER NOT NULL REFERENCES radio_stations(id) ON DELETE CASCADE,
+        artist TEXT,
+        title TEXT NOT NULL,
+        started INTEGER NOT NULL,
+        heard_ms INTEGER NOT NULL DEFAULT 0,
+        from_start INTEGER NOT NULL DEFAULT 0
+    ))",
+    "CREATE INDEX radio_heard_started ON radio_heard(started)",
+};
+
 const QList<Migration> &migrations() {
     static const QList<Migration> all = {
         {1, "library tables", version1},
@@ -523,6 +575,7 @@ const QList<Migration> &migrations() {
         {7, "playlists, play statistics, import journal", version7},
         {8, "lyrics cache and scrobble queue", version8},
         {9, "network volumes, remote sources", version9, true},
+        {10, "internet radio stations", version10},
     };
     return all;
 }

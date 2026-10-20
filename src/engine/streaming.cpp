@@ -36,7 +36,9 @@ QByteArray ffmpegLocation(const QString &path, const QUrl &url) {
     if (url.isLocalFile())
         return url.toLocalFile().toUtf8();
     const QByteArray encoded = url.toEncoded();
-    if (AudioEngine::isNetworkUrl(url) && options().readAhead)
+    // Not for live radio: the read-ahead wrapper hides the HTTP layer and
+    // with it the stream's ICY titles.
+    if (AudioEngine::isNetworkUrl(url) && options().readAhead && !isLive(path))
         return "async:" + encoded;
     return encoded;
 }

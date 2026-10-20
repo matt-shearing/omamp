@@ -26,7 +26,7 @@ namespace native {
 // a file fails, the queue runs out. The main thread acts on it once the
 // sink has taken that frame.
 struct Marker {
-    enum Type { TrackStarted, Failed, EndOfQueue };
+    enum Type { TrackStarted, Failed, EndOfQueue, MetaChanged };
     Type type = TrackStarted;
     qint64 frame = 0;
     bool advance = false; // the queued track took over
@@ -860,6 +860,15 @@ private:
                 applyDeferred();
             }
         }
+        // A radio station's song changed: the window hears of it with the
+        // audio that follows.
+        if (m_cur && m_cur->ok && m_cur->dec.isLive() && m_cur->dec.takeStreamTitleChanged()) {
+            Marker m;
+            m.type = Marker::MetaChanged;
+            m.path = m_cur->path;
+            m.meta = m_cur->dec.metaData();
+            mark(m);
+        }
         return produced;
     }
 
@@ -1111,6 +1120,12 @@ void NativeEngine::poll() {
             m_reader->target = 0;
             setState(Stopped);
             emit trackFailed(m.path, AudioEngine::redact(m.detail));
+            break;
+        case Marker::MetaChanged:
+            if (m.path == m_source) {
+                m_meta = m.meta;
+                emit metaDataChanged();
+            }
             break;
         case Marker::EndOfQueue:
             m_reader->target = 0;

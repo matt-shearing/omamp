@@ -39,6 +39,9 @@ class Player : public QObject {
     // words ("Buffering…"), empty otherwise.
     Q_PROPERTY(bool buffering READ buffering NOTIFY bufferingChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY bufferingChanged)
+    // The current entry is a live radio station (radio://…): no length and
+    // no seeking; position is how long it has been listened to.
+    Q_PROPERTY(bool live READ live NOTIFY trackChanged)
     // Which engine plays ("qt" or "native") and whether it joins tracks
     // without a gap. Chosen at start: OMAMP_ENGINE, else playback/engine in
     // omamp.conf beside the state file, else "qt".
@@ -96,6 +99,12 @@ public:
     QList<qreal> waveform() const { return m_spectrum.waveform(); }
     QString error() const { return m_error; }
     bool buffering() const { return m_engine->buffering(); }
+    bool live() const;
+    // What a live station is playing now, from the radio's metadata (its
+    // feed or the stream's ICY titles). Shown as the title, artist and
+    // album wherever the playing track shows, and sent over MPRIS. Ignored
+    // unless the current entry is live.
+    void setLiveInfo(const QString &title, const QString &artist, const QString &album);
     QString statusText() const { return buffering() ? tr("Buffering…") : QString(); }
 
     // Without a resolver, http(s) entries play as they are and other
@@ -184,6 +193,9 @@ signals:
     void bufferingChanged();
     void playbackSettingsChanged();
     void seeked(qint64 position);
+    // A live station's stream didn't open or broke off for good. The Player
+    // doesn't skip past it, so the radio can try the station's next address.
+    void liveStreamFailed(const QString &path, const QString &detail);
     // Play statistics. A play starts when a track begins playing and ends
     // when it finishes, is skipped, another track starts or playback stops.
     // heardMs is the time actually heard: position moves while playing,

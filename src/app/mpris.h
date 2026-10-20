@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <QDBusAbstractAdaptor>
 #include <QDBusObjectPath>
 #include <QVariantMap>
@@ -53,7 +55,7 @@ class MprisPlayer : public QDBusAbstractAdaptor {
     Q_PROPERTY(bool CanGoPrevious READ canPlay)
     Q_PROPERTY(bool CanPlay READ canPlay)
     Q_PROPERTY(bool CanPause READ canPlay)
-    Q_PROPERTY(bool CanSeek READ canPlay)
+    Q_PROPERTY(bool CanSeek READ canSeek)
     Q_PROPERTY(bool CanControl READ yes)
 
 public:
@@ -75,7 +77,12 @@ public:
     void setVolume(double volume);
     qlonglong position() const;
     bool canPlay() const;
+    // Not on a live radio station.
+    bool canSeek() const;
     bool yes() const { return true; }
+    // OpenUri hands addresses that aren't local files (radio://…, http)
+    // to this; it returns whether it took them.
+    void setUriHandler(std::function<bool(const QString &)> handler) { m_uriHandler = std::move(handler); }
 
 public slots:
     void Next();
@@ -98,8 +105,13 @@ private:
     Player *m_player;
     NowPlaying *m_art = nullptr;
     bool m_announcing = false;
+    std::function<bool(const QString &)> m_uriHandler;
 };
 
 // Registers both interfaces on the session bus. Returns false when another
 // copy already owns the name, which is reported but not fatal.
 bool registerMpris(QObject *host, Player *player, NowPlaying *art = nullptr);
+
+// Gives the registered player's OpenUri a handler for radio:// and http(s)
+// addresses (the radio's), so `omamp radio play` and `playerctl open` work.
+void setMprisUriHandler(QObject *host, std::function<bool(const QString &)> handler);

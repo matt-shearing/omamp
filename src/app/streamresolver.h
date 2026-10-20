@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QString>
 #include <QUrl>
+#include <functional>
 #include <memory>
 
 #include "player.h"
@@ -29,6 +30,9 @@ public:
         return [this](const QString &path, qint64 trackId, QString *error) { return resolve(path, trackId, error); };
     }
 
+    // Resolves radio://<key> queue entries (RadioController::resolve).
+    void setRadioResolver(std::function<QUrl(const QString &, QString *)> radio) { m_radio = std::move(radio); }
+
     static constexpr qint64 kCacheMs = 10 * 60 * 1000;
 
 private:
@@ -41,4 +45,5 @@ private:
         QElapsedTimer age;
     };
     QHash<QString, Cached> m_cache;
+    std::function<QUrl(const QString &, QString *)> m_radio;
 };

@@ -20,7 +20,7 @@ void MprisRoot::Quit() { QGuiApplication::quit(); }
 MprisPlayer::MprisPlayer(QObject *parent, Player *player, NowPlaying *art)
     : QDBusAbstractAdaptor(parent), m_player(player), m_art(art) {
     connect(player, &Player::stateChanged, this, [this] { announce({"PlaybackStatus"}); });
-    connect(player, &Player::trackChanged, this, [this] { announce({"Metadata", "CanPlay", "CanGoNext"}); });
+    connect(player, &Player::trackChanged, this, [this] { announce({"Metadata", "CanPlay", "CanGoNext", "CanSeek"}); });
     connect(player, &Player::volumeChanged, this, [this] { announce({"Volume"}); });
     connect(player, &Player::modesChanged, this, [this] { announce({"Shuffle", "LoopStatus"}); });
     connect(player, &Player::seeked, this, [this](qint64 ms) { emit Seeked(ms * 1000); });
@@ -57,6 +57,7 @@ double MprisPlayer::volume() const { return m_player->volume() / 100.0; }
 void MprisPlayer::setVolume(double volume) { m_player->setVolume(qRound(volume * 100)); }
 qlonglong MprisPlayer::position() const { return m_player->position() * 1000; }
 bool MprisPlayer::canPlay() const { return m_player->playlist()->count() > 0; }
+bool MprisPlayer::canSeek() const { return canPlay() && !m_player->live(); }
 
 QDBusObjectPath MprisPlayer::trackId() const {
     return QDBusObjectPath(QString("/org/omamp/track/%1").arg(qMax(0, m_player->currentIndex())));
@@ -66,10 +67,15 @@ QVariantMap MprisPlayer::metadata() const {
     const int row = m_player->currentIndex();
     if (row < 0)
         return {{"mpris:trackid", QVariant::fromValue(QDBusObjectPath("/org/mpris/MediaPlayer2/TrackList/NoTrack"))}};
+    const QString path = m_player->playlist()->at(row).path;
+    // A queue reference (radio://…, subsonic://…) is its own address; it
+    // never carries a secret.
     QVariantMap map{{"mpris:trackid", QVariant::fromValue(trackId())},
-                    {"mpris:length", qlonglong(m_player->duration() * 1000)},
                     {"xesam:title", m_player->title()},
-                    {"xesam:url", QUrl::fromLocalFile(m_player->playlist()->at(row).path).toString()}};
+                    {"xesam:url", Playlist::isReference(path) ? path : QUrl::fromLocalFile(path).toString()}};
+    // A live station has no length, so none is sent.
+    if (!m_player->live())
+        map.insert("mpris:length", qlonglong(m_player->duration() * 1000));
     if (!m_player->artist().isEmpty())
         map.insert("xesam:artist", QStringList{m_player->artist()});
     if (!m_player->album().isEmpty())
@@ -96,6 +102,8 @@ void MprisPlayer::SetPosition(const QDBusObjectPath &track, qlonglong positionUs
 }
 
 void MprisPlayer::OpenUri(const QString &uri) {
+    if (!uri.startsWith(QLatin1String("file:")) && !uri.startsWith('/') && m_uriHandler && m_uriHandler(uri))
+        return;
     const int before = m_player->playlist()->count();
     if (m_player->addPaths({QUrl(uri).toLocalFile()}) > 0)
         m_player->playIndex(before);
@@ -112,4 +120,9 @@ bool registerMpris(QObject *host, Player *player, NowPlaying *art) {
     if (bus.registerService("org.mpris.MediaPlayer2.omamp"))
         return true;
     return bus.registerService(QString("org.mpris.MediaPlayer2.omamp.instance%1").arg(QCoreApplication::applicationPid()));
+}
+
+void setMprisUriHandler(QObject *host, std::function<bool(const QString &)> handler) {
+    if (auto *player = host->findChild<MprisPlayer *>())
+        player->setUriHandler(std::move(handler));
 }

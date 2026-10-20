@@ -24,6 +24,7 @@
 #include "player.h"
 #include "playrecorder.h"
 #include "portal.h"
+#include "radiocontroller.h"
 #include "streamresolver.h"
 #include "tageditor.h"
 #include "theme.h"
@@ -65,6 +66,10 @@ int main(int argc, char *argv[]) {
     // Tracks on a Subsonic server play through their signed stream URL,
     // asked for when they play and never saved.
     StreamResolver streams({});
+    // Internet radio: a station in the queue (radio://<key>) plays from the
+    // address the radio picks for it.
+    RadioController radio;
+    streams.setRadioResolver([&radio](const QString &path, QString *error) { return radio.resolve(path, error); });
     Player player(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/state.json",
                   streams.function());
     QObject::connect(&player, &Player::folderRequested, &picker, &FolderPicker::pickFolders);
@@ -82,11 +87,17 @@ int main(int argc, char *argv[]) {
         startMode = arguments.takeFirst();
     if (arguments.value(0) == "open")
         arguments.removeFirst();
+    // radio://<station> on the command line (`omamp radio play` when Omamp
+    // isn't running) tunes in once the window is up.
+    QStringList stations;
+    for (int i = arguments.size() - 1; i >= 0; --i)
+        if (arguments[i].startsWith("radio://"))
+            stations.prepend(arguments.takeAt(i));
     if (!arguments.isEmpty()) {
         const int before = player.playlist()->count();
         if (player.addPaths(arguments) > 0)
             player.playIndex(before);
-    } else if (player.playlist()->count() == 0) {
+    } else if (player.playlist()->count() == 0 && stations.isEmpty()) {
         const QString music = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
         if (QFileInfo(music).isDir())
             player.addPaths({music});
@@ -117,6 +128,11 @@ int main(int argc, char *argv[]) {
     // Quitting part-way through a track still counts what was heard.
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &player, [&player] { player.finishPlay(false); });
 
+    radio.setPlayer(&player);
+    QObject::connect(&radio, &RadioController::scrobbleQueued, library.recorder(), &PlayRecorder::flushIfConfigured);
+    if (!stations.isEmpty())
+        radio.tune(stations.first());
+
     // The playing track's cover, for the window and for MPRIS.
     NowPlaying nowPlaying(&player);
     QObject::connect(&library, &LibraryController::revisionChanged, &nowPlaying, &NowPlaying::refreshSoon);
@@ -127,6 +143,7 @@ int main(int argc, char *argv[]) {
 
     QObject mprisHost;
     registerMpris(&mprisHost, &player, &nowPlaying);
+    setMprisUriHandler(&mprisHost, [&radio](const QString &uri) { return radio.openUri(uri); });
 
     QQmlApplicationEngine engine;
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
@@ -136,6 +153,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("library", &library);
     engine.rootContext()->setContextProperty("nowPlayingArt", &nowPlaying);
     engine.rootContext()->setContextProperty("appearance", &appearance);
+    engine.rootContext()->setContextProperty("radio", &radio);
     engine.rootContext()->setContextProperty("startMode", startMode);
     // The command palette (Ctrl+K) searches the library once it is open, and
     // lists the actions Main.qml registers before that.

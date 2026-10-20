@@ -53,6 +53,33 @@ Decoder::Decoder() { quietFfmpegOnce(); }
 
 int Decoder::interruptCallback(void *opaque) { return static_cast<Decoder *>(opaque)->interrupted() ? 1 : 0; }
 
+void Decoder::pollIcy() {
+    if (!m_format || !m_format->pb)
+        return;
+    uint8_t *packet = nullptr;
+    if (av_opt_get(m_format->pb, "icy_metadata_packet", AV_OPT_SEARCH_CHILDREN, &packet) < 0 || !packet)
+        return;
+    const QByteArray block(reinterpret_cast<const char *>(packet));
+    av_free(packet);
+    if (block.isEmpty())
+        return;
+    // "StreamTitle='Artist - Title';": servers write UTF-8 or Latin-1.
+    QString text = QString::fromUtf8(block);
+    if (text.contains(QChar::ReplacementCharacter))
+        text = QString::fromLatin1(block);
+    const int start = text.indexOf(QLatin1String("StreamTitle='"));
+    if (start < 0)
+        return;
+    int end = text.indexOf(QLatin1String("';"), start + 13);
+    if (end < 0)
+        end = text.lastIndexOf('\'');
+    const QString title = end > start + 13 ? text.mid(start + 13, end - start - 13).trimmed() : QString();
+    if (title != streamTitle()) {
+        m_meta.insert(QStringLiteral("streamTitle"), title);
+        m_titleChanged = true;
+    }
+}
+
 bool Decoder::seekable() const {
     if (!m_format || !m_format->pb)
         return false;
@@ -103,6 +130,9 @@ bool Decoder::open(const QString &path, const QUrl &url, QString *error) {
     m_path = path;
     m_url = url;
     m_network = AudioEngine::isNetworkUrl(url);
+    m_live = m_network && Streaming::isLive(path);
+    m_titleChanged = false;
+    m_packetsSinceIcy = 0;
     m_readError.clear();
     m_decodedTo = 0;
     auto failWith = [&](const QString &message) {
@@ -137,7 +167,13 @@ bool Decoder::open(const QString &path, const QUrl &url, QString *error) {
         // with a Range the server ignores, take the file's start for its
         // continuation and play on through garbage (the streaming tests
         // caught it). Such a stream fails instead, and the Player moves on.
-        av_dict_set(&options, "reconnect_streamed", "0", 0);
+        // A live radio stream has no position to get wrong: reconnecting
+        // simply picks the broadcast up again.
+        av_dict_set(&options, "reconnect_streamed", m_live ? "1" : "0", 0);
+        // Ask for the station's song titles inside the stream (ICY). FFmpeg
+        // takes them out of the audio and keeps the latest for pollIcy().
+        if (m_live)
+            av_dict_set(&options, "icy", "1", 0);
         av_dict_set(&options, "reconnect_on_network_error", "1", 0);
         av_dict_set(&options, "reconnect_delay_max", QByteArray::number(o.reconnectDelayMaxS).constData(), 0);
         av_dict_set(&options, "reconnect_delay_total_max", QByteArray::number(o.reconnectDelayMaxS * 3).constData(),
@@ -210,6 +246,12 @@ bool Decoder::open(const QString &path, const QUrl &url, QString *error) {
               {"albumArtist", albumArtist},
               {"album", tag("album")},
               {"bitrate", m_bitrateKbps}};
+    if (m_live) {
+        // No length: the station never ends.
+        m_durationMs = 0;
+        m_meta.insert(QStringLiteral("streamTitle"), QString());
+        pollIcy();
+    }
 
     m_rg = {};
     m_rg.trackGain = parseGain(tag("REPLAYGAIN_TRACK_GAIN"));
@@ -253,6 +295,10 @@ bool Decoder::decodeMore() {
             break;
         }
         r = av_read_frame(m_format, m_packet);
+        if (m_live && r >= 0 && ++m_packetsSinceIcy >= 16) {
+            m_packetsSinceIcy = 0;
+            pollIcy();
+        }
         if (r < 0) {
             // A stream that broke off (FFmpeg's reconnects failed or timed
             // out) is reported, unless a skip or seek abandoned the read.
@@ -386,7 +432,7 @@ int Decoder::read(float *out, int frames) {
 }
 
 bool Decoder::seek(qint64 ms) {
-    if (!m_codec)
+    if (!m_codec || m_live)
         return false;
     AVStream *stream = m_format->streams[m_stream];
     const qint64 start = stream->start_time != AV_NOPTS_VALUE ? stream->start_time : 0;

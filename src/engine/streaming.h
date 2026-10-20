@@ -25,6 +25,11 @@ struct Options {
 Options options();
 void setOptions(const Options &options);
 
+// Whether a queue entry is a live radio station (radio://<key>): no length,
+// no seeking, no read-ahead (so FFmpeg's HTTP layer can hand over the
+// station's ICY titles), and reconnected when it drops.
+inline bool isLive(const QString &path) { return path.startsWith(QLatin1String("radio://")); }
+
 // "Omamp/<version>".
 QString userAgent();
 

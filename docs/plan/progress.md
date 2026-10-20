@@ -105,7 +105,7 @@ Totals: 16 passed, 0 failed, 0 skipped, 0 blacklisted, 493ms    (library)
 
 ### Benchmark
 
-`bin/bench` on tetelestai (Ryzen 9 7950X3D, btrfs on LUKS), with
+`bin/bench` on the development machine (Ryzen 9 7950X3D, btrfs on LUKS), with
 another heavy job running. Database and files on disk under `build/bench`.
 Times are the median of 7 runs with a warm page cache.
 
@@ -264,7 +264,7 @@ the window keep reading while the scan writes.
 ```cpp
 Job job("scan");                       // progressChanged(phase, done, total), finished()
 Scanner scanner(library, VolumeResolver(), &job);
-ScanResult r = scanner.scan({"/home/matt/Music"});   // or scanner.rescanAll()
+ScanResult r = scanner.scan({"~/Music"});   // or scanner.rescanAll()
 job.cancel();                          // from any thread
 Scanner::roots(library);               // the library folders, "" when offline
 ```
@@ -724,7 +724,7 @@ provider; and the background prefetch plus the scanner clearing
 
 ### Benchmark
 
-`omamp_bench files` on tetelestai with another heavy job running: 100,000
+`omamp_bench files` on the development machine with another heavy job running: 100,000
 hard links of one small tagged MP3 in 8,334 folders, on btrfs, warm cache,
 8 reader threads. Phase 0 was rebuilt from `afddb5b` and run alternately
 with Phase 1C.
@@ -967,7 +967,7 @@ and the saved settings.
 
 The Phase 0 generator made the 200,000-track library (`omamp_bench
 generate`, 191 MB). The window ran offscreen with the software renderer, a
-throwaway `HOME`, no session bus and no audio, on tetelestai while another
+throwaway `HOME`, no session bus and no audio, on the development machine while another
 heavy job ran. Times run from the change to the next frame on screen
 (`OMAMP_PROFILE=1`), over three runs.
 
@@ -1297,7 +1297,7 @@ shows one more track with the same selection and cursor.
 
 The 200,000-track library from the Phase 0 generator, upgraded to schema 5,
 in the window offscreen with the software renderer, throwaway XDG folders,
-no session bus and no audio, while other heavy jobs ran on tetelestai.
+no session bus and no audio, while other heavy jobs ran on the development machine.
 `OMAMP_PROFILE=1`, three runs; times run from the change to the next frame
 on screen, and the query columns are the work alone.
 

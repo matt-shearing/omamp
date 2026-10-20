@@ -5,5 +5,5 @@
 # share it. docs/spotify.md.
 QT += dbus
 INCLUDEPATH += $$PWD
-HEADERS += $$PWD/spotify.h $$PWD/spotifyrequests.h $$PWD/spotifympris.h
-SOURCES += $$PWD/spotify.cpp $$PWD/spotifyrequests.cpp $$PWD/spotifympris.cpp
+HEADERS += $$PWD/spotify.h $$PWD/spotifyrequests.h $$PWD/spotifympris.h $$PWD/spotifysession.h
+SOURCES += $$PWD/spotify.cpp $$PWD/spotifyrequests.cpp $$PWD/spotifympris.cpp $$PWD/spotifysession.cpp

@@ -186,6 +186,11 @@ void DevHooks::runDemo() {
             QObject *o = findNamed(m_window, arg);
             if (!o || !QMetaObject::invokeMethod(o, "clicked"))
                 say("can't click " + arg);
+        } else if (verb == "accept") {
+            // accept:<objectName> presses Enter in a named text field.
+            QObject *o = findNamed(m_window, arg);
+            if (!o || !QMetaObject::invokeMethod(o, "accepted"))
+                say("can't accept " + arg);
         } else if (verb == "trigger") {
             // trigger:<objectName> fires an item's triggered signal: a menu
             // bar title (menuTitle_viewMenu) opens its menu.

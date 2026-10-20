@@ -147,6 +147,7 @@ thread_local CancelFlag t_cancel;
 CancelScope::CancelScope(CancelFlag flag) : m_previous(t_cancel) { t_cancel = std::move(flag); }
 CancelScope::~CancelScope() { t_cancel = m_previous; }
 bool CancelScope::cancelled() { return t_cancel && t_cancel->load(); }
+CancelFlag CancelScope::current() { return t_cancel; }
 
 bool isRateLimitText(const QString &text) {
     return text.contains("429") || text.contains("Too Many Requests", Qt::CaseInsensitive) ||
@@ -591,6 +592,7 @@ Settings Settings::load(const QString &path) {
     out.blendSearch = s.value("spotify/blend_search", true).toBool();
     out.blendPalette = s.value("spotify/blend_palette", true).toBool();
     out.startDaemon = s.value("spotify/start_daemon", true).toBool();
+    out.sessionReads = s.value("spotify/session_reads", true).toBool();
     return out;
 }
 
@@ -603,6 +605,7 @@ bool Settings::save(const QString &path) const {
     s.setValue("spotify/blend_search", blendSearch);
     s.setValue("spotify/blend_palette", blendPalette);
     s.setValue("spotify/start_daemon", startDaemon);
+    s.setValue("spotify/session_reads", sessionReads);
     s.sync();
     return s.status() == QSettings::NoError;
 }

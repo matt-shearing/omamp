@@ -827,6 +827,17 @@ void SpotifyController::waitForIdle() {
 
 void SpotifyController::makeBackend() {
     m_backend = Spotify::Backend::create(m_settings.backend);
+    // Spotify's own playlists and artists' top tracks the way Spotify's own
+    // app reads them, when the reader is installed and switched on.
+    const QString reader = Spotify::SessionReader::findProgram();
+    if (m_settings.backend == "spotify_player" && m_settings.sessionReads && !reader.isEmpty()) {
+        if (!m_session)
+            m_session = std::make_shared<Spotify::SessionReader>(
+                reader, Spotify::SpotifyPlayerBackend::cacheFolder() + "/credentials.json");
+        m_backend->setCatalogue(std::make_unique<Spotify::SessionCatalogue>(m_backend.get(), m_session));
+    } else {
+        m_session.reset();
+    }
     // Made here, on this thread, before any worker can ask for it.
     m_backend->catalogue();
     m_requests.cancelAll();
@@ -913,6 +924,18 @@ void SpotifyController::setStartDaemon(bool on) {
         return;
     m_settings.startDaemon = on;
     saveSettings();
+}
+
+void SpotifyController::setSessionReads(bool on) {
+    if (on == m_settings.sessionReads)
+        return;
+    m_settings.sessionReads = on;
+    makeBackend();
+    // Lists read one way may differ from the other's.
+    m_cache.clear();
+    saveSettings();
+    if (m_settings.enabled && m_viewVisible)
+        load(m_view);
 }
 
 void SpotifyController::setPalette(Palette *palette) {
@@ -1039,6 +1062,8 @@ bool SpotifyController::isRestricted(const Spotify::Item &item) const {
 
 QString SpotifyController::viewNote() const {
     if (m_view.section != "tracks")
+        return {};
+    if (m_view.container.kind == "artist" && m_backend->catalogue()->id() != "web-api")
         return {};
     if (m_view.container.kind == "artist")
         return tr("Spotify doesn't let new apps read an artist's top tracks or related artists, so these come from "
@@ -1530,6 +1555,12 @@ void SpotifyController::load(const View &view, bool force, bool retry) {
                 return;
             }
             setLoading(false);
+            // Spotify's own playlist that couldn't be read: it still plays
+            // as a whole.
+            if (v.section == "tracks" && v.container.spotifyMade()) {
+                m_view.restricted = true;
+                m_view.showTracks = false;
+            }
             m_view.error = m_rateLimited ? tr("Spotify is rate-limiting requests, so this didn't load. Press Retry in "
                                               "a minute, or use your own client ID (Settings → Spotify).")
                                          : r.error;
@@ -1539,6 +1570,16 @@ void SpotifyController::load(const View &view, bool force, bool retry) {
         m_autoRetries = 0;
         setLoading(false);
         m_items.setItems(r.items, r.sections);
+        // An artist opened by a link learns its name from its own tracks.
+        if (v.section == "tracks" && v.container.kind == "artist" && m_view.container.name.isEmpty())
+            for (const Spotify::Item &i : r.items) {
+                const int at = i.artistIds.indexOf(v.container.id);
+                if (at >= 0 && at < i.artists.size()) {
+                    m_view.container.name = i.artists.at(at);
+                    rememberNames({m_view.container});
+                    break;
+                }
+            }
         if (r.items.isEmpty() && v.section == "search")
             m_view.error = tr("Nothing on Spotify matches “%1”.").arg(v.search);
         if (m_rateLimited && retryIn() == 0)
@@ -1646,6 +1687,14 @@ void SpotifyController::search(const QString &text) {
 }
 
 void SpotifyController::reload() {
+    // A playlist shown whole because reading it failed: Retry reads it.
+    if (m_view.restricted && !m_view.showTracks && !m_view.error.isEmpty()) {
+        View v = m_view;
+        v.showTracks = true;
+        load(v, true);
+        refreshStatus();
+        return;
+    }
     load(m_view, true);
     refreshStatus();
 }

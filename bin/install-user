@@ -6,6 +6,9 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 "$ROOT/bin/build"
 install -Dm755 "$ROOT/build/omamp" "$HOME/.local/bin/omamp"
+if [ -x "$ROOT/build/omamp-spotify-session" ]; then
+    install -Dm755 "$ROOT/build/omamp-spotify-session" "$HOME/.local/bin/omamp-spotify-session"
+fi
 install -Dm644 "$ROOT/pkgbuild/omamp.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/omamp.svg"
 sed "s#^Exec=omamp#Exec=$HOME/.local/bin/omamp#" "$ROOT/pkgbuild/omamp.desktop" \
     > "$HOME/.local/share/applications/omamp.desktop"

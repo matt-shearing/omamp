@@ -5,7 +5,7 @@ pkgdesc='A Winamp-style music player that wears the Omarchy theme'
 arch=('x86_64' 'aarch64')
 license=('MIT')
 depends=('qt6-base' 'qt6-declarative' 'qt6-multimedia' 'qt6-wayland' 'xdg-desktop-portal' 'ttf-jetbrains-mono-nerd' 'taglib' 'sqlite' 'ffmpeg')
-makedepends=('gcc' 'make' 'pkgconf')
+makedepends=('gcc' 'make' 'pkgconf' 'cargo')
 source=()
 sha256sums=()
 
@@ -17,6 +17,7 @@ build() {
 package() {
   cd "$startdir/.."
   install -Dm755 build/omamp "$pkgdir/usr/bin/omamp"
+  install -Dm755 build/omamp-spotify-session "$pkgdir/usr/bin/omamp-spotify-session"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$startdir/omamp.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/omamp.svg"
   install -Dm644 "$startdir/omamp.desktop" "$pkgdir/usr/share/applications/omamp.desktop"

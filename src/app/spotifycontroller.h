@@ -17,6 +17,7 @@
 #include "spotify.h"
 #include "spotifympris.h"
 #include "spotifyrequests.h"
+#include "spotifysession.h"
 
 #include "palette.h"
 #include "player.h"
@@ -228,6 +229,10 @@ class SpotifyController : public QObject {
     Q_PROPERTY(bool blendSearch READ blendSearch WRITE setBlendSearch NOTIFY settingsChanged)
     Q_PROPERTY(bool blendPalette READ blendPalette WRITE setBlendPalette NOTIFY settingsChanged)
     Q_PROPERTY(bool startDaemon READ startDaemon WRITE setStartDaemon NOTIFY settingsChanged)
+    // Read Spotify's own playlists and artists' top tracks the way Spotify's
+    // own app does, through omamp-spotify-session.
+    Q_PROPERTY(bool sessionReads READ sessionReads WRITE setSessionReads NOTIFY settingsChanged)
+    Q_PROPERTY(bool sessionReaderInstalled READ sessionReaderInstalled NOTIFY settingsChanged)
     Q_PROPERTY(QString backendName READ backendName NOTIFY settingsChanged)
     Q_PROPERTY(bool canBrowse READ canBrowse NOTIFY settingsChanged)
     Q_PROPERTY(bool installed READ installed NOTIFY statusChanged)
@@ -327,6 +332,11 @@ public:
     void setBlendPalette(bool on);
     bool startDaemon() const { return m_settings.startDaemon; }
     void setStartDaemon(bool on);
+    bool sessionReads() const { return m_settings.sessionReads; }
+    void setSessionReads(bool on);
+    bool sessionReaderInstalled() const { return !Spotify::SessionReader::findProgram().isEmpty(); }
+    // The session reader in use, or null (tests).
+    Spotify::SessionReader *sessionReader() const { return m_session.get(); }
     QString backendName() const { return m_backend->name(); }
     bool canBrowse() const { return m_backend->caps().library; }
 
@@ -528,6 +538,8 @@ private:
     QString m_settingsPath;
     Spotify::Settings m_settings;
     std::shared_ptr<Spotify::Backend> m_backend;
+    // omamp-spotify-session, kept running while Omamp runs once asked.
+    std::shared_ptr<Spotify::SessionReader> m_session;
     QPointer<Player> m_player;
     QPointer<Palette> m_palette;
     SpotifyArt m_art;

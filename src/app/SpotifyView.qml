@@ -270,7 +270,7 @@ FocusScope {
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
                 Layout.topMargin: 6
-                visible: spotify.viewNote !== ""
+                visible: spotify.viewNote !== "" || spotify.viewKind === "artist"
                 implicitHeight: contextColumn.implicitHeight + 20
                 radius: Math.min(4, theme.radius)
                 color: theme.c.dark_background
@@ -283,6 +283,7 @@ FocusScope {
                     spacing: 8
                     Text {
                         objectName: "spotifyContextNote"
+                        visible: text !== ""
                         Layout.fillWidth: true
                         wrapMode: Text.Wrap
                         text: spotify.viewNote
@@ -295,7 +296,7 @@ FocusScope {
                         visible: spotify.viewRestricted || spotify.viewKind === "artist"
                         Button {
                             objectName: "spotifyContextPlay"
-                            text: qsTr("Play")
+                            text: spotify.viewKind === "artist" ? qsTr("Play artist") : qsTr("Play playlist")
                             font.pixelSize: 12
                             onClicked: spotify.playView(false)
                         }
@@ -306,12 +307,12 @@ FocusScope {
                             onClicked: spotify.playView(true)
                         }
                         Button {
-                            text: qsTr("Play next")
+                            text: qsTr("Play it next")
                             font.pixelSize: 12
                             onClicked: spotify.enqueueView(true)
                         }
                         Button {
-                            text: qsTr("Add to Now Playing")
+                            text: qsTr("Add it to Now Playing")
                             font.pixelSize: 12
                             onClicked: spotify.enqueueView(false)
                         }

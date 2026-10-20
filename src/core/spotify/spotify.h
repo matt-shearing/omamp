@@ -210,6 +210,8 @@ public:
     explicit CancelScope(CancelFlag flag);
     ~CancelScope();
     static bool cancelled();
+    // The flag of the scope on this thread, for work handed to another.
+    static CancelFlag current();
 private:
     CancelFlag m_previous;
 };
@@ -223,6 +225,9 @@ struct Settings {
     bool blendSearch = true;       // Spotify results under the library search
     bool blendPalette = true;      // and in the command palette
     bool startDaemon = true;       // start spotify_player when Omamp needs it
+    // Read Spotify's own playlists and artists' top tracks the way
+    // Spotify's own app does (omamp-spotify-session), when it is installed.
+    bool sessionReads = true;
 
     static QString defaultPath();
     static Settings load(const QString &path = {});

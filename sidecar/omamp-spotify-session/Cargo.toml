@@ -1,0 +1,21 @@
+[package]
+name = "omamp-spotify-session"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Reads Spotify playlists and artists' top tracks for Omamp over a librespot session"
+license = "MIT"
+
+[dependencies]
+librespot-core = { version = "=0.8.0", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-metadata = { version = "=0.8.0", default-features = false }
+librespot-protocol = { version = "=0.8.0", default-features = false }
+protobuf = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+http = "1"
+
+[profile.release]
+opt-level = 2
+strip = true

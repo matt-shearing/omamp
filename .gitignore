@@ -1,4 +1,5 @@
 /build/
+/sidecar/*/target/
 /pkgbuild/pkg/
 /pkgbuild/src/
 *.pkg.tar.*

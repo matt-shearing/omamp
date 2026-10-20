@@ -8,6 +8,7 @@
 
 #include "cli.h"
 #include "spotify.h"
+#include "spotifysession.h"
 
 namespace Cli {
 
@@ -79,6 +80,13 @@ int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err)
     if (!Spotify::Backend::ids().contains(backendId))
         return fail(QString("unknown backend %1 (spotify_player or spotifast)").arg(backendId));
     const auto backend = Spotify::Backend::create(backendId);
+    // Spotify's own playlists and artists' top tracks through the session
+    // reader, as the window does, when it is installed and switched on.
+    const QString reader = Spotify::SessionReader::findProgram();
+    if (backendId == "spotify_player" && Spotify::Settings::load().sessionReads && !reader.isEmpty())
+        backend->setCatalogue(std::make_unique<Spotify::SessionCatalogue>(
+            backend.get(), std::make_shared<Spotify::SessionReader>(
+                               reader, Spotify::SpotifyPlayerBackend::cacheFolder() + "/credentials.json")));
     const QString verb = rest.value(0, "status");
     const QString argument = rest.mid(1).join(' ');
     QString error;

@@ -146,6 +146,8 @@ struct FakeSpotify {
         set("OMAMP_SPOTIFY_PLAYER", "");
         set("OMAMP_SPOTIFAST", "");
         set("OMAMP_SPOTIFY_OEMBED", "off");
+        // No session reader unless a test brings the fake one.
+        set("OMAMP_SPOTIFY_SESSION", "off");
         set("OMAMP_SPOTIFY_TIMEOUT_MS", "5000");
         set("OMAMP_SPOTIFY_LONG_TIMEOUT_MS", "8000");
         // Never Matt's real players: no MPRIS by default (a test that wants
@@ -1833,6 +1835,104 @@ private slots:
         c.waitForIdle();
         QVERIFY2(fake.calls().filter("get item").isEmpty() && fake.calls().filter("search").isEmpty(),
                  qPrintable(fake.calls().join(" | ")));
+    }
+
+    void theSessionReaderReadsWhatTheWebApiCant() {
+        FakeSpotify fake;
+        fake.set("OMAMP_SPOTIFY_SESSION", QString(OMAMP_TESTS_DIR) + "/fake-spotify/omamp-spotify-session");
+        QTemporaryDir dir;
+        const QString synth = fake.id("playlist:Synthwave Essentials");
+        // The Web API would refuse it and answer late.
+        fake.touch(fake.state() + "/restricted", synth.toUtf8() + "\n");
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        QVERIFY(c.sessionReads());
+        QVERIFY(c.sessionReaderInstalled());
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        c.setViewVisible(true);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+
+        // Spotify's own playlist lists at once, through the reader.
+        fake.clearCalls();
+        c.openRow(3);
+        QVERIFY(!c.viewRestricted());
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 3, 5000);
+        QVERIFY(c.viewError().isEmpty());
+        QVERIFY(fake.calls().contains("session playlist " + synth));
+        QVERIFY(fake.calls().filter("get item").isEmpty());
+
+        // An artist: top tracks from the reader, albums from search.
+        c.openSection("artists");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 6, 5000);
+        int row = -1;
+        for (int r = 0; r < c.items()->count(); ++r)
+            if (c.items()->at(r).name == "Neon Coast")
+                row = r;
+        fake.clearCalls();
+        c.openRow(row);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        QCOMPARE(c.items()->get(0).value("section").toString(), QString("Popular tracks"));
+        QCOMPARE(c.items()->get(4).value("section").toString(), QString("Albums"));
+        QVERIFY(c.viewNote().isEmpty());
+        QVERIFY(fake.calls().contains("session artist-top " + fake.id("artist:Neon Coast")));
+        QVERIFY(fake.calls().filter(QRegularExpression(" artist$")).filter("get item").isEmpty());
+        // One reader process for all of it.
+        QCOMPARE(c.sessionReader()->starts(), 1);
+
+        // The reader failing: your own playlist falls back to the Web API;
+        // Spotify's own says so instead of waiting on the shared ID.
+        fake.touch(fake.state() + "/session-fail", "no connection");
+        c.openSection("playlists");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        fake.clearCalls();
+        c.openRow(0);
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        QVERIFY(!fake.calls().filter("get item --id " + fake.id("playlist:Late Night Drive")).isEmpty());
+        c.back();
+        c.openRow(3);
+        c.reload();
+        QTRY_VERIFY_WITH_TIMEOUT(!c.loading() && !c.viewError().isEmpty(), 5000);
+        QVERIFY2(c.viewError().contains("no connection"), qPrintable(c.viewError()));
+        // It still plays as a whole, and Retry reads it again.
+        QVERIFY(c.viewRestricted());
+        QFile::remove(fake.state() + "/session-fail");
+        c.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 3, 5000);
+        QVERIFY(c.viewError().isEmpty());
+
+        // Switched off: back to playing it as a whole.
+        c.setSessionReads(false);
+        QVERIFY(c.sessionReader() == nullptr);
+        c.back();
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 5, 5000);
+        c.openRow(3);
+        QVERIFY(c.viewRestricted());
+        QVERIFY(Spotify::Settings::load(dir.filePath("spotify.conf")).sessionReads == false);
+
+        // The command line reads through it too.
+        Spotify::SpotifyPlayerBackend b;
+        QString o, e;
+        QTextStream out(&o), err(&e);
+        fake.clearCalls();
+        QCOMPARE(Cli::run({"spotify", "tracks", "spotify:playlist:" + synth, "--json"}, out, err), 0);
+        QCOMPARE(QJsonDocument::fromJson(o.toUtf8()).object().value("items").toArray().size(), 3);
+        QVERIFY(fake.calls().contains("session playlist " + synth));
+    }
+
+    void aReaderThatCantSignInFallsBack() {
+        FakeSpotify fake;
+        fake.set("OMAMP_SPOTIFY_SESSION", QString(OMAMP_TESTS_DIR) + "/fake-spotify/omamp-spotify-session");
+        fake.touch(fake.state() + "/session-signin", "the sign-in has expired");
+        QTemporaryDir dir;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        c.openSection("artists");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 6, 5000);
+        c.openRow(0);
+        // Search alone still gives the page.
+        QTRY_VERIFY_WITH_TIMEOUT(!c.loading() && c.items()->count() > 0, 5000);
+        QVERIFY(c.viewError().isEmpty());
     }
 };
 

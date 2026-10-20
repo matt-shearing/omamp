@@ -321,6 +321,20 @@ ScrollView {
             checked: spotify.startDaemon
             onClicked: spotify.startDaemon = checked
         }
+        CheckBox {
+            objectName: "spotifySessionReads"
+            enabled: spotify.enabled && spotify.backendId === "spotify_player" && spotify.sessionReaderInstalled
+            text: qsTr("Read Spotify-made playlists and artists' top tracks the way Spotify's own app does")
+            font.pixelSize: 13
+            checked: spotify.sessionReads
+            onClicked: spotify.sessionReads = checked
+        }
+        Note {
+            visible: spotify.backendId === "spotify_player"
+            text: spotify.sessionReaderInstalled
+                  ? qsTr("Spotify doesn't let new apps read these through its public Web API. omamp-spotify-session reads them with spotify_player's sign-in, as Spotifast does, through Spotify's private endpoints, which Spotify's developer terms don't cover and Spotify can change.")
+                  : qsTr("omamp-spotify-session isn't installed, so Spotify-made playlists play as a whole and artists' pages come from search.")
+        }
 
         Heading { text: qsTr("What crosses over, and what doesn't"); enabled: spotify.enabled }
         Note {

@@ -32,6 +32,8 @@ AudioEngine *chooseEngine(const QString &settingsPath) {
 }
 } // namespace
 
+AudioEngine *Player::createEngine(const QString &statePath) { return chooseEngine(settingsPathFor(statePath)); }
+
 Player::Player(const QString &statePath, QObject *parent)
     : Player(chooseEngine(settingsPathFor(statePath)), statePath, Resolver(), parent) {}
 

@@ -77,6 +77,11 @@ public:
     Player(AudioEngine *engine, const QString &statePath, Resolver resolver, QObject *parent = nullptr);
     ~Player() override;
 
+    // The engine the settings choose (OMAMP_ENGINE, else playback/engine in
+    // omamp.conf beside the state file), for a caller that wraps it in a
+    // HandoffEngine before passing it in.
+    static AudioEngine *createEngine(const QString &statePath);
+
     Playlist *playlist() { return &m_playlist; }
     int currentIndex() const { return m_current; }
     QString state() const;

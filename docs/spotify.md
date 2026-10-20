@@ -41,6 +41,53 @@ files or run `spotify_player authenticate` again.
 With **Spotifast**, sign in inside Spotifast's own window. Omamp can use it
 only while it is open.
 
+## Rate limits and your own client ID
+
+spotify_player reaches your library, and starts playback, through
+Spotify's Web API. The Web API knows each app by a *client ID* and limits
+how often one client ID may ask. When it is asked too often it answers
+"429 Too Many Requests", and spotify_player waits and tries again. A list
+that takes a second can then take half a minute.
+
+spotify_player's client ID is shared. Its built-in one is ncspot's, and many
+setups put Spotify's own desktop app ID (`65b708073fc…`) in
+`~/.config/spotify-player/app.toml`, which every player built on librespot
+uses. Both are busy. An app of your own gives you a limit of your own:
+
+1. Open [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
+   and sign in with your Spotify account.
+2. Press **Create app**. Any name and description will do, for example
+   "Omamp".
+3. Under **Redirect URIs**, add exactly `http://127.0.0.1:8989/login`.
+4. Where it asks which APIs you will use, tick **Web API**. Accept the terms
+   and press **Save**.
+5. Open the app's **Settings** and copy its **Client ID**: 32 letters and
+   digits.
+6. In Omamp, open **Settings → Spotify**, paste the ID under **Use your own
+   Spotify app**, and press **Use this client ID**.
+7. Sign in again: press **Sign in…**, or run `spotify_player authenticate`
+   in a terminal. Your browser asks you to allow access, once for your app
+   and again for each client spotify_player keeps. Allow each one.
+
+In step 6 Omamp copies `app.toml` to `app.toml.omamp-backup-<date>-<time>`,
+replaces the `client_id` line (or adds one above the first `[table]`), and
+changes nothing else in the file. It then stops spotify_player, because
+spotify_player needs a sign-in for the new ID, and started without one it
+would wait for a browser. When the sign-in finishes, Omamp starts it again.
+If `app.toml` sets `client_id_command`, which spotify_player uses instead of
+`client_id`, Omamp refuses and says so.
+
+spotify_player 0.25 still uses ncspot's ID for two things: reading your
+list of playlists and opening a playlist (`me/playlists` and `playlists/`),
+and any request your own ID is refused. So your own ID removes most of the
+waiting, not all of it.
+
+While Spotify is rate-limiting, the Spotify view says so and counts down to
+the next try. A list that takes more than a few seconds says it is still
+loading, and **Cancel** stops it. A list that fails shows why, with **Retry**.
+Omamp reads spotify_player's log (`~/.cache/spotify-player/spotify-player-*.log`)
+to tell a rate limit from a fault; it never writes to it.
+
 ## What you can do
 
 In the Spotify node:
@@ -102,9 +149,14 @@ Connect device (spotify_player's, named `spotify-player` unless its
   is Spotify's.
 - **Like** acts on the playing track only: spotify_player's command line can
   save or remove nothing else.
-- **Position** comes from reading Spotify's state every second, and moves
-  smoothly between reads.
-- **A pause from another device** shows as paused in Omamp. If someone
+- **Position and pauses** come from the backend's MPRIS service:
+  `org.mpris.MediaPlayer2.spotify_player` (spotify_player, with
+  `enable_media_control = true`, its default on Linux) or
+  `org.mpris.MediaPlayer2.spotifast`. That costs Spotify nothing. Without
+  MPRIS, Omamp asks the backend every 5 seconds, and only while a Spotify
+  track plays in Omamp.
+- **A pause from another device** shows as paused in Omamp, as soon as
+  spotify_player hears of it. If someone
   starts something else in Spotify, Omamp pauses its queue and says so.
 
 ## The two backends
@@ -151,6 +203,24 @@ engine loads and plays the next file. The Player itself is unchanged, so
 everything that shows or controls the Player (the deck, the big view, the
 mini players, MPRIS and the bar plugin) follows Spotify for free.
 
+**Ask Spotify as little as possible.** Every spotify_player command is a Web
+API request, and the client ID is shared, so Omamp:
+
+- follows playback through MPRIS, and reads the state through the command
+  line only when MPRIS isn't there;
+- sends every command through one queue with two lanes, each running one
+  command at a time. Play, pause and seek go on one lane, so a button never
+  waits behind a long list. Lists and searches go on the other, at least
+  300 ms apart. Two requests for the same list share one command;
+- keeps lists for ten minutes (searches five) and shows the kept copy at
+  once while reading a fresh one. The refresh button beside a list's title
+  reads it again now;
+- loads a section only when you look at it. Switching Spotify on reads the
+  devices and your playlists, nothing more;
+- waits six seconds after starting spotify_player before asking anything,
+  because spotify_player reads your whole library as it starts;
+- holds back lists while Spotify has said to wait.
+
 **Careful with spotify_player.** Three of its habits shape the code:
 
 - When no instance is running, its command line starts a client of its own
@@ -172,9 +242,15 @@ sign-in, as each row is shown. All of them are kept in
 `~/.cache/omamp/spotify`. A row without a picture shows an
 icon.
 
+**MPRIS has no track id in spotify_player.** Its `mpris:trackid` is `/`, so
+Omamp matches the playing track by title and length. Spotifast's metadata
+has the Spotify URI in `xesam:url`.
+
 **Settings and files.** The switches live in `~/.config/omamp/spotify.conf`:
 whether Spotify is on, the backend, the two kinds of blending and whether to
-start spotify_player. Nothing about the account is stored.
+start spotify_player. Nothing about the account is stored. The only file
+outside Omamp's own that Omamp writes is spotify_player's `app.toml`, and only
+its `client_id` line, when you press **Use this client ID**.
 
 ## Testing
 
@@ -185,11 +261,22 @@ structs in spotify_player 0.25.1's source and rspotify-model 0.16.1, with
 made-up artists and albums. The tests never reach Spotify, never start the
 real programs and play no sound.
 
+The fake can be slow (`slow-<verb>`) and can write spotify_player's
+rate-limit warning to a log (`ratelimit`). MPRIS is tested with a fake
+spotify_player MPRIS service on a private `dbus-daemon`, so nothing appears
+on the desktop's session bus; every other test points Omamp at a bus name
+that doesn't exist. The client ID writer is tested on `app.toml` files in
+temporary folders.
+
 ## Things to check by hand
 
-None of this has met a real Spotify account. After signing in, check:
+The command shapes have not met a real Spotify account. After signing in,
+check:
 
 1. `omamp spotify status` shows your account, `Premium: yes` and the
    `spotify-player` device.
 2. Play a playlist mixed with local files and listen to the change-overs.
 3. Pause on your phone; Omamp should show paused within a second or two.
+4. Open a long playlist. With a shared client ID it may say Spotify is
+   rate-limiting; with your own it should open in a second or two.
+5. Settings → Spotify → Status shows **Follows playback: Through MPRIS**.

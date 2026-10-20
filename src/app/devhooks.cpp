@@ -92,7 +92,10 @@ void DevHooks::afterFirstFrame() {
                    "show the info panel", "refresh (as after the watcher)",
                    "show the column browser again", "browser: search go (two letters)", "browser: clear the search"};
         m_step = -1;
-        QTimer::singleShot(200, this, &DevHooks::nextProfileStep);
+        // OMAMP_PROFILE_WAIT=<ms> waits longer first, as a person would,
+        // so what the window does while idle after start-up has happened.
+        QTimer::singleShot(200 + qMax(0, qEnvironmentVariableIntValue("OMAMP_PROFILE_WAIT")), this,
+                           &DevHooks::nextProfileStep);
         return;
     }
     QTimer::singleShot(qEnvironmentVariableIntValue("OMAMP_SCREENSHOT_DELAY") > 0
@@ -183,6 +186,12 @@ void DevHooks::runDemo() {
             QObject *o = findNamed(m_window, arg);
             if (!o || !QMetaObject::invokeMethod(o, "clicked"))
                 say("can't click " + arg);
+        } else if (verb == "trigger") {
+            // trigger:<objectName> fires an item's triggered signal: a menu
+            // bar title (menuTitle_viewMenu) opens its menu.
+            QObject *o = findNamed(m_window, arg);
+            if (!o || !QMetaObject::invokeMethod(o, "triggered"))
+                say("can't trigger " + arg);
         } else if (verb == "wait") {
             // wait:<ms> lets work in the background (a worker thread, a
             // backend's answer) land before the next step.

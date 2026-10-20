@@ -13,6 +13,7 @@
 #include "nowplaying.h"
 #include "spotifycontroller.h"
 #include "radiocontroller.h"
+#include "windowplacement.h"
 
 class Player;
 class Theme;
@@ -31,4 +32,6 @@ inline void installNowPlaying(QQmlEngine &engine, Theme *theme, Player *player, 
     radio->setCacheDir(artDir + "/radio");
     radio->setPlayer(player);
     engine.rootContext()->setContextProperty("radio", radio);
+    // Never asks the real Hyprland: the window is never tiled in tests.
+    engine.rootContext()->setContextProperty("windowPlacement", new WindowPlacement(&engine, "/nonexistent/hyprctl"));
 }

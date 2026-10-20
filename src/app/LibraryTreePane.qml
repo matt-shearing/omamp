@@ -13,6 +13,8 @@ FocusScope {
     // edit-autoplaylist, import, save-now-playing, new-collection,
     // edit-collection, restore-collections. node is {row, kind, id, label}.
     signal nodeAction(string id, var node)
+    // A node chosen with the mouse (not the keys).
+    signal nodeClicked(int row)
     // Party mode: playlists can't be changed.
     property bool locked: false
 
@@ -228,6 +230,7 @@ FocusScope {
                     }
                     list.currentIndex = node.index
                     library.selectNode(node.index)
+                    pane.nodeClicked(node.index)
                 }
                 onDoubleClicked: (mouse) => {
                     if (node.expandable && mouse.x >= arrow.x + arrow.width + 2) library.tree.toggle(node.index)

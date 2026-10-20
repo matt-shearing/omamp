@@ -185,6 +185,9 @@ public:
 
     // Opens the library (once). Returns ready().
     Q_INVOKABLE bool activate();
+    // Whether the library's database file exists, so the window can open
+    // it ahead of the first Tab without creating one for a deck-only user.
+    Q_INVOKABLE bool hasDatabase() const;
     Q_INVOKABLE void selectNode(int row);
 
     Q_INVOKABLE void addFolder();

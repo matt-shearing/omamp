@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file alias="Main.qml">Main.qml</file>
+        <file alias="MainMenuBar.qml">MainMenuBar.qml</file>
         <file alias="LiveBar.qml">LiveBar.qml</file>
         <file alias="RadioView.qml">RadioView.qml</file>
         <file alias="RadioSheet.qml">RadioSheet.qml</file>

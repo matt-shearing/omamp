@@ -39,6 +39,7 @@ QtObject {
 
     // Keeps the size the compact player has now, for next time.
     function rememberSize() {
+        if (window.sizeManaged) return
         if (compact === "mini") {
             sizes.miniWidth = window.width
             sizes.miniHeight = window.height
@@ -57,13 +58,10 @@ QtObject {
         if (fullScreen) window.showNormal()
         bigView = false
         compact = mode
-        if (mode !== "") {
-            window.width = compactWidth
-            window.height = compactHeight
-        } else {
-            window.width = prefs.advanced ? prefs.advancedWidth : prefs.deckWidth
-            window.height = prefs.advanced ? prefs.advancedHeight : prefs.deckHeight
-        }
+        // Only while the window floats: Hyprland sizes a tiled one.
+        if (mode !== "") window.resizeTo(compactWidth, compactHeight)
+        else window.resizeTo(prefs.advanced ? prefs.advancedWidth : prefs.deckWidth,
+                             prefs.advanced ? prefs.advancedHeight : prefs.deckHeight)
     }
 
     function setBigView(on) {

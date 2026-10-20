@@ -18,6 +18,7 @@ ColumnLayout {
     signal openBigView()
     signal openMini()
     signal openRadio()
+    signal openLibrary()
 
     readonly property string mono: "JetBrainsMono Nerd Font"
     readonly property bool coverShown: appearance.coverInDeck
@@ -41,12 +42,22 @@ ColumnLayout {
         label: "O M A M P"
 
         // In the title bar, where Winamp keeps its windowshade button: the
-        // big Now Playing view and the mini player.
+        // library and the big Now Playing view, said in words, and the mini
+        // player.
         tools: [
+            TitleButton {
+                objectName: "libraryButton"
+                skin: deck.skin
+                glyph: 0xF0CB8 // music box multiple
+                label: qsTr("Library")
+                tip: qsTr("Open the library (Tab)")
+                onClicked: deck.openLibrary()
+            },
             TitleButton {
                 objectName: "bigViewButton"
                 skin: deck.skin
                 glyph: 0xF0293 // fullscreen
+                label: qsTr("Now Playing")
                 tip: qsTr("Big Now Playing view (N)")
                 onClicked: deck.openBigView()
             },

@@ -30,6 +30,7 @@
 #include "streamresolver.h"
 #include "tageditor.h"
 #include "theme.h"
+#include "windowplacement.h"
 #include "translator.h"
 #include "visualiser.h"
 
@@ -172,6 +173,9 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("spotify", &spotify);
     engine.rootContext()->setContextProperty("radio", &radio);
     engine.rootContext()->setContextProperty("startMode", startMode);
+    // Whether Hyprland tiles the window, so it never tries to resize itself there.
+    WindowPlacement placement;
+    engine.rootContext()->setContextProperty("windowPlacement", &placement);
     // The command palette (Ctrl+K) searches the library once it is open, and
     // lists the actions Main.qml registers before that.
     engine.rootContext()->setContextProperty("commandPalette", library.palette());

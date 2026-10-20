@@ -33,6 +33,8 @@ FocusScope {
     signal nodeAction(string id, var node)
     signal autoDjClicked()
     signal partyClicked()
+    // The strip's Player button: back to the deck.
+    signal openPlayer()
 
     readonly property bool nowPlaying: library.currentKind === "nowplaying"
     // Files to Edit > Duplicates shows its own view instead of the list.
@@ -50,6 +52,26 @@ FocusScope {
     readonly property bool showingGrid: gridVisible && !special
 
     function focusSearch() { search.forceActiveFocus(); search.selectAll() }
+    // Spotify's own search box (the node must be chosen first), with text
+    // to search for at once when given.
+    function focusSpotifySearch(text) { spotifyView.focusSearch(text) }
+    // Where the search box looks: "local" (the library), "both" (the
+    // library, with Spotify's answers under it) or "spotify" (the Spotify
+    // node's own search). Only offered while Spotify is on.
+    readonly property bool spotifyScopes: spotify.enabled && spotify.canBrowse
+    readonly property string searchScope: spotifyNode ? "spotify" : spotify.blendSearch ? "both" : "local"
+    function setSearchScope(scope) {
+        if (scope === "spotify") {
+            const text = search.text.trim()
+            const row = library.tree.reveal(["spotify"])
+            if (row >= 0) library.selectNode(row)
+            spotifyView.focusSearch(text)
+            return
+        }
+        spotify.blendSearch = scope === "both"
+        if (spotifyNode) library.selectNode(0)
+        focusSearch()
+    }
     function focusList() {
         if (nowPlaying) nowPlayingList.forceActiveFocus()
         else if (duplicatesNode) duplicatesView.forceActiveFocus()
@@ -96,7 +118,8 @@ FocusScope {
 
     Component.onCompleted: {
         if (columns !== "") table.restoreColumns(columns)
-        focusList()
+        // Built in the background while the deck shows: the keys stay there.
+        if (visible) focusList()
     }
 
     // The chosen radio group fills the picker.
@@ -134,6 +157,7 @@ FocusScope {
             onAutoDjClicked: view.autoDjClicked()
             onPartyClicked: view.partyClicked()
             onCoverClicked: view.action("big-view")
+            onOpenPlayer: view.openPlayer()
         }
 
         // Library actions, the search, and the view switches.
@@ -190,7 +214,7 @@ FocusScope {
                     selectionColor: theme.c.selection
                     selectedTextColor: theme.c.bright_foreground
                     clip: true
-                    onTextChanged: typing.restart()
+                    onTextChanged: if (!view.spotifyNode) typing.restart()
                     Keys.onPressed: (event) => {
                         if (event.key === Qt.Key_Escape) {
                             if (search.text !== "") search.text = ""
@@ -198,8 +222,12 @@ FocusScope {
                             event.accepted = true
                         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             typing.stop()
-                            library.tracks.filter = search.text
-                            view.focusList()
+                            // On the Spotify node the box searches Spotify.
+                            if (view.spotifyNode) view.focusSpotifySearch(search.text.trim())
+                            else {
+                                library.tracks.filter = search.text
+                                view.focusList()
+                            }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Down) {
                             view.focusList()
@@ -211,7 +239,9 @@ FocusScope {
                         visible: search.text === ""
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
-                        text: qsTr("Search  (/)   words, artist:name, year:1990..1999, rating:4..")
+                        text: view.spotifyNode ? qsTr("Search Spotify  (Enter)")
+                            : view.spotifyScopes && spotify.blendSearch ? qsTr("Search the library and Spotify  (/)")
+                            : qsTr("Search  (/)   words, artist:name, year:1990..1999, rating:4..")
                         font.pixelSize: 13
                         color: theme.c.muted
                     }
@@ -240,6 +270,41 @@ FocusScope {
                 text: library.tracks.filterError
                 font.pixelSize: 12
                 color: theme.c.red
+            }
+            // Where the search looks, when Spotify is on: said in words, so
+            // Spotify's search is found without knowing the tree.
+            Row {
+                objectName: "searchScope"
+                visible: view.spotifyScopes
+                spacing: 0
+                Repeater {
+                    model: [
+                        { id: "local", label: qsTr("Library"), tip: qsTr("Search your library only") },
+                        { id: "spotify", label: qsTr("Spotify"), tip: qsTr("Search Spotify: tracks, albums, artists and playlists") },
+                        { id: "both", label: qsTr("Both"), tip: qsTr("Search your library, with Spotify's answers under it") }
+                    ]
+                    Button {
+                        required property var modelData
+                        objectName: "searchScope_" + modelData.id
+                        text: modelData.label
+                        flat: true
+                        font.pixelSize: 12
+                        implicitHeight: 32; topInset: 0; bottomInset: 0
+                        leftPadding: 10; rightPadding: 10
+                        readonly property bool on: view.searchScope === modelData.id
+                        background: Rectangle {
+                            radius: Math.min(4, theme.radius)
+                            color: parent.on ? Qt.alpha(theme.accent, 0.16)
+                                 : parent.hovered ? Qt.alpha(theme.c.selection, 0.5) : "transparent"
+                            border.width: 1
+                            border.color: parent.on ? Qt.alpha(theme.accent, 0.7) : theme.c.lighter_background
+                        }
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: modelData.tip
+                        onClicked: view.setSearchScope(modelData.id)
+                    }
+                }
             }
             Item { Layout.fillWidth: library.tracks.filterError === "" }
 
@@ -306,6 +371,8 @@ FocusScope {
                 onWidthChanged: view.layoutEdited()
                 locked: view.playlistsLocked
                 onNodeAction: (id, node) => view.nodeAction(id, node)
+                // Clicking Spotify puts the keys in its search box.
+                onNodeClicked: if (view.spotifyNode) spotifyView.focusSearch("")
             }
 
             SplitView {

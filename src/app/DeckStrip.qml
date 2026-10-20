@@ -17,6 +17,8 @@ Rectangle {
     signal partyClicked()
     // The cover: opens the big Now Playing view.
     signal coverClicked()
+    // Back to the full deck (the player).
+    signal openPlayer()
 
     readonly property string mono: "JetBrainsMono Nerd Font"
 
@@ -169,6 +171,26 @@ Rectangle {
                 fill: theme.c.cyan
                 onMoved: (v) => backend.volume = Math.round(v * 100)
             }
+        }
+
+        // Back to the deck, said in words.
+        Button {
+            objectName: "playerButton"
+            text: qsTr("Player")
+            flat: true
+            font.pixelSize: 13
+            implicitHeight: 36; topInset: 0; bottomInset: 0
+            // Outlined, so it reads as a button among the lamps.
+            background: Rectangle {
+                radius: Math.min(4, theme.radius)
+                color: parent.hovered ? Qt.alpha(theme.c.selection, 0.6) : "transparent"
+                border.width: 1
+                border.color: parent.hovered ? theme.accent : Qt.alpha(theme.c.foreground, 0.3)
+            }
+            ToolTip.visible: hovered
+            ToolTip.delay: 600
+            ToolTip.text: qsTr("Back to the player (Tab)")
+            onClicked: strip.openPlayer()
         }
     }
 }

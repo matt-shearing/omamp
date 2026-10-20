@@ -169,6 +169,8 @@ void LibraryController::setPicker(FolderPicker *picker) {
     connect(picker, &FolderPicker::failed, this, &LibraryController::setMessage);
 }
 
+bool LibraryController::hasDatabase() const { return QFileInfo::exists(m_path); }
+
 bool LibraryController::activate() {
     if (m_ready)
         return true;

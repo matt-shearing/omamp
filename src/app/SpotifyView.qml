@@ -21,7 +21,20 @@ FocusScope {
                                    ? spotify.items.get(list.currentIndex) : null
     readonly property bool currentIsTrack: current !== null && current.kind === "track"
 
-    function focusList() { list.forceActiveFocus() }
+    // The list, or the search box while there is no list yet.
+    function focusList() {
+        if (spotify.items.count === 0 && searchField.enabled) searchField.forceActiveFocus()
+        else list.forceActiveFocus()
+    }
+    // The search box, with text to search for at once when given.
+    function focusSearch(text) {
+        if (text) {
+            searchField.text = text
+            spotify.search(text)
+        }
+        searchField.forceActiveFocus()
+        searchField.selectAll()
+    }
     function activate(row) {
         const item = spotify.items.get(row)
         if (!item.kind) return

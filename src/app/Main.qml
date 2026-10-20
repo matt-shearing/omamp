@@ -35,7 +35,7 @@ ApplicationWindow {
                                       || partySheet.opened || settingsSheet.opened
                                       || identifySheet.opened || coverChooser.opened || volumesSheet.opened
                                       || nasGuideSheet.opened || remoteSheet.opened || devicesSheet.opened
-                                      || radioUi.sheetOpen
+                                      || radioUi.sheetOpen || mainMenu.anyOpen || aboutDialog.opened
     // Party mode: what guests may do (PartyMode's action names).
     function may(action) { void library.dj.partyOn; return library.dj.allowed(action) }
     // Asks first; says so when party mode locks it.
@@ -65,20 +65,67 @@ ApplicationWindow {
         property bool infoVisible: false
         property int infoWidth: 290
         property bool gridVisible: false
+        // The menu bar (View → Show the menu bar), and whether the hint
+        // that says how to open the library has been seen.
+        property bool menuBar: true
+        property bool libraryHintDone: false
     }
+
+    // ---- The menu bar ------------------------------------------------------
+
+    // Shown in the deck and the library; F10 or Alt shows it for a moment
+    // while it is switched off.
+    property bool menuPeek: false
+    // The library view gets built in the background after start-up.
+    property bool libraryWarm: false
+    readonly property bool menuBarShown: modes.compact === "" && !modes.bigView && !library.dj.partyDisplay
+                                         && (prefs.menuBar || menuPeek)
+    menuBar: MainMenuBar {
+        id: mainMenu
+        window: win
+        modes: modes
+        prefs: prefs
+        visible: win.menuBarShown
+        onAnyOpenChanged: if (!anyOpen && win.menuPeek) win.menuPeek = false
+    }
+    // F10: the menu bar's first menu, showing the bar first if it is off.
+    function openMenuBar() {
+        if (modes.compact !== "" || modes.bigView || library.dj.partyDisplay) return
+        if (!prefs.menuBar) menuPeek = true
+        Qt.callLater(mainMenu.openFirst)
+    }
+
+    // ---- Window size ---------------------------------------------------------
+
+    // Hyprland decides a tiled window's size; asking for another one only
+    // makes Qt lay the content out at the wrong size until the compositor
+    // answers. Each mode's size is remembered and applied only while the
+    // window floats (or without Hyprland).
+    readonly property bool sizeManaged: typeof windowPlacement !== "undefined" && windowPlacement !== null
+                                        && windowPlacement.managed
+    function resizeTo(w, h) {
+        if (sizeManaged) return
+        width = w
+        height = h
+    }
+    onActiveChanged: if (typeof windowPlacement !== "undefined" && windowPlacement) windowPlacement.refresh()
+    onWidthChanged: if (typeof windowPlacement !== "undefined" && windowPlacement) windowPlacement.refresh()
+    onHeightChanged: if (typeof windowPlacement !== "undefined" && windowPlacement) windowPlacement.refresh()
 
     function rememberLayout() {
         if (modes.compact !== "") { modes.rememberSize(); return }
         if (advanced) {
-            prefs.advancedWidth = width
-            prefs.advancedHeight = height
+            if (!sizeManaged) {
+                prefs.advancedWidth = width
+                prefs.advancedHeight = height
+            }
             if (advancedLoader.item) {
                 prefs.columns = advancedLoader.item.columnState()
                 prefs.treeWidth = advancedLoader.item.currentTreeWidth()
                 if (prefs.browserVisible) prefs.browserHeight = advancedLoader.item.currentBrowserHeight()
                 if (prefs.infoVisible) prefs.infoWidth = advancedLoader.item.currentInfoWidth()
             }
-        } else {
+        } else if (!sizeManaged) {
             prefs.deckWidth = width
             prefs.deckHeight = height
         }
@@ -89,8 +136,8 @@ ApplicationWindow {
         if (on === advanced) return
         rememberLayout()
         prefs.advanced = on
-        width = on ? prefs.advancedWidth : prefs.deckWidth
-        height = on ? prefs.advancedHeight : prefs.deckHeight
+        resizeTo(on ? prefs.advancedWidth : prefs.deckWidth, on ? prefs.advancedHeight : prefs.deckHeight)
+        if (on) prefs.libraryHintDone = true
         if (on && advancedLoader.item) advancedLoader.item.focusList()
     }
 
@@ -135,6 +182,10 @@ ApplicationWindow {
         rememberLayout()
     }
     Component.onCompleted: {
+        // The size is set from here on by resizeTo() only, so changing mode
+        // never resizes a window the compositor manages.
+        width = width
+        height = height
         if (advanced) library.activate()
         registerActions()
         modes.registerActions(commandPalette)
@@ -221,6 +272,17 @@ ApplicationWindow {
         p.addAction("sync-device", qsTr("Sync the chosen device now"), ["sync", "phone", "usb", "device"], "")
         p.addAction("export-csv", qsTr("Save this list as CSV…"), ["report", "export", "spreadsheet", "csv", "excel"], "")
         p.addAction("export-html", qsTr("Save this list as a web page (HTML)…"), ["report", "export", "html", "print", "web page"], "")
+        // The menu bar's own (MainMenuBar.qml), in the palette too.
+        p.addAction("view-player", qsTr("Show the player (the deck)"), ["deck", "player", "view", "back"], "Tab")
+        p.addAction("view-library", qsTr("Show the library"), ["library", "advanced", "view", "browse"], "Tab")
+        p.addAction("library-add-folder", qsTr("Add a folder to the library…"), ["import", "scan", "music folder"], "")
+        p.addAction("open-folder", qsTr("Open a folder in Now Playing…"), ["open", "play folder", "files"], "")
+        p.addAction("seek-back", qsTr("Back 5 seconds"), ["seek", "rewind"], "←")
+        p.addAction("seek-forward", qsTr("Forward 5 seconds"), ["seek", "fast forward"], "→")
+        p.addAction("toggle-menu-bar", qsTr("Show or hide the menu bar"), ["menu", "menubar", "file", "view"], "F10")
+        p.addAction("about", qsTr("About Omamp"), ["version", "licence", "license", "help"], "")
+        p.addAction("open-website", qsTr("Omamp on GitHub"), ["help", "documentation", "docs", "website", "issues"], "")
+        p.addAction("open-mediamonkey-guide", qsTr("Importing from MediaMonkey (guide)"), ["mediamonkey", "mm.db", "import", "help"], "")
         p.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help", "keys"], "?")
         p.addAction("quit", qsTr("Quit"), ["exit", "close"], "Q")
     }
@@ -252,6 +314,10 @@ ApplicationWindow {
     function backToList() {
         if (advanced && advancedLoader.item && !sheetOpen) advancedLoader.item.focusList()
     }
+    // Spotify's node with its own search box taking the keys (SpotifyHooks).
+    function focusSpotifySearch(text) {
+        if (advancedLoader.item) advancedLoader.item.focusSpotifySearch(text)
+    }
     function goToNode(keys) {
         setAdvanced(true)
         const row = library.tree.reveal(keys)
@@ -259,8 +325,18 @@ ApplicationWindow {
         if (advancedLoader.item) advancedLoader.item.focusList()
     }
 
+    // Whether each action can run now, as updateActions() last worked it
+    // out: the palette greys what is false, and so does the menu bar.
+    property var actionStates: ({})
+    function actionEnabled(id) {
+        const lock = lockFor(id)
+        if (lock !== undefined && !may(lock)) return false
+        return actionStates[id] !== false
+    }
     function updateActions() {
-        const p = commandPalette
+        const states = {}
+        const palette = commandPalette
+        const p = { setActionEnabled: (id, on) => { states[id] = on; palette.setActionEnabled(id, on) } }
         p.setActionEnabled("rescan", !library.busy)
         p.setActionEnabled("cancel-job", library.busy)
         const listed = advanced && library.ready && library.currentKind !== "nowplaying"
@@ -301,7 +377,14 @@ ApplicationWindow {
         // A job running meanwhile only makes these wait their turn.
         p.setActionEnabled("undo", library.undoText !== "" || library.busy)
         p.setActionEnabled("redo", library.redoText !== "" || library.busy)
+        p.setActionEnabled("time", !backend.live)
+        const deck = !advanced
+        p.setActionEnabled("seek-back", backend.currentIndex >= 0 && !backend.live)
+        p.setActionEnabled("seek-forward", backend.currentIndex >= 0 && !backend.live)
+        p.setActionEnabled("lyrics", true)
         radioUi.updateActions(p)
+        spotifyHooks.updateActions(p)
+        actionStates = states
     }
 
     // The tree node that is chosen, as the tree's menu hands it over.
@@ -394,10 +477,8 @@ ApplicationWindow {
         }
     }
 
-    function runAction(id) {
-        const view = advancedLoader.item
-        // Party mode locks what guests may not do.
-        const locks = { "edit-tags": "edit-tags", "edit-title": "edit-tags", "organise": "edit-tags",
+    // Party mode: the guest permission each action needs (PartyMode's names).
+    readonly property var actionLocks: ({ "edit-tags": "edit-tags", "edit-title": "edit-tags", "organise": "edit-tags",
                         "tag-from-filename": "edit-tags", "undo": "edit-tags", "redo": "edit-tags",
                         "undo-history": "edit-tags", "find-duplicates": "edit-tags",
                         "identify": "edit-tags", "find-cover": "edit-tags", "find-missing-covers": "edit-tags",
@@ -410,10 +491,43 @@ ApplicationWindow {
                         "play-pause": "play", "play": "play", "stop": "play", "next": "skip", "previous": "skip",
                         "volume-up": "volume", "volume-down": "volume", "shuffle": "reorder", "repeat": "reorder",
                         "queue-selection": "add", "append-selection": "add", "play-selection": "play",
-                        "advanced": "library", "search": "library", "settings-appearance": "settings" }
-        if (locks[id] !== undefined && !guard(locks[id])) return
+                        "advanced": "library", "search": "library", "settings-appearance": "settings",
+                        "view-library": "library", "browser": "library", "grid": "library", "info": "library",
+                        "lyrics": "library", "entire": "library", "now-playing": "library",
+                        "library-add-folder": "settings", "open-folder": "settings",
+                        "seek-back": "seek", "seek-forward": "seek",
+                        "new-playlist": "edit-playlists", "new-autoplaylist": "edit-playlists",
+                        "new-playlist-folder": "edit-playlists", "import-playlists": "edit-playlists",
+                        "save-now-playing": "edit-playlists", "new-collection": "edit-playlists",
+                        "rename-playlist": "edit-playlists", "delete-playlist": "edit-playlists",
+                        "edit-autoplaylist": "edit-playlists", "edit-collection": "edit-playlists",
+                        "export-csv": "library", "export-html": "library",
+                        "radio": "play", "radio-find": "settings", "radio-add": "settings",
+                        "radio-import": "settings", "radio-export": "settings",
+                        "radio-next": "skip", "radio-previous": "skip",
+                        "spotify": "library", "spotify-search": "library", "spotify-like": "settings",
+                        "spotify-section:playlists": "library", "spotify-section:liked": "library",
+                        "spotify-section:albums": "library", "spotify-section:artists": "library",
+                        "settings-spotify": "settings", "toggle-menu-bar": "settings" })
+    function lockFor(id) {
+        if (actionLocks[id] !== undefined) return actionLocks[id]
+        if (id.startsWith("radio:")) return "play"
+        if (id.startsWith("audit:")) return "library"
+        if (id.startsWith("deck-style:")) return "settings"
+        return undefined
+    }
+
+    // The last action that ran (past party mode's locks), for the tests.
+    property string lastAction: ""
+    function runAction(id) {
+        const view = advancedLoader.item
+        // Party mode locks what guests may not do.
+        const lock = lockFor(id)
+        if (lock !== undefined && !guard(lock)) return
+        lastAction = id
         if (modes.runAction(id)) return
         if (radioUi.runAction(id)) return
+        if (spotifyHooks.runAction(id)) return
         switch (id) {
         case "play-pause": backend.toggle(); break
         case "play": backend.play(); break
@@ -426,6 +540,20 @@ ApplicationWindow {
         case "volume-down": backend.volume -= 5; break
         case "time": showRemaining = !showRemaining; break
         case "advanced": setAdvanced(!advanced); break
+        // The menu bar's View → Player and View → Library.
+        case "view-player": if (modes.bigView) modes.setBigView(false); setAdvanced(false); break
+        case "view-library": if (modes.bigView) modes.setBigView(false); setAdvanced(true); break
+        case "library-add-folder": setAdvanced(true); library.addFolder(); break
+        case "open-folder": backend.openFolder(); break
+        case "seek-back": backend.seekBy(-5000); break
+        case "seek-forward": backend.seekBy(5000); break
+        case "toggle-menu-bar": prefs.menuBar = !prefs.menuBar; menuPeek = false; break
+        case "palette": palette.toggle(); break
+        case "about": aboutDialog.open(); break
+        case "open-website": Qt.openUrlExternally("https://github.com/matt-shearing/omamp"); break
+        case "open-mediamonkey-guide":
+            Qt.openUrlExternally("https://github.com/matt-shearing/omamp/blob/main/docs/mediamonkey-import.md")
+            break
         case "search": setAdvanced(true); if (advancedLoader.item) advancedLoader.item.focusSearch(); break
         case "browser": toggleBrowser(); break
         case "grid": toggleGrid(); break
@@ -589,13 +717,14 @@ ApplicationWindow {
     Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.showRemaining = !win.showRemaining }
     // Advanced mode.
     Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("library"); onActivated: win.setAdvanced(!win.advanced) }
-    Shortcut { sequences: ["/", "Ctrl+F"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced)
-               onActivated: advancedLoader.item.focusSearch() }
-    Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.runAction("rescan") }
+    // These open the library from the deck too, as their menu entries do.
+    Shortcut { sequences: ["/", "Ctrl+F"]; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.may("library")
+               onActivated: win.runAction("search") }
+    Shortcut { sequence: "F5"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("rescan") }
     // B stays Winamp's "next", so the column browser takes Ctrl+B.
-    Shortcut { sequence: "Ctrl+B"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleBrowser() }
-    Shortcut { sequence: "I"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleInfo() }
-    Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && (win.advanced); onActivated: win.toggleGrid() }
+    Shortcut { sequence: "Ctrl+B"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("browser") }
+    Shortcut { sequence: "I"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("info") }
+    Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("grid") }
     Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: palette.toggle() }
     // Phase 2: tags, organise, undo.
     Shortcut { sequence: "Ctrl+E"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && win.advanced; onActivated: win.runAction("edit-tags") }
@@ -616,12 +745,30 @@ ApplicationWindow {
     Shortcut { sequence: "Shift+V"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("next-visualiser") }
     Shortcut { sequence: "Shift+L"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen && modes.bigView; onActivated: win.runAction("big-lyrics") }
     Shortcut { sequence: "Ctrl+M"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("mini-player") }
+    // The menu bar: F10 opens its first menu (showing it if it is off).
+    Shortcut { sequence: "F10"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.openMenuBar() }
     Shortcut { sequence: "Ctrl+Shift+M"; context: Qt.ApplicationShortcut; enabled: !win.sheetOpen; onActivated: win.runAction("micro-player") }
 
     Item {
+        id: root
         anchors.fill: parent
         LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
         LayoutMirroring.childrenInherit: true
+        // Takes the keys nothing else wants (the deck has no focus item), so
+        // Alt on its own reaches the handler below.
+        focus: true
+        // Alt pressed and let go on its own shows a hidden menu bar for a
+        // moment, as in other desktop apps; Alt with another key doesn't.
+        property bool altAlone: false
+        Keys.onPressed: (event) => { root.altAlone = event.key === Qt.Key_Alt }
+        Keys.onReleased: (event) => {
+            if (event.key === Qt.Key_Alt && root.altAlone && !prefs.menuBar && !win.sheetOpen
+                    && modes.compact === "" && !modes.bigView) {
+                win.menuPeek = !win.menuPeek
+                event.accepted = true
+            }
+            root.altAlone = false
+        }
 
         // The deck (DeckView.qml), in the deck style from Settings > Appearance.
         DeckView {
@@ -637,14 +784,20 @@ ApplicationWindow {
             onOpenBigView: win.runAction("big-view")
             onOpenMini: win.runAction("mini-player")
             onOpenRadio: win.runAction("radio")
+            onOpenLibrary: win.runAction("view-library")
         }
 
         // Advanced mode, built the first time it is shown.
+        // Built while the deck sits idle shortly after start-up, so the
+        // first Tab is as quick as the rest. Synchronously: built
+        // asynchronously, its lists' rows were still being made when the
+        // library opened and reset them.
         Loader {
             id: advancedLoader
             anchors.fill: parent
-            active: win.advanced || item !== null
+            active: win.advanced || win.libraryWarm || item !== null
             visible: win.advanced && modes.compact === ""
+            onLoaded: if (win.advanced) item.focusList()
             sourceComponent: AdvancedView {
                 objectName: "advancedView"
                 showRemaining: win.showRemaining
@@ -664,6 +817,63 @@ ApplicationWindow {
                 onNodeAction: (id, node) => win.nodeAction(id, node)
                 onAutoDjClicked: win.runAction("autodj")
                 onPartyClicked: win.runAction("party")
+                onOpenPlayer: win.runAction("view-player")
+            }
+        }
+        // A library that already exists is opened then too, so the first
+        // Tab doesn't wait for the database and the first query either.
+        Timer {
+            interval: 1500
+            running: !win.libraryWarm
+            onTriggered: {
+                win.libraryWarm = true
+                if (library.hasDatabase()) library.activate()
+            }
+        }
+
+        // How to reach the library, once: for people who only ever saw the
+        // deck. Gone for good when closed or when the library opens.
+        Rectangle {
+            id: libraryHint
+            objectName: "libraryHint"
+            visible: !prefs.libraryHintDone && !win.advanced && modes.compact === "" && !modes.bigView
+                     && !library.dj.partyDisplay
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 14 }
+            height: hintRow.implicitHeight + 16
+            radius: Math.min(6, theme.radius)
+            color: theme.c.dark_background
+            border.width: 1
+            border.color: theme.accent
+            RowLayout {
+                id: hintRow
+                anchors { fill: parent; leftMargin: 12; rightMargin: 6; topMargin: 8; bottomMargin: 8 }
+                spacing: 8
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    text: qsTr("Press Tab or use View → Library to open your library.")
+                    font.pixelSize: 13
+                    color: theme.c.bright_foreground
+                }
+                Button {
+                    objectName: "libraryHintOpen"
+                    text: qsTr("Open library")
+                    flat: true
+                    font.pixelSize: 13
+                    implicitHeight: 32; topInset: 0; bottomInset: 0
+                    onClicked: win.runAction("view-library")
+                }
+                Button {
+                    objectName: "libraryHintClose"
+                    text: "✕"
+                    flat: true
+                    font.pixelSize: 13
+                    implicitWidth: 32; implicitHeight: 32; topInset: 0; bottomInset: 0
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: qsTr("Don't show this again")
+                    onClicked: prefs.libraryHintDone = true
+                }
             }
         }
 
@@ -751,13 +961,54 @@ ApplicationWindow {
             function onCoverChanged() { if (library.web.coverState === "choose" && !coverChooser.opened) coverChooser.open() }
         }
 
+        // Help → About Omamp.
+        Dialog {
+            id: aboutDialog
+            objectName: "aboutDialog"
+            parent: Overlay.overlay
+            anchors.centerIn: parent
+            modal: true
+            title: qsTr("About Omamp")
+            standardButtons: Dialog.Close
+            Material.roundedScale: theme.radius
+            onClosed: win.backToList()
+            ColumnLayout {
+                spacing: 8
+                Text {
+                    text: Qt.application.version !== "" ? qsTr("Omamp %1").arg(Qt.application.version) : "Omamp"
+                    font.pixelSize: 18; font.bold: true
+                    color: theme.c.bright_foreground
+                }
+                Text {
+                    Layout.maximumWidth: 380
+                    wrapMode: Text.Wrap
+                    text: qsTr("A Winamp-style player and a MediaMonkey-style library manager, in your Omarchy theme.")
+                    font.pixelSize: 13
+                    color: theme.c.foreground
+                }
+                Text {
+                    text: qsTr("MIT licence. Copyright © 2026 Matt Shearing.")
+                    font.pixelSize: 12
+                    color: theme.c.light_foreground
+                }
+                Text {
+                    text: "<a href=\"https://github.com/matt-shearing/omamp\">github.com/matt-shearing/omamp</a>"
+                    textFormat: Text.StyledText
+                    linkColor: theme.accent
+                    font.pixelSize: 12
+                    onLinkActivated: (link) => Qt.openUrlExternally(link)
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                }
+            }
+        }
+
         Toast {
             id: toast
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 48
         }
-        SpotifyHooks { window: win; settings: settingsSheet; toast: toast }
+        SpotifyHooks { id: spotifyHooks; window: win; settings: settingsSheet; toast: toast }
         Connections {
             target: library
             function onToast(text) { toast.show(text) }
@@ -831,6 +1082,7 @@ ApplicationWindow {
                             ["Ctrl+M", qsTr("Mini player (Ctrl+Shift+M: micro)")],
                             ["Shift+R  [  ]", qsTr("Radio channels; previous or next channel")],
                             ["Tab", qsTr("Back to the deck")],
+                            ["F10  Alt", qsTr("Menu bar (Alt shows it when hidden)")],
                             ["?", qsTr("Show or hide these keys")],
                             ["Q", qsTr("Quit")]
                         ]],
@@ -891,6 +1143,7 @@ ApplicationWindow {
                             ["Shift+R", qsTr("Radio: choose a channel")],
                             ["[  ]", qsTr("Previous or next radio channel")],
                             ["Tab", qsTr("Open the library (advanced mode)")],
+                            ["F10  Alt", qsTr("Menu bar (Alt shows it when hidden)")],
                             ["Ctrl+K", qsTr("Command palette")],
                             ["Ctrl+J", qsTr("Auto-DJ on or off")],
                             ["Ctrl+,", qsTr("Settings")],

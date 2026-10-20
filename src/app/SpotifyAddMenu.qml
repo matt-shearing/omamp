@@ -17,6 +17,36 @@ Menu {
     signal action(string id)
     readonly property bool omampAllowed: { void library.dj.partyOn; return library.dj.allowed("edit-playlists") }
 
+    topPadding: 4; bottomPadding: 4
+    // As wide as its widest line (Material's menus stay 200 pixels wide and
+    // cut longer playlist names off), as the menu bar's menus are.
+    function fitWidth() {
+        let widest = 160
+        for (let i = 0; i < count; ++i) {
+            const item = itemAt(i)
+            if (item && item.visible !== false && !(item instanceof MenuSeparator))
+                widest = Math.max(widest, item.implicitWidth)
+        }
+        width = Math.min(widest + leftPadding + rightPadding, 420)
+    }
+    onAboutToShow: fitWidth()
+    // A plain panel, as the menu bar's: Material's shadow is drawn by a GPU
+    // effect, which leaves a menu without any background in software rendering.
+    background: Rectangle {
+        implicitWidth: 200
+        implicitHeight: 30
+        radius: Math.min(6, theme.radius)
+        color: theme.c.background
+        border.width: 1
+        border.color: theme.c.lighter_background === theme.c.background ? theme.c.selection : theme.c.lighter_background
+    }
+
+    // Compact lines, like the track lists' menus' text.
+    component AddEntry: MenuItem {
+        implicitHeight: 32
+        font.pixelSize: 13
+    }
+
     // Where a group's playlists go: after its "New … playlist" entry.
     function indexAfter(item) {
         for (let i = 0; i < menu.count; ++i)
@@ -24,14 +54,15 @@ Menu {
         return menu.count
     }
 
-    MenuItem {
+    AddEntry {
         objectName: "spotifyAddOmampHeading"
         text: qsTr("Omamp playlists")
         enabled: false
+        implicitHeight: 28
         font.bold: true
         font.pixelSize: 12
     }
-    MenuItem {
+    AddEntry {
         id: newOmamp
         objectName: "spotifyAddNewOmamp"
         text: qsTr("New Omamp playlist…")
@@ -39,14 +70,15 @@ Menu {
         onTriggered: menu.action("spotify-new-omamp-playlist:" + menu.source)
     }
     MenuSeparator { }
-    MenuItem {
+    AddEntry {
         objectName: "spotifyAddSpotifyHeading"
         text: qsTr("Spotify playlists")
         enabled: false
+        implicitHeight: 28
         font.bold: true
         font.pixelSize: 12
     }
-    MenuItem {
+    AddEntry {
         id: newSpotify
         objectName: "spotifyAddNewSpotify"
         text: qsTr("New Spotify playlist…")
@@ -57,7 +89,7 @@ Menu {
 
     Instantiator {
         model: { void library.playlists.revision; return library.playlists.staticPlaylists() }
-        delegate: MenuItem {
+        delegate: AddEntry {
             required property var modelData
             objectName: "spotifyAddOmamp:" + modelData.name
             text: modelData.name
@@ -69,7 +101,7 @@ Menu {
     }
     Instantiator {
         model: spotify.ownPlaylists
-        delegate: MenuItem {
+        delegate: AddEntry {
             required property var modelData
             objectName: "spotifyAddSpotify:" + modelData.name
             text: modelData.name

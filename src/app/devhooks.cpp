@@ -3,11 +3,13 @@
 #include <QEventLoop>
 
 #include "librarycontroller.h"
+#include "spotifycontroller.h"
 
 #include <QCoreApplication>
 #include <QFile>
 #include <QImage>
 #include <QQmlApplicationEngine>
+#include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QTextStream>
@@ -203,6 +205,27 @@ void DevHooks::runDemo() {
             QEventLoop loop;
             QTimer::singleShot(arg.toInt(), &loop, &QEventLoop::quit);
             loop.exec();
+        } else if (verb == "spotifysection" || verb == "spotifyselect") {
+            // spotifysection:<liked|playlists|albums|artists> opens a
+            // Spotify section; spotifyselect:<rows> chooses rows in the
+            // Spotify list: "1-4" (a range), "+6" (one more), "2" (one).
+            auto *spotify = m_engine->rootContext()->contextProperty("spotify").value<SpotifyController *>();
+            if (!spotify) {
+                say("no spotify");
+            } else if (verb == "spotifysection") {
+                spotify->openSection(arg);
+            } else {
+                for (const QString &part : arg.split(',', Qt::SkipEmptyParts)) {
+                    if (part.startsWith('+')) {
+                        spotify->items()->select(part.mid(1).toInt(), Qt::ControlModifier);
+                    } else if (part.contains('-')) {
+                        spotify->items()->select(part.section('-', 0, 0).toInt());
+                        spotify->items()->select(part.section('-', 1).toInt(), Qt::ShiftModifier);
+                    } else {
+                        spotify->items()->select(part.toInt());
+                    }
+                }
+            }
         } else if (verb == "playlist")
             // playlist:<id> shows a playlist (opening its folders).
             m_library->playlists()->show(arg.toLongLong());

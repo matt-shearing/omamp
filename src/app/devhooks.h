@@ -25,7 +25,8 @@ class QQuickWindow;
 //       party:<preset> (party mode with the big display), playlist:<id>,
 //       set:<objectName>.<property>=<value> (any named item, sheets too),
 //       click:<objectName> (press a named button), wait:<ms> (let
-//       background work land).
+//       background work land), spotifysection:<section> and
+//       spotifyselect:<rows> ("1-4,+6": choose Spotify rows).
 //   OMAMP_SCREENSHOT=<file.png>   save the window there, then quit
 //   OMAMP_PROFILE=1               print the time to the first frame and, in
 //       advanced mode, how long a jump to the end, a sort and two searches

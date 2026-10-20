@@ -2,6 +2,33 @@
 
 What changed in each release of Omamp, newest first.
 
+## 0.3.1
+
+Fixes and layout options from the first days of real use.
+
+**Your layout**
+
+- An Art column: a small album cover at the start of every track list, with
+  compact, comfortable and large row heights. Columns can now be dragged into
+  any order.
+- A sidebar in the style of Spotify's: a big cover, lyrics, about the artist
+  and the album (from Wikipedia through MusicBrainz and Wikidata, or from notes
+  packaged with the album), credits, up next and track details. Each section
+  can be folded, hidden or moved.
+- A large now playing bar, at the top or the bottom, as an alternative to the
+  compact strip. Settings → Appearance → Layout gathers all of this, with a
+  Reset button.
+
+**Fixes**
+
+- The mini and micro players now float, shrink and pin themselves on Hyprland,
+  and go back to how the window was when you leave them.
+- Omamp follows the system's default sound output when a device disconnects
+  and comes back, instead of staying on the device it fell back to.
+- Albums from a Navidrome server get their covers from the server.
+- The Omarchy bar plugin shows the cover in the bar and as the centrepiece of
+  its panel.
+
 ## 0.3.0
 
 This release makes Omamp a place to listen as well as a place to manage music:

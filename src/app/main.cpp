@@ -35,7 +35,7 @@
 #include "translator.h"
 #include "visualiser.h"
 
-static const char *version = "0.3.0";
+static const char *version = "0.3.1";
 
 int main(int argc, char *argv[]) {
     DevHooks::markStart();

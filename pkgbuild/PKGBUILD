@@ -1,5 +1,5 @@
 pkgname=omamp
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='A Winamp-style music player that wears the Omarchy theme'
 arch=('x86_64' 'aarch64')

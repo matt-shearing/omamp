@@ -1,12 +1,13 @@
 pkgbase = omamp
 	pkgdesc = A Winamp-style music player and library manager that wears the Omarchy theme
-	pkgver = 0.2.0
+	pkgver = 0.3.0
 	pkgrel = 1
 	url = https://github.com/matt-shearing/omamp
 	arch = x86_64
 	arch = aarch64
 	license = MIT
 	makedepends = pkgconf
+	makedepends = cargo
 	depends = bash
 	depends = glibc
 	depends = hicolor-icon-theme
@@ -26,7 +27,8 @@ pkgbase = omamp
 	optdepends = xdg-utils: xdg-open, for "Show in folder"
 	optdepends = hyprland: hyprctl, to match the window rounding of the desktop
 	optdepends = quickshell: the Omarchy bar plugin in /usr/share/omamp/omarchy-plugin
-	source = omamp-0.2.0.tar.gz::https://github.com/matt-shearing/omamp/archive/refs/tags/v0.2.0.tar.gz
-	sha256sums = a684ab65b0580e51dc09505555e2281d025c91871a443e1487428e6db04573bc
+	optdepends = spotify-player: Spotify beside your own music (Settings > Spotify)
+	source = omamp-0.3.0.tar.gz::https://github.com/matt-shearing/omamp/archive/refs/tags/v0.3.0.tar.gz
+	sha256sums = SKIP
 
 pkgname = omamp

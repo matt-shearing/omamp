@@ -4,11 +4,11 @@ This folder holds the files the AUR needs for Omamp. Nothing here has been publi
 
 | File | What it is |
 | --- | --- |
-| `PKGBUILD` | Builds Omamp 0.2.0 from the GitHub tag's source tarball |
+| `PKGBUILD` | Builds Omamp 0.3.0 and its Spotify session helper from the GitHub tag's source tarball |
 | `.SRCINFO` | The metadata the AUR reads, generated from `PKGBUILD` |
 | `.gitignore` | Keeps build output out of git |
 
-The package installs the `omamp` binary, the desktop entry, the icon, the licence, the README, and the
+The package installs the `omamp` binary, the `omamp-spotify-session` helper, the desktop entry, the icon, the licence, the README, and the
 Omarchy bar plugin in `/usr/share/omamp/omarchy-plugin/`. The plugin is per-user, so each user links it
 with `/usr/share/omamp/omarchy-plugin/install` and then runs `omarchy-restart-shell`.
 
@@ -18,30 +18,24 @@ On 2026-10-20 the AUR had no package called `omamp`, and a search for "omamp" fo
 
 ## Which version to publish
 
-`PKGBUILD` builds 0.2.0, the current release. Device sync and reports (Phase 6) arrive after it, so
-it may be better to tag 0.3.0 once they are merged and publish that instead; the steps under "The next
-release" below cover it.
-
-## Before publishing: push the tag
-
-The `v0.2.0` tag exists in your local checkout but not on GitHub, so the tarball URL in `PKGBUILD`
-returns 404 today. The commit itself (`ee538bd`) is on GitHub's `main`.
-
-The checksum in `PKGBUILD` is for a local `git archive` of the tag with the same contents. GitHub
-compresses its tarballs itself, so its checksum will almost certainly differ. After pushing the tag,
-refresh it:
+`PKGBUILD` builds 0.3.0. Its checksum is `SKIP` until the `v0.3.0` tag is on GitHub, because GitHub
+makes the tarball from the tag and compresses it itself. After the tag is pushed:
 
 ```sh
-cd ~/dev/omamp && git push origin v0.2.0
 cd ~/dev/omamp/aur
-updpkgsums                              # downloads the real tarball and rewrites sha256sums
+updpkgsums                              # downloads the real tarball and writes sha256sums
 makepkg --printsrcinfo > .SRCINFO
 ```
 
+The Spotify session helper is written in Rust, so the package needs `cargo` to build. `prepare()`
+fetches its crates with `cargo fetch --locked`, and `build()` then builds it with `--frozen`, so the
+build itself needs no network.
+
 ## How it was checked
 
-It was built with `makepkg -f` in a scratch folder, and the built binary reports `omamp 0.2.0`. It was
-not installed.
+0.2.0 was built with `makepkg -f` in a scratch folder, and the built binary reported `omamp 0.2.0`. It
+was not installed. The 0.3.0 changes (the helper, `cargo`) have not been built with `makepkg` yet,
+because the tarball doesn't exist until the tag is pushed.
 
 `namcap PKGBUILD` reports nothing. `namcap` on the built package reports four warnings, all expected:
 
@@ -89,7 +83,7 @@ cp ~/dev/omamp/aur/PKGBUILD ~/dev/omamp/aur/.SRCINFO ~/dev/omamp-aur/
 cd ~/dev/omamp-aur
 makepkg -f                              # optional last check against the real tarball
 git add PKGBUILD .SRCINFO
-git commit -m "omamp 0.2.0"
+git commit -m "omamp 0.3.0"
 git push
 ```
 
@@ -97,8 +91,8 @@ Cloning a name that does not exist yet gives an empty repository, and the first 
 
 ## The next release
 
-1. Tag the release and push the tag, e.g. `git tag v0.3.0 && git push origin v0.3.0`.
-2. In `PKGBUILD`, set `pkgver=0.3.0` and `pkgrel=1`. Raise only `pkgrel` when the packaging changes but
+1. Tag the release and push the tag, e.g. `git tag v0.4.0 && git push origin v0.4.0`.
+2. In `PKGBUILD`, set `pkgver=0.4.0` and `pkgrel=1`. Raise only `pkgrel` when the packaging changes but
    Omamp does not.
 3. Run `updpkgsums`, then `makepkg --printsrcinfo > .SRCINFO`.
 4. Build once with `makepkg -f`, then copy both files into the AUR clone, commit and push.

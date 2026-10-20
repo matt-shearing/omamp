@@ -1,0 +1,36 @@
+track	Coastline at 2 AM	7OqU7GsRSBR5QIa6RHgbtA
+track	Afterglow Avenue	CKrO3fWiBUNv7gSwfwoxCg
+track	Palm Shadows	i4ByJDo2TtoOtLN2QucL3d
+track	Saltwater Neon	5ug2EidNpTro3TJZLLgyP2
+track	Pixel Rain	EXPa1bLHXfZAYenzuniuLN
+track	Insert Coin	zRZltCrLtF1VIK4pQbn2Va
+track	High Score Heart	p1xhOrdb9Qjgz3DGCjjOli
+track	Static Bloom	oCinTyVVG5RGS3TJSqMZJV
+track	Velvet Signal	KALf6OOQFn1GoieDdz9Yha
+track	Cassette Moon	vPXWQ4sXIJCSVp6FVmhOHE
+track	Harbor Lights	UPJthj4TOdc5N1OUzquPr4
+track	Container Sunrise	SvLMADFU11Eh04Hi40P5px
+track	Foghorn Dreams	O74QVTn89gqSHaLs1GNxHZ
+track	Overdrive Hearts	7A0qgZgkAI0mW12ph7znFA
+track	Redline Romance	lw2HVEuovakXYaEazG2Nj0
+track	Turbo Twilight	WNKvwbDcx3kEglbazLSr15
+track	Night Ride Home	0rdwZeT8YcWtNIjYAE0DHE
+track	Tail Lights	wQXdPZOOVwucKyjbNz5PCm
+track	Last Exit Glow	7BuR6v2NDOA9TfnmM8Ly5u
+album	Afterglow Avenue	QTHrQM3bS53zLNUuIkfkWe
+album	Pixel Rain	V4vZIOhGZLTOOqQO8Z6HkD
+album	Static Bloom	gJ5xRF7aLzh6AzxxxgQkjq
+album	Harbor Lights	Iurgnq7dbvnUmVZrG0NYjB
+album	Overdrive Hearts	qF9nUXmA6EFjVy1I6OFg9m
+album	Night Ride Home	KpgS5SYGCZCReVxdiZ8I6p
+playlist	Late Night Drive	SQJW9AvMtoCHGVBgzFxF4j
+playlist	Focus Synth	0VrUKlvg2xsVLGIQnlwvds
+playlist	Gym Runs	lP5vtDrDQYnLNXR97RuD8e
+playlist	Synthwave Essentials	BkXpUu4U5ETauH9KxdwtMM
+playlist	Retro Futures	fZ32FENRUsLwCrBwv87qwr
+artist	Neon Coast	9JjaNfVJJQ3y07l7SBLq8D
+artist	Midnight Arcade	OkdulZLpRTuvF7tkWkEThK
+artist	Velvet Static	V2BfVn49lx64N1JZjQKwcY
+artist	Chrome Harbor	90pyvoeHgtEhwhU6DheAzu
+artist	Sunset Protocol	YxLSE8zC1CGcUluco35ouk
+artist	Lunar Drive	2AwfGufVJRuAPySiRHWkZ7

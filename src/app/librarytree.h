@@ -80,6 +80,11 @@ public:
     // upper case, or # for anything that isn't a letter.
     static QString letterOf(const QString &title);
 
+    // A top-level node that isn't the library's own (Spotify), shown after
+    // Devices while shown is true. Its kind is its key; it has no tracks,
+    // so the window shows a view of its own for it.
+    Q_INVOKABLE void setExtraNode(const QString &key, const QString &label, bool shown);
+
     // Reads the tree again after a scan, keeping what was open.
     Q_INVOKABLE void reload();
 
@@ -105,4 +110,5 @@ private:
     QSqlDatabase m_db;
     QVector<Node> m_nodes;
     QHash<QString, qint64> m_auditCounts;
+    QList<QPair<QString, QString>> m_extraNodes; // key, label
 };

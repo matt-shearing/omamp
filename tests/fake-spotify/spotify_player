@@ -1,0 +1,76 @@
+#!/bin/sh
+# A stand-in for spotify_player 0.25.1 in the tests: it answers from the
+# recorded JSON in $FAKE_SPOTIFY_DIR (tests/fixtures/spotify, copied), which
+# is shaped exactly as the real CLI prints it, and never touches the
+# network. Every call is logged to $FAKE_SPOTIFY_DIR/calls.log.
+#
+#   --daemon            stays running while daemon.alive exists
+#   playback start …    writes playback.json from tracks/full-<id>.json,
+#                       unless the file "free" exists (a Free account: the
+#                       real daemon fails in its log and nothing changes)
+#   playback pause|play flips is_playing
+#   fail-<verb>         makes that verb exit 1 with a "Bad request" message
+set -u
+D=${FAKE_SPOTIFY_DIR:?FAKE_SPOTIFY_DIR is not set}
+printf '%s\n' "$*" >> "$D/calls.log"
+
+case "${1:-}" in
+-d|--daemon)
+    touch "$D/daemon.alive"
+    while [ -f "$D/daemon.alive" ]; do sleep 0.2; done
+    exit 0 ;;
+esac
+
+if [ -f "$D/fail-$1" ]; then
+    cat "$D/fail-$1" >&2
+    exit 1
+fi
+
+answer() { if [ -f "$D/$1" ]; then cat "$D/$1"; else echo null; fi; }
+
+case "$1" in
+get)
+    if [ "$2" = key ]; then
+        case "$3" in
+        playback) answer playback.json ;;
+        devices) answer devices.json ;;
+        user-playlists) answer playlists.json ;;
+        user-liked-tracks) answer liked.json ;;
+        user-saved-albums) answer albums.json ;;
+        user-followed-artists) answer artists.json ;;
+        user-top-tracks) answer top.json ;;
+        *) echo "error: invalid value '$3' for '<key>'" >&2; exit 2 ;;
+        esac
+    else
+        # get item --id <id> <kind>
+        f="$D/items/$5-$4.json"
+        if [ -f "$f" ]; then cat "$f"; else echo "Bad request: Cannot find $5 with id='$4'" >&2; exit 1; fi
+    fi ;;
+search)
+    shift
+    [ "${1:-}" = "--" ] && shift
+    printf '%s\n' "$*" > "$D/last-search"
+    # search-<words>.json for a recorded search, else search.json.
+    named="search-$(printf '%s' "$*" | tr ' ' '-').json"
+    if [ -f "$D/$named" ]; then answer "$named"; else answer search.json; fi ;;
+playback)
+    case "$2" in
+    start)
+        # playback start track --id <id>, or context --id <id> <kind>
+        [ -f "$D/free" ] && exit 0
+        if [ "$3" = track ]; then
+            item=$(cat "$D/tracks/full-$5.json")
+            printf '{"device":{"id":"d1f00dfeedbeef0000000000000000000000000a","is_active":true,"is_private_session":false,"is_restricted":false,"name":"spotify-player","type":"Speaker","volume_percent":70},"repeat_state":"off","shuffle_state":false,"context":null,"timestamp":1760000000000,"progress_ms":0,"is_playing":true,"item":%s,"currently_playing_type":"track","actions":{"disallows":{}}}\n' "$item" > "$D/playback.json.new"
+            mv "$D/playback.json.new" "$D/playback.json"
+        fi ;;
+    pause) [ -f "$D/playback.json" ] && sed -i 's/"is_playing":true/"is_playing":false/' "$D/playback.json" ;;
+    play) [ -f "$D/playback.json" ] && sed -i 's/"is_playing":false/"is_playing":true/' "$D/playback.json" ;;
+    esac ;;
+playlist)
+    # playlist edit --track-id <t> add <playlist>
+    [ "$2" = edit ] && echo "Track '$4' added to playlist '$6'" ;;
+like|connect) ;;
+authenticate) echo "refusing: the tests never sign in" >&2; exit 1 ;;
+*) echo "error: unrecognized subcommand '$1'" >&2; exit 2 ;;
+esac
+exit 0

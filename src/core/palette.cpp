@@ -133,7 +133,7 @@ bool usesFields(const Query::Node &n) {
     return std::any_of(n.children.begin(), n.children.end(), usesFields);
 }
 
-const char *kindNames[] = {"action", "artist", "album", "track", "search"};
+const char *kindNames[] = {"action", "artist", "album", "track", "search", "external"};
 
 } // namespace
 
@@ -397,6 +397,14 @@ void Palette::search() {
             search.title = tr("Search the library for “%1”").arg(text);
             items << search;
         }
+        // Spotify's answers for this text, after everything local.
+        QStringList sources = m_external.keys();
+        sources.sort();
+        for (const QString &source : sources) {
+            const ExternalSet &set = m_external.value(source);
+            if (set.text.trimmed() == text)
+                items += set.items;
+        }
     }
     beginResetModel();
     const bool countChanges = items.size() != m_items.size();
@@ -406,6 +414,26 @@ void Palette::search() {
         emit countChanged();
     m_lastSearchMs = timer.nsecsElapsed() / 1e6;
     emit searched();
+}
+
+void Palette::setExternalResults(const QString &source, const QString &forText, const QList<Item> &items) {
+    QList<Item> rows = items;
+    for (Item &i : rows) {
+        i.kind = External;
+        i.source = source;
+    }
+    if (rows.isEmpty())
+        m_external.remove(source);
+    else
+        m_external.insert(source, {forText, rows});
+    search();
+}
+
+bool Palette::hasExternalRows() const {
+    for (const Item &i : m_items)
+        if (i.kind == External)
+            return true;
+    return false;
 }
 
 int Palette::rowCount(const QModelIndex &parent) const { return parent.isValid() ? 0 : int(m_items.size()); }
@@ -432,6 +460,8 @@ QVariant Palette::data(const QModelIndex &index, int role) const {
             return tr("Track");
         case Search:
             return tr("Search");
+        case External:
+            return item.kindLabel;
         }
         return {};
     case SubtitleRole:
@@ -441,7 +471,11 @@ QVariant Palette::data(const QModelIndex &index, int role) const {
     case ShortcutRole:
         return item.shortcut;
     case ItemIdRole:
-        return item.kind == Action ? QVariant(item.actionId) : QVariant(item.id);
+        return item.kind == Action || item.kind == External ? QVariant(item.actionId) : QVariant(item.id);
+    case SectionRole:
+        if (item.kind == External)
+            return item.source;
+        return hasExternalRows() ? tr("Local") : QString();
     case ScoreRole:
         return item.score;
     case EnabledRole:
@@ -453,7 +487,8 @@ QVariant Palette::data(const QModelIndex &index, int role) const {
 QHash<int, QByteArray> Palette::roleNames() const {
     return {{KindRole, "kind"},         {KindLabelRole, "kindLabel"}, {TitleRole, "title"},
             {SubtitleRole, "subtitle"}, {DetailRole, "detail"},       {ShortcutRole, "shortcut"},
-            {ItemIdRole, "itemId"},     {ScoreRole, "score"},         {EnabledRole, "actionEnabled"}};
+            {ItemIdRole, "itemId"},     {ScoreRole, "score"},         {EnabledRole, "actionEnabled"},
+            {SectionRole, "section"}};
 }
 
 QVariantMap Palette::get(int row) const {
@@ -493,6 +528,9 @@ bool Palette::activate(int row) {
         break;
     case Search:
         emit searchRequested(text);
+        break;
+    case External:
+        emit externalActivated(item.source, item.actionId);
         break;
     }
     emit activated(map);

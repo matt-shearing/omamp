@@ -17,6 +17,7 @@
 #include "artprovider.h"
 #include "cli.h"
 #include "devhooks.h"
+#include "handoffengine.h"
 #include "librarycontroller.h"
 #include "mpris.h"
 #include "nowplaying.h"
@@ -24,6 +25,7 @@
 #include "player.h"
 #include "playrecorder.h"
 #include "portal.h"
+#include "spotifycontroller.h"
 #include "streamresolver.h"
 #include "tageditor.h"
 #include "theme.h"
@@ -65,8 +67,15 @@ int main(int argc, char *argv[]) {
     // Tracks on a Subsonic server play through their signed stream URL,
     // asked for when they play and never saved.
     StreamResolver streams({});
-    Player player(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/state.json",
+    // Spotify (docs/spotify.md), off until switched on in Settings. Its
+    // tracks sit in Now Playing and play on the backend's Spotify Connect
+    // device: HandoffEngine passes them over and pauses Omamp's own engine.
+    SpotifyController spotify;
+    const QString statePath =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/state.json";
+    Player player(new HandoffEngine(Player::createEngine(statePath), spotify.playback()), statePath,
                   streams.function());
+    spotify.setPlayer(&player);
     QObject::connect(&player, &Player::folderRequested, &picker, &FolderPicker::pickFolders);
     QObject::connect(&picker, &FolderPicker::picked, &player, &Player::addPicked);
     QObject::connect(&picker, &FolderPicker::failed, &player, &Player::reportError);
@@ -117,8 +126,16 @@ int main(int argc, char *argv[]) {
     // Quitting part-way through a track still counts what was heard.
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &player, [&player] { player.finishPlay(false); });
 
+    // Spotify in the palette, the tree and the deck's cover.
+    spotify.setPalette(library.palette());
+    NowPlaying::setReferenceArt([&spotify](const QString &path) { return spotify.art()->fileForPath(path); });
+    auto spotifyNode = [&] { library.tree()->setExtraNode("spotify", QObject::tr("Spotify"), spotify.enabled()); };
+    QObject::connect(&spotify, &SpotifyController::settingsChanged, &library, spotifyNode);
+    spotifyNode();
+
     // The playing track's cover, for the window and for MPRIS.
     NowPlaying nowPlaying(&player);
+    QObject::connect(&spotify, &SpotifyController::playingArtChanged, &nowPlaying, &NowPlaying::refreshSoon);
     QObject::connect(&library, &LibraryController::revisionChanged, &nowPlaying, &NowPlaying::refreshSoon);
     const QString windowConf =
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/window.conf";
@@ -136,6 +153,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("library", &library);
     engine.rootContext()->setContextProperty("nowPlayingArt", &nowPlaying);
     engine.rootContext()->setContextProperty("appearance", &appearance);
+    engine.rootContext()->setContextProperty("spotify", &spotify);
     engine.rootContext()->setContextProperty("startMode", startMode);
     // The command palette (Ctrl+K) searches the library once it is open, and
     // lists the actions Main.qml registers before that.

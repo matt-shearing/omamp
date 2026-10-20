@@ -25,6 +25,9 @@ Library *StreamResolver::library() {
 }
 
 QUrl StreamResolver::resolve(const QString &path, qint64 trackId, QString *error) {
+    // Spotify plays elsewhere (HandoffEngine); the reference is enough.
+    if (path.startsWith(QLatin1String("spotify://")))
+        return QUrl(path);
     if (!path.startsWith(QLatin1String("subsonic://"))) {
         // Anything else that isn't a file: a plain http(s) address plays
         // as it is.

@@ -25,6 +25,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "spotifycontroller.h"
+
 #include "artprovider.h"
 #include "cli.h"
 #include "devicescontroller.h"
@@ -669,6 +671,8 @@ struct Window {
         engine.rootContext()->setContextProperty("library", library.get());
         engine.rootContext()->setContextProperty("commandPalette", library->palette());
         engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(root + "/window.conf"));
+        engine.rootContext()->setContextProperty(
+            "spotify", new SpotifyController(root + "/spotify.conf", root + "/spotify-art", &engine));
         engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider(root + "/library.db", root + "/art"));
         engine.load(QUrl("qrc:/Main.qml"));
         if (engine.rootObjects().size() != 1)

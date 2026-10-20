@@ -1,0 +1,14 @@
+#!/bin/sh
+# A stand-in for Spotifast's command line in the tests. now-playing --raw
+# prints $FAKE_SPOTIFY_DIR/spotifast-now.txt; play-uri, play, pause and
+# seek-to are logged to calls.log. Exits 1 (Spotifast not running) when
+# spotifast-down exists.
+set -u
+D=${FAKE_SPOTIFY_DIR:?FAKE_SPOTIFY_DIR is not set}
+printf 'spotifast %s\n' "$*" >> "$D/calls.log"
+[ -f "$D/spotifast-down" ] && { echo "Spotifast isn't running" >&2; exit 1; }
+case "${1:-}" in
+now-playing) cat "$D/spotifast-now.txt" 2>/dev/null ;;
+devices) echo '[{"id":"abc","name":"Spotifast","type":"Computer","is_active":true}]' ;;
+esac
+exit 0

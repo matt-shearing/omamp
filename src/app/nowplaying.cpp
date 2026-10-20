@@ -115,7 +115,14 @@ QByteArray readPicture(const QString &file) {
     return f.readAll();
 }
 
+std::function<QString(const QString &)> &referenceArt() {
+    static std::function<QString(const QString &)> lookup;
+    return lookup;
+}
+
 } // namespace
+
+void NowPlaying::setReferenceArt(std::function<QString(const QString &)> lookup) { referenceArt() = std::move(lookup); }
 
 NowPlaying::NowPlaying(Player *player, const QString &dbPath, const QString &cacheDir, QObject *parent)
     : QObject(parent), m_player(player), m_db(dbPath.isEmpty() ? Library::defaultPath() : dbPath),
@@ -234,8 +241,13 @@ NowPlaying::Art NowPlaying::resolve(const QString &path, qint64 trackId, const Q
         // The library looked and found nothing; the file may have gained a
         // picture since the last scan, so look at it as well.
     }
-    if (reference)
+    if (reference) {
+        // Spotify and the like keep their own pictures.
+        const QString file = referenceArt() ? referenceArt()(path) : QString();
+        if (!file.isEmpty() && storePicture(readPicture(file), cacheDir, &art))
+            art.source = "external";
         return art;
+    }
     // A file outside the library: its own picture first, as the library
     // prefers a track's embedded cover, then the folder's.
     QString mime;

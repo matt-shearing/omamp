@@ -105,6 +105,23 @@ QVariant LibraryTree::data(const QModelIndex &index, int role) const {
     return {};
 }
 
+void LibraryTree::setExtraNode(const QString &key, const QString &label, bool shown) {
+    bool present = false;
+    for (int i = 0; i < m_extraNodes.size(); ++i)
+        if (m_extraNodes[i].first == key) {
+            present = true;
+            if (!shown)
+                m_extraNodes.removeAt(i);
+            else
+                m_extraNodes[i].second = label;
+            break;
+        }
+    if (shown && !present)
+        m_extraNodes.append({key, label});
+    if (shown != present)
+        reload();
+}
+
 QVector<LibraryTree::Node> LibraryTree::topLevel() const {
     QVector<Node> out;
     auto group = [&](const QString &key, const QString &label) {
@@ -137,6 +154,13 @@ QVector<LibraryTree::Node> LibraryTree::topLevel() const {
     group("playlists", tr("Playlists"));
     group("filestoedit", tr("Files to Edit"));
     group("devices", tr("Devices"));
+    for (const auto &extra : m_extraNodes) {
+        Node n;
+        n.key = n.kind = extra.first;
+        n.label = extra.second;
+        n.where = "0";
+        out << n;
+    }
     return out;
 }
 

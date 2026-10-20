@@ -5,6 +5,7 @@
 #include <QString>
 #include <QThreadPool>
 #include <QTimer>
+#include <functional>
 
 class Player;
 
@@ -73,6 +74,11 @@ public:
     // Looks for the picture of any queue entry, as if it were playing
     // (tests, and previews).
     void lookUp(const QString &path, qint64 trackId) { start(path, trackId); }
+
+    // Pictures for queue entries outside the library (spotify://…): a
+    // function from the entry to a local picture file, or empty. It is
+    // called on the worker thread, so it must be safe there.
+    static void setReferenceArt(std::function<QString(const QString &path)> lookup);
 
     // Finds a picture for a track; runs on any thread. path is the queue
     // entry (a file, or subsonic://…), trackId the library id if known.

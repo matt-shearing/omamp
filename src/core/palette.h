@@ -2,6 +2,7 @@
 
 #include <QAbstractListModel>
 #include <QElapsedTimer>
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -26,7 +27,9 @@ class Palette : public QAbstractListModel {
     Q_PROPERTY(double lastSearchMs READ lastSearchMs NOTIFY searched)
 
 public:
-    enum Kind { Action, Artist, Album, Track, Search };
+    // External: a result from outside the library (Spotify), added with
+    // setExternalResults() once its own search answers.
+    enum Kind { Action, Artist, Album, Track, Search, External };
     Q_ENUM(Kind)
 
     enum Role {
@@ -39,6 +42,10 @@ public:
         ItemIdRole,                  // action id (string) or database id (number)
         ScoreRole,
         EnabledRole,
+        // Where a row comes from, for section headings: an external
+        // source's name ("Spotify"), "Local" for the rest while external
+        // rows are listed, and empty otherwise.
+        SectionRole,
     };
 
     struct Item {
@@ -47,6 +54,9 @@ public:
         qint64 id = 0;
         double score = 0;
         bool enabled = true;
+        // External rows: the source ("Spotify"), the reference handed back
+        // by externalActivated (a URI, in actionId), and the kind's label.
+        QString source, kindLabel;
     };
 
     explicit Palette(QObject *parent = nullptr);
@@ -79,6 +89,12 @@ public:
     // for a row that does not exist or a disabled action.
     Q_INVOKABLE bool activate(int row);
 
+    // Results from an external source for a given text. They show while
+    // the palette's text is that text, after the library's rows. An empty
+    // list takes the source's rows away.
+    void setExternalResults(const QString &source, const QString &forText, const QList<Item> &items);
+    Q_INVOKABLE bool hasExternalRows() const;
+
     // How many of each kind a search lists at most.
     void setLimits(int actions, int artists, int albums, int tracks);
 
@@ -101,6 +117,7 @@ signals:
     void trackActivated(qint64 trackId);
     void searchRequested(const QString &text);
     void activated(const QVariantMap &item);
+    void externalActivated(const QString &source, const QString &reference);
 
 private:
     struct ActionEntry {
@@ -125,6 +142,11 @@ private:
     QString m_text;
     QList<Item> m_items;
     QList<ActionEntry> m_actions;
+    struct ExternalSet {
+        QString text;
+        QList<Item> items;
+    };
+    QHash<QString, ExternalSet> m_external;
     qint64 m_useCounter = 0;
     double m_lastSearchMs = 0;
     int m_maxActions = 6, m_maxArtists = 4, m_maxAlbums = 4, m_maxTracks = 8;

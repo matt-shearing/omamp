@@ -11,6 +11,7 @@
 
 #include "appearance.h"
 #include "nowplaying.h"
+#include "spotifycontroller.h"
 
 class Player;
 class Theme;
@@ -21,4 +22,7 @@ inline void installNowPlaying(QQmlEngine &engine, Theme *theme, Player *player, 
     auto *now = new NowPlaying(player, dbPath, artDir, &engine);
     engine.rootContext()->setContextProperty("appearance", appearance);
     engine.rootContext()->setContextProperty("nowPlayingArt", now);
+    // Spotify, switched off, with its settings beside the test's pictures.
+    engine.rootContext()->setContextProperty(
+        "spotify", new SpotifyController(artDir + "/spotify.conf", artDir + "/spotify", &engine));
 }

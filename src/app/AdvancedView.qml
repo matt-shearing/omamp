@@ -21,6 +21,9 @@ FocusScope {
     property bool gridVisible: false
     property int browserHeight: 214
     property int infoWidth: 290
+    // The now playing bar (appearance.layout): "compact" or "large", "top" or "bottom".
+    readonly property string barSize: appearance.layout.barSize
+    readonly property string barPosition: appearance.layout.barPosition
     signal clockClicked()
     signal layoutEdited()
     signal toggleBrowser()
@@ -147,17 +150,17 @@ FocusScope {
         anchors.fill: parent
         spacing: 0
 
-        DeckStrip {
+        // The now playing bar: the strip, or the large bar, at the top or
+        // the bottom (Settings > Appearance > Layout, or the View menu).
+        Loader {
+            id: topBar
+            objectName: "topBarSlot"
             Layout.fillWidth: true
             Layout.margins: 8
             Layout.bottomMargin: 6
-            showRemaining: view.showRemaining
-            onClockClicked: view.clockClicked()
-            onOpenRadio: view.action("radio")
-            onAutoDjClicked: view.autoDjClicked()
-            onPartyClicked: view.partyClicked()
-            onCoverClicked: view.action("big-view")
-            onOpenPlayer: view.openPlayer()
+            active: view.barPosition === "top"
+            visible: active
+            sourceComponent: view.barSize === "large" ? bigBarComponent : stripComponent
         }
 
         // Library actions, the search, and the view switches.
@@ -320,7 +323,7 @@ FocusScope {
                 model: [
                     { name: "browserButton", label: qsTr("Browser"), on: view.browserVisible, tip: qsTr("Genre, artist and album columns (Ctrl+B)") },
                     { name: "gridButton", label: qsTr("Albums"), on: view.gridVisible, tip: qsTr("Album covers instead of the track list (G)") },
-                    { name: "infoButton", label: qsTr("Info"), on: view.infoVisible, tip: qsTr("Details of the chosen track (I)") }
+                    { name: "infoButton", label: qsTr("Sidebar"), on: view.infoVisible, tip: qsTr("Cover, lyrics, about the artist and details (I)") }
                 ]
                 Button {
                     required property var modelData
@@ -499,13 +502,14 @@ FocusScope {
                 }
             }
 
-            InfoPanel {
+            SidePanel {
                 id: info
                 visible: view.infoVisible
                 SplitView.preferredWidth: view.infoWidth
-                SplitView.minimumWidth: 220
+                SplitView.minimumWidth: 240
                 onWidthChanged: view.layoutEdited()
                 onEditLyrics: (id) => view.action("edit-lyrics:" + id)
+                onOpenBigView: view.action("big-view")
                 chosenHeading: view.showingGrid ? qsTr("Chosen album, first track") : ""
                 // The track under the cursor, or the album chosen in the grid;
                 // 0 shows the track that is playing.
@@ -518,6 +522,47 @@ FocusScope {
 
         JobsBar {
             Layout.fillWidth: true
+        }
+
+        Loader {
+            id: bottomBar
+            objectName: "bottomBarSlot"
+            Layout.fillWidth: true
+            Layout.margins: 8
+            Layout.topMargin: 6
+            active: view.barPosition === "bottom"
+            visible: active
+            sourceComponent: view.barSize === "large" ? bigBarComponent : stripComponent
+        }
+    }
+
+    Component {
+        id: stripComponent
+        DeckStrip {
+            objectName: "deckStrip"
+            showRemaining: view.showRemaining
+            onClockClicked: view.clockClicked()
+            onOpenRadio: view.action("radio")
+            onAutoDjClicked: view.autoDjClicked()
+            onPartyClicked: view.partyClicked()
+            onCoverClicked: view.action("big-view")
+            onOpenPlayer: view.openPlayer()
+        }
+    }
+    Component {
+        id: bigBarComponent
+        BigBar {
+            showRemaining: view.showRemaining
+            sidebarOn: view.infoVisible
+            queueOn: view.nowPlaying
+            onClockClicked: view.clockClicked()
+            onOpenRadio: view.action("radio")
+            onCoverClicked: view.action("big-view")
+            onToggleSidebar: view.toggleInfo()
+            onShowQueue: view.action("now-playing")
+            onShowLyrics: view.action("lyrics")
+            onOpenMini: view.action("mini-player")
+            onOpenPlayer: view.openPlayer()
         }
     }
 }

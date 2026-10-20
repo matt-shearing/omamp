@@ -180,6 +180,11 @@ FocusScope {
                 ? { id: pane.tracks.trackId(top), row: top, offset: table.contentY - top * pane.rowH } : null
         }
         function onModelAboutToBeReset() { table.contentY = 0 }
+        // Qt 6.12 sizes its row order once a column has been moved and
+        // never grows it: a list that gets longer would read past its end
+        // (std::out_of_range). Rows are never moved here, so drop it.
+        function onModelReset() { table.clearRowReordering() }
+        function onRowsInserted() { table.clearRowReordering() }
         function onReloaded() {
             const keep = pane.keepTop
             pane.keepTop = null
@@ -275,7 +280,7 @@ FocusScope {
             return Math.max(pane.defaultWidths[1], table.width - others - 12)
         }
         rowHeightProvider: function (row) { return pane.rowH }
-        onColumnsChanged: pane.applyPending()
+        onColumnsChanged: Qt.callLater(pane.applyPending)
         onWidthChanged: forceLayout()
         // A header dragged to a new place: the order follows it.
         // (TableView carries a hand-set width along with its column.)
@@ -379,10 +384,11 @@ FocusScope {
                 width: pane.artSize
                 height: pane.artSize
                 radius: Math.min(4, theme.radius)
-                color: thumb.status === Image.Ready ? "transparent" : theme.c.lighter_background
+                // Under the picture: shown while it loads, or when there is
+                // none (the provider then sends a clear square).
+                color: theme.c.lighter_background
                 Text {
                     anchors.centerIn: parent
-                    visible: thumb.status !== Image.Ready
                     text: String.fromCodePoint(0xF075A) // a music note
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: Math.round(pane.artSize * 0.5)

@@ -16,14 +16,29 @@ Rectangle {
     readonly property int px: Math.round(size * Screen.devicePixelRatio)
     readonly property string base: art !== "" ? art
         : trackId > 0 ? "image://omamp-art/track/" + trackId + "/96"
-        : path !== "" ? "image://omamp-art/entry/" + encodeURIComponent(Qt.btoa(path)) + "/96" : ""
+        : path !== "" ? "image://omamp-art/entry/" + base64url(path) + "/96" : ""
+    // The path as URL-safe base64 of its UTF-8, which the provider decodes.
+    function base64url(text) {
+        const utf8 = unescape(encodeURIComponent(text))
+        const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        let out = ""
+        for (let i = 0; i < utf8.length; i += 3) {
+            const a = utf8.charCodeAt(i), b = utf8.charCodeAt(i + 1), c = utf8.charCodeAt(i + 2)
+            const n = (a << 16) | ((b || 0) << 8) | (c || 0)
+            out += abc[(n >> 18) & 63] + abc[(n >> 12) & 63]
+            out += i + 1 < utf8.length ? abc[(n >> 6) & 63] : ""
+            out += i + 2 < utf8.length ? abc[n & 63] : ""
+        }
+        return out
+    }
     implicitWidth: size
     implicitHeight: size
     radius: Math.min(4, theme.radius)
-    color: picture.status === Image.Ready ? "transparent" : theme.c.lighter_background
+    // Under the picture: what shows while it loads, or when there is none
+    // (the provider then sends a clear square).
+    color: theme.c.lighter_background
     Text {
         anchors.centerIn: parent
-        visible: picture.status !== Image.Ready
         text: String.fromCodePoint(thumb.path.startsWith("radio://") ? 0xF0439 : 0xF075A)
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: Math.max(8, Math.round(thumb.size * 0.5))

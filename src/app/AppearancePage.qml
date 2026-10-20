@@ -4,7 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // Settings > Appearance: how the deck, the mini player and the big view
-// look. The library window always stays in the plain Omarchy theme.
+// look, and how the library window is laid out (LayoutSettings.qml). The library window always stays in the plain Omarchy theme.
 // Everything applies as it is chosen.
 ScrollView {
     id: page
@@ -102,6 +102,9 @@ ScrollView {
         Note {
             text: qsTr("Ctrl+M switches to the mini player and back; Ctrl+Shift+M to the micro player. Wayland lets no window place itself or stay on top, so a Hyprland rule for the titles “Omamp mini” and “Omamp micro” floats and pins them. docs/now-playing.md has the rule.")
         }
+
+        // The library window's layout: the Art column, the sidebar, the bar.
+        LayoutSettings { Layout.fillWidth: true }
         Item { Layout.preferredHeight: 16 }
     }
 }

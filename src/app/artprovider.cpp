@@ -115,7 +115,14 @@ public:
             }
         }
         const int radius = radiusFrom(m_id);
-        if (radius >= 0 && !m_image.isNull()) {
+        // A list's thumbnail with no picture: a clear square, so the row's
+        // own placeholder shows through and nothing is logged per row.
+        if (radius >= 0 && m_image.isNull() && m_error != QLatin1String("Cancelled")) {
+            const int side = m_requested.isValid() && m_requested.width() > 0 ? m_requested.width() : 8;
+            m_image = QImage(side, side, QImage::Format_ARGB32_Premultiplied);
+            m_image.fill(Qt::transparent);
+            m_error.clear();
+        } else if (radius >= 0 && !m_image.isNull()) {
             const int side = m_requested.isValid() && m_requested.width() > 0
                                  ? qMax(m_requested.width(), m_requested.height())
                                  : qMin(m_image.width(), m_image.height());

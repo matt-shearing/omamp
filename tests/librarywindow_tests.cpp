@@ -826,17 +826,18 @@ private slots:
             QMetaObject::invokeMethod(table, "columnWidth", Q_RETURN_ARG(qreal, width), Q_ARG(int, column));
             return width;
         };
-        const qreal number = columnWidth(0), title = columnWidth(1);
-        QVERIFY(number > 20 && title > 100);
-        const QPoint titleMiddle = header->mapToScene(QPointF(number + title / 2, header->height() / 2)).toPoint();
+        // The Art column comes first, then # and Title.
+        const qreal art = columnWidth(0), number = columnWidth(1), title = columnWidth(2);
+        QVERIFY(art > 20 && number > 20 && title > 100);
+        const QPoint titleMiddle = header->mapToScene(QPointF(art + number + title / 2, header->height() / 2)).toPoint();
         QTest::mouseClick(window, Qt::LeftButton, {}, titleMiddle);
         QTRY_COMPARE(library.tracks()->sortColumn(), int(TrackListModel::Title));
-        const QPoint edge = header->mapToScene(QPointF(number - 1, header->height() / 2)).toPoint();
+        const QPoint edge = header->mapToScene(QPointF(art + number - 1, header->height() / 2)).toPoint();
         QTest::mousePress(window, Qt::LeftButton, {}, edge);
         for (int dx = 10; dx <= 60; dx += 10)
             QTest::mouseMove(window, edge + QPoint(dx, 0));
         QTest::mouseRelease(window, Qt::LeftButton, {}, edge + QPoint(60, 0));
-        QTRY_VERIFY(columnWidth(0) > number + 40);
+        QTRY_VERIFY(columnWidth(1) > number + 40);
         QCOMPARE(library.tracks()->sortColumn(), int(TrackListModel::Title)); // the drag didn't sort
 
         // Escape in the search clears it; Tab goes back to the deck.

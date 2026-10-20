@@ -42,6 +42,11 @@ public:
     // The best cover, folder or front picture in a folder (or, for a disc
     // folder such as "CD1", in the folder above it), or empty.
     static QString pictureBeside(const QString &folder);
+    // "jpeg", "png", "webp", "gif" or "bmp" from a picture's first bytes, or
+    // empty. Pictures are decoded only in these formats, named outright:
+    // letting Qt guess hands garbage to every image plugin installed, and
+    // some (KDE's raw plugin) throw on it and end the program.
+    static QByteArray pictureFormat(const QByteArray &bytes);
 
     // A local JPEG of the picture at a standard size, made now if needed, or
     // empty when there is no picture (or its volume is offline). A track

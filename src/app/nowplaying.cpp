@@ -307,10 +307,15 @@ bool NowPlaying::storePicture(const QByteArray &bytes, const QString &cacheDir, 
     if (missing) {
         if (!QDir().mkpath(cacheDir))
             return false;
+        // Only the formats ArtworkCache names: guessing probes every plugin.
+        const QByteArray kind = ArtworkCache::pictureFormat(bytes);
+        if (kind.isEmpty())
+            return false;
         QBuffer buffer;
         buffer.setData(bytes);
         buffer.open(QIODevice::ReadOnly);
-        QImageReader reader(&buffer);
+        QImageReader reader(&buffer, kind);
+        reader.setDecideFormatFromContent(false);
         reader.setAutoTransform(true);
         const QSize original = reader.size();
         if (original.isValid() && (original.width() > 1200 || original.height() > 1200))

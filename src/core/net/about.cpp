@@ -1,5 +1,6 @@
 #include "about.h"
 
+#include "artwork.h"
 #include "musicbrainz.h"
 
 #include <QCryptographicHash>
@@ -248,14 +249,19 @@ void Client::savePicture(Summary *s) {
         return;
     const QString hash = QString::fromLatin1(
         QCryptographicHash::hash(s->imageUrl.toUtf8(), QCryptographicHash::Sha1).toHex().left(20));
-    const QString file = m_dir + "/" + hash + ".img";
-    if (QFileInfo::exists(file)) {
-        s->imageFile = file;
-        return;
+    for (const char *ext : {".jpeg", ".png", ".webp", ".gif", ".bmp"}) {
+        if (QFileInfo::exists(m_dir + "/" + hash + ext)) {
+            s->imageFile = m_dir + "/" + hash + ext;
+            return;
+        }
     }
     const Net::Response r = m_http.get(Net::Service::Wikipedia, QUrl(s->imageUrl), wikiCacheSeconds);
-    if (!r.ok() || r.body.isEmpty())
+    // Only a picture in a format named by its first bytes is kept, under
+    // that format's name, so the window never guesses (ArtworkCache::pictureFormat).
+    const QByteArray kind = r.ok() ? ArtworkCache::pictureFormat(r.body) : QByteArray();
+    if (kind.isEmpty())
         return;
+    const QString file = m_dir + "/" + hash + "." + QString::fromLatin1(kind);
     QDir().mkpath(m_dir);
     QSaveFile out(file);
     if (out.open(QIODevice::WriteOnly) && out.write(r.body) == r.body.size() && out.commit())

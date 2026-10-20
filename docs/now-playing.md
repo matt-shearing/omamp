@@ -5,7 +5,10 @@ of advanced mode, the Now Playing list, the info panel and the big Now
 Playing view. Each shows the track's cover. The mini and micro players
 shrink the window to a strip, and the deck can wear three styles.
 
-![The big Now Playing view in the Night Ride theme](now-playing-big.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="now-playing-big-dark.png">
+  <img alt="The big Now Playing view, with timed lyrics and the analyser" src="now-playing-big-light.png">
+</picture>
 
 ## The cover
 
@@ -69,13 +72,19 @@ party mode locks.
 | `Ctrl+M` | The mini player, and back |
 | `Ctrl+Shift+M` | The micro player, and back |
 
-![The mini player](mini-player.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="mini-player-dark.png">
+  <img alt="The mini player" src="mini-player-light.png">
+</picture>
 
 The **mini player** is a 420 by 64 strip with the cover, the scrolling
 title, the clock, a seek bar, the transport and the volume. It is
 MediaMonkey's MiniPlayer.
 
-![The micro player](micro-player.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="micro-player-dark.png">
+  <img alt="The micro player" src="micro-player-light.png">
+</picture>
 
 The **micro player** is a 275 by 28 bar with the play state, the clock,
 the scrolling title, the transport and a thin position line along the

@@ -4,7 +4,10 @@ Omamp plays internet radio. Every Nightride FM and Rekt Network channel is
 built in, with what each one is playing right now. Any other station can be
 found on radio-browser.info or added by its stream address.
 
-![The Nightride FM channels in advanced mode, in the Night Ride theme](radio-channels.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="radio-channels-dark.png">
+  <img alt="The Nightride FM channels in the library, with Darksynth on air" src="radio-channels-light.png">
+</picture>
 
 ## Tune in
 

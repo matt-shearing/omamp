@@ -102,7 +102,10 @@ path. Nothing disappears from a playlist unless you remove it.
 With Spotify switched on ([spotify.md](spotify.md)), a playlist can hold
 Spotify tracks beside your own files.
 
-![A playlist of local files and Spotify tracks](mixed-playlist.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="mixed-playlist-dark.png">
+  <img alt="A playlist of local files and Spotify tracks" src="mixed-playlist-light.png">
+</picture>
 
 - **Adding them.** In the Spotify view or the Spotify strip under the
   library search, choose tracks and use **Add to playlist ▸ Omamp

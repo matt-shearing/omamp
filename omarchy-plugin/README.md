@@ -2,7 +2,10 @@
 
 A bar widget and panel for Omamp, plugin id `contra.omamp`.
 
-![The Omamp widget and its panel](../docs/omarchy-plugin.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/omarchy-plugin-dark.png">
+  <img alt="The Omamp widget in the bar and its panel" src="../docs/omarchy-plugin-light.png">
+</picture>
 
 The picture is rendered off-screen from `Widget.qml` with made-up track data.
 

@@ -860,7 +860,7 @@ line with the running job below. The deck itself is unchanged. All tests
 pass, including one that drives the real window offscreen from the keyboard.
 Nothing is pushed.
 
-![Advanced mode, made-up library](../advanced-mode.png)
+![Advanced mode, made-up library](../library-dark.png)
 
 ### What was built
 
@@ -1135,7 +1135,7 @@ selection or the scroll position. Text sorts now read an index: sorting
 200,000 tracks by title reaches the screen in 40–45 ms (it was 196–261 ms).
 All tests pass. Nothing is pushed.
 
-![Advanced mode with the browser and the info panel](../advanced-mode.png)
+![Advanced mode with the browser and the info panel](../library-dark.png)
 
 ### What was built
 
@@ -2444,7 +2444,7 @@ Duplicates node finds the same song by tags, bytes or sound and can take
 copies out of the library or move them to the trash. Dates read "12 Jul
 2026". All tests pass. Nothing is pushed.
 
-![The tag editor](../tag-editor.png)
+![The tag editor](../tag-editor-dark.png)
 
 ### What was built
 

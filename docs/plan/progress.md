@@ -4358,7 +4358,7 @@ hidden when stopped, and plain plurals.
   from the one stream. Nightride channels use the feed on either engine.
 - **A live stream has no read-ahead**: the `async:` wrapper would hide the
   ICY titles. A network stall longer than the half-second ring is heard as
-  a gap (the deck says "Buffering…" in the status, not on the deck).
+  a gap; the window still doesn't show `Player::statusText`.
 - **HLS** (Nightride's `/hls/` streams) and stations that only publish
   HLS are not supported.
 - **Station pictures for radio-browser stations** are only their favicons;

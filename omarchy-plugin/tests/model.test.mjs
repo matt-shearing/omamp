@@ -114,5 +114,96 @@ check("bar thumbnail fits the bar", () => {
 
 check("clamp01", () => { assert.equal(M.clamp01(1.4), 1); assert.equal(M.clamp01(-1), 0); assert.equal(M.clamp01("x"), 0); });
 
+// ------------------------------------------------------------ the visualiser
+check("the feed's socket is under the runtime folder", () => {
+  assert.equal(M.vizSocketPath("/run/user/1000"), "/run/user/1000/omamp-levels.sock");
+  assert.equal(M.vizSocketPath("/run/user/1000/"), "/run/user/1000/omamp-levels.sock");
+  assert.equal(M.vizSocketPath(""), "");
+});
+check("a frame parses, with levels as 0..1", () => {
+  const f = M.parseVizFrame('{"style":"led","reduceMotion":true,"active":true,"levels":[0,50,100,140]}');
+  assert.equal(f.style, "led");
+  assert.equal(f.reduceMotion, true);
+  assert.equal(f.active, true);
+  assert.deepEqual(f.levels, [0, 0.5, 1, 1]);
+});
+check("an idle frame has no levels and is not active", () => {
+  const f = M.parseVizFrame('{"style":"bars","reduceMotion":false,"active":false,"levels":[]}');
+  assert.equal(f.active, false);
+  assert.deepEqual(f.levels, []);
+  assert.equal(M.parseVizFrame('{"active":true,"levels":[]}').active, false);
+});
+check("junk is not a frame", () => {
+  assert.equal(M.parseVizFrame("not json"), null);
+  assert.equal(M.parseVizFrame("[1,2]"), null);
+  assert.equal(M.parseVizFrame(""), null);
+  assert.equal(M.parseVizFrame('{"levels":"x"}').levels.length, 0);
+});
+check("the style setting", () => {
+  assert.equal(M.vizChoice("Same as Omamp"), "same");
+  assert.equal(M.vizChoice("Bars"), "bars");
+  assert.equal(M.vizChoice("Line"), "line");
+  assert.equal(M.vizChoice(undefined), "same");
+});
+check("every Omamp style has a small one, and unknown ones are bars", () => {
+  const want = { bars: "bars", peaks: "bars", fire: "bars", mirror: "skyline", skyline: "skyline",
+    scope: "ribbon", ribbon: "ribbon", line: "line", pulse: "pulse", led: "led", synthwave: "synthwave", stars: "stars" };
+  for (const [omamp, mini] of Object.entries(want)) assert.equal(M.miniStyle(omamp, "Same as Omamp"), mini, omamp);
+  assert.equal(M.miniStyle("hologram", "Same as Omamp"), "bars");
+  assert.equal(M.miniStyle("", "Same as Omamp"), "bars");
+});
+check("a chosen style overrides Omamp's", () => {
+  assert.equal(M.miniStyle("synthwave", "Bars"), "bars");
+  assert.equal(M.miniStyle("synthwave", "Line"), "line");
+});
+check("subtle is fainter than normal, and busy styles fainter still", () => {
+  assert.ok(M.vizOpacity("Subtle", "line") < M.vizOpacity("Normal", "line"));
+  assert.ok(M.vizOpacity("Subtle", "bars") < M.vizOpacity("Subtle", "line"));
+  assert.ok(M.vizOpacity("Normal", "synthwave") <= 0.6);
+  assert.equal(M.vizOpacity(undefined, "line"), M.vizOpacity("Subtle", "line"));
+});
+check("frames faster than the limit are dropped", () => {
+  assert.equal(M.frameDue(0, 1000, 40), true);
+  assert.equal(M.frameDue(1000, 1020, 40), false);
+  assert.equal(M.frameDue(1000, 1040, 40), true);
+  assert.equal(M.frameDue(1000, 500, 40), true); // the clock went back
+});
+check("easing towards the new levels", () => {
+  assert.deepEqual(M.easeLevels([0, 1], [1, 0], 1), [1, 0]);
+  assert.deepEqual(M.easeLevels([0, 1], [1, 0], 0.5), [0.5, 0.5]);
+  assert.deepEqual(M.easeLevels([], [1], 0.5), [0.5]);
+});
+check("resampling keeps the ends and interpolates between", () => {
+  assert.deepEqual(M.resample([0, 1], 3), [0, 0.5, 1]);
+  assert.deepEqual(M.resample([], 2), [0, 0]);
+  assert.deepEqual(M.resample([0.4], 2), [0.4, 0.4]);
+  assert.equal(M.resample([0, 1], 0).length, 0);
+});
+check("bars fit the width, centred, rising from the bottom", () => {
+  const r = M.barRects([1, 0], 20, 10, 3, 2, false);
+  assert.equal(r.length, 4); // 4*3 + 3*2 = 18 <= 20
+  assert.equal(r[0].x, 1);
+  assert.equal(r[0].h, 10);
+  assert.equal(r[0].y, 0);
+  assert.equal(r[3].h, 1); // silence still shows a hairline
+  assert.ok(r[3].x + r[3].w <= 20);
+  assert.deepEqual(M.barRects([1], 0, 10, 3, 2, false), []);
+});
+check("the skyline puts the bass in the middle", () => {
+  const r = M.barRects([1, 0, 0, 0], 50, 10, 3, 2, true);
+  const mid = Math.floor(r.length / 2);
+  assert.ok(r[mid].h > r[0].h);
+  assert.equal(r[0].h, r[r.length - 1].h);
+});
+check("the bass is the loudest of the lowest quarter", () => {
+  assert.equal(M.bass([0.2, 0.8, 0, 0, 0, 0, 0, 0]), 0.8);
+  assert.equal(M.bass([]), 0);
+});
+check("the star field is the same for the same seed", () => {
+  assert.deepEqual(M.starField(5, 3), M.starField(5, 3));
+  assert.notDeepEqual(M.starField(5, 3), M.starField(5, 4));
+  for (const s of M.starField(20, 9)) { assert.ok(s.x >= 0 && s.x < 1); assert.ok(s.y >= 0 && s.y < 1); }
+});
+
 if (failures) { console.log(`\n${failures} failed`); process.exit(1); }
 console.log("\nall passed");

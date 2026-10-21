@@ -166,3 +166,157 @@ function thumbSize(barSize, padding) {
   if (!isFinite(p) || p < 0) p = 0
   return Math.max(12, Math.min(28, Math.round(b - p)))
 }
+
+// ------------------------------------------------------------ the visualiser
+// Omamp shares its analyser over a local socket (src/app/levelsfeed.h): one
+// JSON line per frame, {style, reduceMotion, active, levels: 16 x 0..100}.
+// The bar draws a small, faint copy of the style behind the track's name.
+
+// The socket Omamp listens on, under $XDG_RUNTIME_DIR.
+function vizSocketPath(runtimeDir) {
+  var dir = String(runtimeDir || "")
+  if (dir === "") return ""
+  return dir.replace(/\/+$/, "") + "/omamp-levels.sock"
+}
+
+// One line of the feed, or null for anything that is not one. Levels come
+// back as 0..1.
+function parseVizFrame(line) {
+  var o
+  try { o = JSON.parse(String(line || "")) } catch (e) { return null }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return null
+  var raw = Array.isArray(o.levels) ? o.levels : []
+  var levels = []
+  for (var i = 0; i < raw.length && i < 64; i++) levels.push(clamp01(Number(raw[i]) / 100))
+  return {
+    style: typeof o.style === "string" ? o.style : "",
+    reduceMotion: o.reduceMotion === true,
+    active: o.active === true && levels.length > 0,
+    levels: levels
+  }
+}
+
+// The style setting: "same" (as Omamp), "bars" or "line".
+function vizChoice(value) {
+  var v = String(value || "").trim().toLowerCase()
+  if (v === "bars" || v === "line") return v
+  return "same"
+}
+
+// Omamp's twelve styles fold into eight small ones the bar can draw from
+// the levels alone (the oscilloscope and ribbon have no waveform here).
+var MINI_STYLES = {
+  bars: "bars", peaks: "bars", fire: "bars",
+  mirror: "skyline", skyline: "skyline",
+  scope: "ribbon", ribbon: "ribbon",
+  line: "line", pulse: "pulse", led: "led",
+  synthwave: "synthwave", stars: "stars"
+}
+
+function miniStyle(omampStyle, choice) {
+  var c = vizChoice(choice)
+  if (c !== "same") return c
+  var s = String(omampStyle || "").toLowerCase()
+  return MINI_STYLES.hasOwnProperty(s) ? MINI_STYLES[s] : "bars"
+}
+
+// How strongly it shows. Subtle by default; the busy, blocky styles are
+// held back further so the words over them stay easy to read.
+function vizOpacity(strength, style) {
+  var base = String(strength || "").toLowerCase() === "normal" ? 0.55 : 0.32
+  var s = String(style || "")
+  var factor = (s === "bars" || s === "led" || s === "skyline") ? 0.8 : 1.0
+  return Math.round(base * factor * 1000) / 1000
+}
+
+// Whether a frame is due: Omamp sends at most 20 a second, and the bar
+// drops anything faster than minMs from a misbehaving feed.
+function frameDue(lastMs, nowMs, minMs) {
+  var last = Number(lastMs), now = Number(nowMs), min = Number(minMs)
+  if (!isFinite(last) || last <= 0) return true
+  if (!isFinite(min) || min <= 0) return true
+  return now - last >= min || now < last
+}
+
+// Eases from the levels drawn last towards the new ones: k = 1 takes the
+// new ones as they are (the analyser is smoothed already), less is calmer.
+function easeLevels(prev, next, k) {
+  var a = prev || [], b = next || []
+  var t = Math.max(0, Math.min(1, Number(k)))
+  if (!isFinite(t)) t = 1
+  var out = []
+  for (var i = 0; i < b.length; i++) {
+    var p = i < a.length ? Number(a[i]) : 0
+    out.push(p + (Number(b[i]) - p) * t)
+  }
+  return out
+}
+
+// The levels at n points across, interpolated, so the bar count can follow
+// the width.
+function resample(levels, n) {
+  var l = levels || []
+  var count = Math.max(0, Math.floor(Number(n) || 0))
+  var out = []
+  if (count === 0) return out
+  if (l.length === 0) { for (var z = 0; z < count; z++) out.push(0); return out }
+  for (var i = 0; i < count; i++) {
+    var pos = count === 1 ? 0 : i * (l.length - 1) / (count - 1)
+    var lo = Math.floor(pos), hi = Math.min(l.length - 1, lo + 1)
+    var f = pos - lo
+    out.push(clamp01(l[lo] * (1 - f) + l[hi] * f))
+  }
+  return out
+}
+
+// Bars that fit a width: each `bar` wide with `gap` between, centred.
+// Returns [{x, y, w, h}] from the bottom of a box `height` tall. With
+// `mirror`, the bass sits in the middle and the treble runs out to both
+// ends (the skyline).
+function barRects(levels, width, height, bar, gap, mirror) {
+  var w = Math.max(0, Number(width) || 0), h = Math.max(0, Number(height) || 0)
+  var bw = Math.max(1, Number(bar) || 3), g = Math.max(0, Number(gap) || 0)
+  var count = Math.floor((w + g) / (bw + g))
+  if (count <= 0 || h <= 0) return []
+  var values
+  if (mirror) {
+    var half = Math.ceil(count / 2)
+    var side = resample(levels, half)
+    values = []
+    for (var m = 0; m < count; m++) {
+      var d = Math.abs(m - (count - 1) / 2)
+      values.push(side[Math.min(half - 1, Math.floor(d))])
+    }
+  } else {
+    values = resample(levels, count)
+  }
+  var used = count * bw + (count - 1) * g
+  var x0 = (w - used) / 2
+  var out = []
+  for (var i = 0; i < count; i++) {
+    var bh = Math.max(1, Math.round(values[i] * h))
+    out.push({ x: x0 + i * (bw + g), y: h - bh, w: bw, h: bh })
+  }
+  return out
+}
+
+// The bass (the loudest of the lowest quarter), 0..1, for the pulse and
+// the synthwave sun.
+function bass(levels) {
+  var l = levels || []
+  var n = Math.max(1, Math.ceil(l.length / 4))
+  var v = 0
+  for (var i = 0; i < n && i < l.length; i++) v = Math.max(v, Number(l[i]) || 0)
+  return clamp01(v)
+}
+
+// A fixed field of stars for a size: the same seed gives the same sky, so
+// the bar does not flicker between frames. Each star follows one band.
+function starField(count, seed) {
+  var s = (Number(seed) >>> 0) || 7
+  function rnd() { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
+  var stars = []
+  for (var i = 0; i < count; i++)
+    stars.push({ x: rnd(), y: rnd(), size: 0.6 + rnd() * 0.9, speed: 0.2 + rnd() * 0.8, band: rnd() })
+  return stars
+}

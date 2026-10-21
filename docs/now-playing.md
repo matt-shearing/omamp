@@ -326,6 +326,19 @@ Omamp** hides the bar's instead.
 **Reduce motion** slows every new style down, drops the beat flashes, runs
 at 30 frames a second, and shows a still picture while idle.
 
+### In the Omarchy bar
+
+The Omamp widget in the Omarchy bar (see
+[omarchy-plugin/README.md](../omarchy-plugin/README.md#the-visualiser-behind-the-track))
+draws a small, faint copy of the player's visualiser behind the track's
+name, in the style chosen above. **Settings > Appearance > Share the
+visualiser with the Omarchy bar** controls it on Omamp's side; it is on by
+default and sends nothing unless the bar is connected and music plays
+through Omamp. The widget has its own settings to turn it off, to keep it to
+bars or a line, and to show it more strongly.
+
+![The bar widget with each small visualiser style behind the track](omarchy-plugin-visualiser-dark.png)
+
 ## Deck styles
 
 **Settings > Appearance** chooses how the deck, the mini players and the big

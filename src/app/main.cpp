@@ -14,6 +14,7 @@
 #include <QUrl>
 
 #include "appearance.h"
+#include "levelsfeed.h"
 #include "artprovider.h"
 #include "cli.h"
 #include "devhooks.h"
@@ -169,6 +170,21 @@ int main(int argc, char *argv[]) {
     registerMpris(&mprisHost, &player, &nowPlaying);
     setMprisUriHandler(&mprisHost, [&radio](const QString &uri) { return radio.openUri(uri); });
 
+    // The analyser for the Omarchy bar plugin, over a local socket
+    // (levelsfeed.h). Idle until the plugin connects and music plays.
+    LevelsFeed levelsFeed(windowConf);
+    levelsFeed.setLevelsSource([&player] { return player.levels(); });
+    auto syncLevelsFeed = [&] {
+        levelsFeed.setStyle(appearance.visualiser());
+        levelsFeed.setReduceMotion(appearance.reduceMotion());
+        levelsFeed.setActive(player.state() == "playing" && !player.playsElsewhere());
+    };
+    QObject::connect(&player, &Player::stateChanged, &levelsFeed, syncLevelsFeed);
+    QObject::connect(&player, &Player::trackChanged, &levelsFeed, syncLevelsFeed);
+    QObject::connect(&appearance, &Appearance::changed, &levelsFeed, syncLevelsFeed);
+    syncLevelsFeed();
+    levelsFeed.start();
+
     QQmlApplicationEngine engine;
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
     engine.rootContext()->setContextProperty("translator", &translator);
@@ -177,6 +193,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("library", &library);
     engine.rootContext()->setContextProperty("nowPlayingArt", &nowPlaying);
     engine.rootContext()->setContextProperty("appearance", &appearance);
+    engine.rootContext()->setContextProperty("levelsFeed", &levelsFeed);
     engine.rootContext()->setContextProperty("firstRun", &firstRun);
     engine.rootContext()->setContextProperty("spotify", &spotify);
     engine.rootContext()->setContextProperty("radio", &radio);

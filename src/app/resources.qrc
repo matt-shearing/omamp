@@ -13,6 +13,7 @@
         <file alias="SetupActions.qml">SetupActions.qml</file>
         <file alias="SetupWizard.qml">SetupWizard.qml</file>
         <file alias="Panel.qml">Panel.qml</file>
+        <file alias="BarFeedSettings.qml">BarFeedSettings.qml</file>
         <file alias="DeckButton.qml">DeckButton.qml</file>
         <file alias="ToggleLamp.qml">ToggleLamp.qml</file>
         <file alias="Bar.qml">Bar.qml</file>

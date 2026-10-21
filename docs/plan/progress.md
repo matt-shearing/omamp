@@ -6305,3 +6305,119 @@ plays through Omamp. Omamp sends the levels on a local socket.
   `journalctl --user --since '2 min ago'` for errors from `contra.omamp`,
   and `omarchy-shell contra.omamp status` for `visualiser.connected` while
   music plays.
+
+## First-run setup: floating windows (21 October 2026)
+
+Matt ran the setup with Omamp floating on one of his floating workspaces.
+On step two the bottom of the panel disappeared below the window, so he had
+to make the window bigger; after Finish there was a gap at the bottom until
+he resized it by hand.
+
+### Cause
+
+Hyprland does not follow a floating window that changes its own size.
+Checked on this machine (Hyprland 0.56.2), with a test build on workspace 9
+floated and tagged as Omarchy's floating mode does it: Hyprland kept the
+window at 1100 × 760 while Qt switched to the library's remembered
+1360 × 820 and then to the deck's size. Qt laid the content out at its own
+size inside Hyprland's box: cut off at the bottom and right when larger, a
+gap when smaller. The setup switches between the deck and the library on
+almost every step, so it hit this all the time; plain `Tab` did too.
+
+### What changed
+
+- **Floating windows are sized through Hyprland.** `win.resizeTo()` still
+  sets the size in Qt, and on Hyprland it now also calls
+  `WindowPlacement::resizeFloating()`. That reads the window from
+  `hyprctl -j clients` (retrying while the window maps), and for a floating
+  window sends one `hl.dsp.window.resize({ …, exact = true })`, no larger
+  than the monitor's free area (the monitor less `reserved`, so the bar is
+  left clear), plus a move to the middle of that area if the window would
+  hang off it. It then reads the size back and says so
+  (`floatingResized`); the window takes that size, so the content always
+  fills the window, and only then remembers it as that view's size. Each
+  request has a number and a stale answer is ignored. A tiled or
+  fullscreen window is left to the compositor, as before.
+- **The setup keeps one size.** When it opens it remembers the present
+  view's size, then a floating window that is smaller than 900 × 760 grows
+  to it (grow only: a larger window keeps its size). While it is open,
+  switching the preview between the deck and the library changes the view
+  only (`setAdvanced(on, true)`): no resizing, nothing remembered, and the
+  library's larger minimum size is held off so Qt can't grow the window by
+  itself.
+- **Finish and Skip settle the window.** Finish shows the chosen start view
+  at that view's own remembered size; Skip goes back to the view and size
+  from before the setup. Both go through `resizeTo()`, so a floating window
+  is resized by Hyprland and the content takes the size Hyprland reports.
+- **The panel always fits.** Its height is the room the window has (less
+  the menu bar when it sits at the top); the step scrolls inside it, so
+  Next and Finish always show.
+- **The large bar's visualiser in the setup.** Matt: "just give an option in
+  the first-run setup to set it to full behind the bar, or just the other
+  one." When the large bar is on, Layout shows two cards, **Behind the whole
+  bar** (bold) and **Behind the seek bar** (subtle, the default), each with
+  a small moving drawing, and an **Off** link. The placements come from
+  `appearance.barPlacements`. The real bar behind the panel shows the
+  choice at once; Skip puts it back. The number of steps is unchanged.
+
+### Checked on Hyprland
+
+A test build (temporary XDG folders, a private D-Bus session, no audio) on
+workspace 9, launched with `cua-bg-launch`, floated and tagged
+`omarchy-floating-workspace` by hand, and driven through the setup with
+`OMAMP_DEMO`. Before the fix Hyprland stayed at 1100 × 760 throughout while
+Qt changed size. After it, Qt and Hyprland agreed at every step: 1100 × 760
+during the setup, 1360 × 820 after Finish into the library, 500 × 680 after
+switching to the deck. Matt's own Omamp and his Hyprland config were not
+touched; the window was closed afterwards.
+
+### Tests
+
+`tests/setup_tests.cpp`, with the pretend `hyprctl` now shared in
+`tests/fake_hyprctl.h` (its second monitor reserves 32 px for the bar):
+
+- `floatingResizeCommands`: the exact Lua for a plain resize, growing only,
+  a size larger than the free area, a window that would hang off, and an
+  unknown monitor;
+- `panelStaysInsideAtEveryStep`: at 440 × 460, 520 × 560, 900 × 760 and
+  1600 × 1000, every step, with the panel at the top and the bottom and the
+  skip question showing: the panel and Next stay inside the window, which
+  keeps its size;
+- `floatingWindowGrowsThenSettlesOnFinish`: a 500 × 680 floating window
+  grows to 900 × 760 once, keeps it through every step with no gap, and
+  after Finish Hyprland and Qt both say 1360 × 820, the content fills the
+  window, the library's size is saved and the deck keeps 500 × 680; `Tab`
+  back resizes through Hyprland with no gap;
+- `floatingWindowSettlesOnSkip`: back to the deck at 500 × 680;
+- `floatingWindowTakesHyprlandsSize`: a 1688 × 1137 window isn't shrunk by
+  the setup, and a library size taller than the monitor ends at the height
+  Hyprland allows, with the content filling it;
+- `tiledWindowKeepsItsSize`: no dispatch at all, and the tile's size isn't
+  saved as a floating size;
+- `largeBarVisualiserChoice`: hidden with the compact bar; full, behind and
+  off apply live to the real bar; Skip restores; Finish saves.
+
+The setup tests also look each named item up once instead of walking the
+whole tree on every try, which took the suite from 111 s to 47 s.
+
+`bin/test` with JOBS=4, after merging main: 34 Totals lines, 503 passed,
+0 failed, 9 skipped (the opt-in benchmarks and live tests).
+
+### Screenshots
+
+`docs/setup-{start,look,layout,music,done}-{light,dark}.png`, retaken at
+the setup's new 900 × 760: OneQode Light Glass (a copy of the desktop's
+current theme) and Night Ride, the made-up library from
+`tests/make-demo-library`, offscreen in software, a throwaway HOME, no
+session bus and no network. Layout shows the Spotify-like preset with the
+new bar visualiser cards.
+
+### Known gaps
+
+- **Opening on a floating workspace was not run for real**: that needs
+  Omarchy's open rule, which would have meant changing Matt's Hyprland
+  config. The window was floated after it opened instead; the retry covers
+  a request made before the window maps.
+- **Without music playing** the real bar behind the panel draws nothing to
+  compare; the cards' small drawings move on made-up levels.
+- **Translations**: the new strings are English only.

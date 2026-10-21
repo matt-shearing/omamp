@@ -832,11 +832,28 @@ private slots:
         Appearance *appearance = w.appearance();
         const int seconds = qMax(1, qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") > 0
                                         ? qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") : 3);
+        // The window's own drawing per frame: the scene graph rendering the
+        // bar's dirty area, the visualiser's image included.
+        QElapsedTimer renderClock;
+        qint64 renderNs = 0;
+        int renders = 0;
+        QObject::connect(w.window, &QQuickWindow::beforeRendering, vis, [&] { renderClock.start(); }, Qt::DirectConnection);
+        QObject::connect(w.window, &QQuickWindow::afterRendering, vis, [&] {
+            if (renderClock.isValid())
+                renderNs += renderClock.nsecsElapsed(), ++renders;
+        }, Qt::DirectConnection);
+        const QStringList only = qEnvironmentVariable("OMAMP_VIS_BENCH_STYLES").split(',', Qt::SkipEmptyParts);
         QTextStream out(stdout);
-        out << QString("\nbehind the whole bar, %1 x %2\nstyle        playing: CPU %  fps  paint ms   idle: CPU %  fps\n")
+        out << QString("\nbehind the whole bar, %1 x %2\nstyle        playing: CPU %  fps  paint ms  render ms   idle: CPU %  fps\n")
                    .arg(vis->width()).arg(vis->height());
-        for (const QString &style : Appearance::visualisers()) {
-            appearance->setBarVisualiserStyle(style);
+        // "(off)" first: the same window and analyser with no visualiser in
+        // the bar, the floor the styles are measured against.
+        for (const QString &style : QStringList{"(off)"} + Appearance::visualisers()) {
+            if (!only.isEmpty() && !only.contains(style))
+                continue;
+            appearance->setBarVisualiser(style == "(off)" ? "off" : "full");
+            if (style != "(off)")
+                appearance->setBarVisualiserStyle(style);
             QString line = style.leftJustified(12);
             for (bool idle : {false, true}) {
                 vis->setIdle(idle);
@@ -855,6 +872,8 @@ private slots:
                 data.start();
                 QTest::qWait(400);
                 vis->resetPaintStats();
+                renderNs = 0;
+                renders = 0;
                 const int frames = vis->frames();
                 const double cpu = processCpuSeconds();
                 QElapsedTimer wall;
@@ -866,7 +885,8 @@ private slots:
                 data.stop();
                 line += QString("  %1 %2").arg(100 * used / elapsed, 8, 'f', 1).arg(painted / elapsed, 5, 'f', 0);
                 if (!idle)
-                    line += QString(" %1  ").arg(painted ? vis->paintNanos() / 1e6 / painted : 0.0, 8, 'f', 2);
+                    line += QString(" %1 %2  ").arg(painted ? vis->paintNanos() / 1e6 / painted : 0.0, 8, 'f', 2)
+                                .arg(renders ? renderNs / 1e6 / renders : 0.0, 9, 'f', 2);
             }
             out << line << "\n";
             out.flush();

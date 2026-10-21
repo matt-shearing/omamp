@@ -6,6 +6,7 @@
 #include <QPainterPath>
 #include <QQuickWindow>
 #include <QRadialGradient>
+#include <QSGRendererInterface>
 #include <cmath>
 
 Visualiser::Visualiser(QQuickItem *parent) : QQuickPaintedItem(parent) {
@@ -38,14 +39,15 @@ void Visualiser::setLevels(const QList<qreal> &levels) {
     if (m_style == "fire")
         stepFire();
     emit dataChanged();
-    // The animated styles repaint on their own clock.
-    if (!animated() || !m_tick.isActive())
+    // The animated styles repaint on their own clock, and the oscilloscope
+    // when the waveform arrives.
+    if ((!animated() || !m_tick.isActive()) && m_style != "scope")
         update();
 }
 
 void Visualiser::setPeaks(const QList<qreal> &peaks) {
     m_peaks = peaks;
-    if (!animated() || !m_tick.isActive())
+    if ((!animated() || !m_tick.isActive()) && m_style != "scope")
         update();
 }
 
@@ -83,6 +85,7 @@ void Visualiser::setFade(bool on) {
     m_fade = on;
     m_maskValid = false;
     emit fadeChanged();
+    updateClock();
     update();
 }
 
@@ -111,6 +114,7 @@ void Visualiser::setBehind(bool on) {
     m_behind = on;
     m_maskValid = false;
     emit fadeChanged();
+    updateClock();
     update();
 }
 
@@ -151,7 +155,12 @@ void Visualiser::updateClock() {
         m_tick.stop();
         return;
     }
-    m_tick.setInterval(m_idle || m_reduceMotion ? 33 : 16);
+    // Behind the whole bar on the software renderer, every frame also
+    // redraws the words and buttons over the visualiser on the CPU, which
+    // costs several times the visualiser itself: 30 frames a second there.
+    const bool heavy = m_fade && m_behind && window()->rendererInterface()
+                       && window()->rendererInterface()->graphicsApi() == QSGRendererInterface::Software;
+    m_tick.setInterval(m_idle || m_reduceMotion || heavy ? 33 : 16);
     if (!m_tick.isActive()) {
         m_clock.restart();
         m_tick.start();
@@ -675,6 +684,12 @@ void Visualiser::ensureMask() {
         const qreal s = quietTop ? (y + 0.5) / h : 1 - (y + 0.5) / h;
         down[y] = (0.2 + 0.8 * smoothStep(0, 0.55, s)) * (0.75 + 0.25 * smoothStep(0, 0.12, 1 - s));
     }
+    // The last few pixels before the quiet edge go to nothing, centrepiece
+    // included, so no line shows where the item ends.
+    QVector<qreal> rim(h);
+    const qreal rimPixels = qMax(6.0, h * 0.08);
+    for (int y = 0; y < h; ++y)
+        rim[y] = smoothStep(0, rimPixels, quietTop ? y + 0.5 : h - y - 0.5);
     // Around the centrepiece the picture stays at full strength, however
     // near the quiet edge: an oval about the centre, soft at its rim.
     const qreal cx = centreX(), cy = h * 0.55, rx = qMax(40.0, w * 0.11), ry = h * 0.75;
@@ -692,7 +707,7 @@ void Visualiser::ensureMask() {
             const qreal px = x + 0.5;
             const qreal ex = (px - cx) / rx, ey = (py - cy) / ry;
             const qreal spot = 1 - smoothStep(0.55, 1.0, std::sqrt(ex * ex + ey * ey));
-            qreal a = strength * across[x] * qMax(down[y], spot);
+            qreal a = strength * across[x] * rim[y] * qMax(down[y], spot);
             for (const QRectF &r : std::as_const(areas)) {
                 const qreal dx = qMax(0.0, qMax(r.left() - px, px - r.right()));
                 const qreal dy = qMax(0.0, qMax(r.top() - py, py - r.bottom()));
@@ -849,14 +864,18 @@ void Visualiser::paintLine(QPainter *p) {
         p->drawPolyline(m_curve);
         p->translate(0, -d);
     }
+    // The line itself: one-pixel strokes side by side, which QPainter draws
+    // several times faster than one wider stroke; three on a tall strip.
     pen.setBrush(m_lineStroke);
-    pen.setWidthF(h > 100 ? 2 : 1);
+    pen.setWidthF(1);
     pen.setCosmetic(true);
     p->setPen(pen);
-    p->drawPolyline(m_curve);
-    p->translate(0, 0.6);
-    p->drawPolyline(m_curve);
-    p->translate(0, -0.6);
+    const int passes = h > 100 ? 3 : 2;
+    for (int i = 0; i < passes; ++i) {
+        p->translate(0, i * 0.6);
+        p->drawPolyline(m_curve);
+        p->translate(0, -i * 0.6);
+    }
 }
 
 // A soft glow in the middle that swells with the bass and brightens on a

@@ -4,14 +4,19 @@
 // Offscreen, in software, with no audio device, each window with a
 // window.conf in its own temporary folder. Nothing here reaches the user's
 // own settings or the internet.
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "fake_hyprctl.h"
 #include "firstrun.h"
 #include "layoutprefs.h"
 #include "librarycontroller.h"
@@ -19,6 +24,7 @@
 #include "player.h"
 #include "theme.h"
 #include "translator.h"
+#include "windowplacement.h"
 
 class SetupTests : public QObject {
     Q_OBJECT
@@ -34,8 +40,10 @@ class SetupTests : public QObject {
         LibraryController library;
         QQmlApplicationEngine engine;
         QQuickWindow *window = nullptr;
+        WindowPlacement *placement = nullptr;
 
-        explicit Window(QTemporaryDir &d)
+        // hyprctl: a pretend one (fake_hyprctl.h); none means no Hyprland.
+        explicit Window(QTemporaryDir &d, const QString &hyprctl = {})
             : dir(d), firstRun(d.filePath("window.conf")), translator(d.filePath("language")),
               theme(d.filePath("theme"), nullptr, d.filePath("no-hyprctl")), library(d.filePath("library.db")) {
             player.setMuted(true);
@@ -51,6 +59,10 @@ class SetupTests : public QObject {
             installNowPlaying(engine, &theme, &player, d.filePath("library.db"), d.filePath("art"),
                               d.filePath("window.conf"));
             engine.rootContext()->setContextProperty("firstRun", &firstRun);
+            if (!hyprctl.isEmpty()) {
+                placement = new WindowPlacement(&engine, hyprctl);
+                engine.rootContext()->setContextProperty("windowPlacement", placement);
+            }
         }
         bool load() {
             engine.load(QUrl("qrc:/Main.qml"));
@@ -103,7 +115,61 @@ class SetupTests : public QObject {
             return true;
         }
         int step() const { return wizard()->property("step").toInt(); }
+        QSize size() const { return window->size(); }
+        // The window's content (menu bar and all) fills it exactly: no gap
+        // below or beside it, and nothing hanging off.
+        QString gap() const {
+            QQuickItem *content = window->contentItem();
+            auto *bar = qobject_cast<QQuickItem *>(window->property("menuBar").value<QObject *>());
+            const qreal barHeight = bar && bar->isVisible() ? bar->height() : 0;
+            if (qAbs(content->width() - window->width()) > 0.5 || qAbs(content->height() - window->height()) > 0.5)
+                return QString("content %1 x %2 in a %3 x %4 window")
+                    .arg(content->width()).arg(content->height()).arg(window->width()).arg(window->height());
+            // The window's root item (the deck or the library inside it)
+            // fills what the menu bar leaves.
+            if (!rootItem)
+                rootItem = qobject_cast<QQuickItem *>(find("windowRoot"));
+            QQuickItem *root = rootItem;
+            if (!root || qAbs(root->width() - window->width()) > 0.5
+                || qAbs(root->height() + barHeight - window->height()) > 0.5)
+                return QString("root %1 x %2 + bar %3 in a %4 x %5 window").arg(root ? root->width() : -1)
+                    .arg(root ? root->height() : -1).arg(barHeight).arg(window->width()).arg(window->height());
+            return {};
+        }
+        mutable QPointer<QQuickItem> nextButton, rootItem;
+        // The panel, and its Next button, inside the window.
+        QString panelOutside() const {
+            QObject *w = wizard();
+            const qreal x = w->property("x").toReal(), y = w->property("y").toReal();
+            const qreal width = w->property("width").toReal(), height = w->property("height").toReal();
+            // Found once: walking the whole tree on every try is slow.
+            if (!nextButton)
+                nextButton = qobject_cast<QQuickItem *>(find("setupNext"));
+            QQuickItem *next = nextButton;
+            const QPointF corner = next ? next->mapToScene(QPointF(next->width(), next->height())) : QPointF(1e9, 1e9);
+            if (x < 0 || y < 0 || x + width > window->width() + 0.5 || y + height > window->height() + 0.5
+                || corner.x() > window->width() + 0.5 || corner.y() > window->height() + 0.5 || !next->isVisible())
+                return QString("panel %1,%2 %3 x %4, Next's corner %5,%6, in %7 x %8 (step %9)")
+                    .arg(x).arg(y).arg(width).arg(height).arg(corner.x()).arg(corner.y())
+                    .arg(window->width()).arg(window->height()).arg(step());
+            return {};
+        }
     };
+
+    // The pretend Hyprland's idea of the window's size.
+    static QSize hyprSize(const QString &dir) {
+        QFile f(dir + "/size");
+        f.open(QIODevice::ReadOnly);
+        const QStringList wh = QString::fromUtf8(f.readAll()).trimmed().split(',');
+        return QSize(wh.value(0).toInt(), wh.value(1).toInt());
+    }
+    static QStringList resizeBatches(const QString &dir) {
+        QStringList out;
+        for (const QString &b : batches(dir))
+            if (b.contains("resize(") || b.contains("move("))
+                out << b;
+        return out;
+    }
 
     static void writeConf(QTemporaryDir &dir, const QMap<QString, QVariant> &values) {
         QSettings conf(dir.filePath("window.conf"), QSettings::IniFormat);
@@ -378,6 +444,200 @@ private slots:
         QTRY_VERIFY(!w.wizardOpen());
         QVERIFY(!w.firstRun.bannerPending());
         QVERIFY(!w.find("setupBanner")->property("visible").toBool());
+    }
+
+    // The Lua that sizes a floating window: kept within the monitor's free
+    // area, grown only when asked to grow, and moved back on when it would
+    // hang off.
+    void floatingResizeCommands() {
+        const QJsonArray monitors = QJsonDocument::fromJson(R"([
+            {"id":1,"x":6144,"y":0,"width":3840,"height":2160,"scale":1.5,"transform":0,"reserved":[0,32,0,0]}])").array();
+        auto client = [](int x, int y, int w, int h) {
+            return QJsonObject{{"address", "0x5afe"}, {"monitor", 1}, {"floating", true},
+                               {"at", QJsonArray{x, y}}, {"size", QJsonArray{w, h}}};
+        };
+        const QString resize = R"(hl.dsp.window.resize({ window = "address:0x5afe", x = %1, y = %2, exact = true }))";
+        const QString move = R"(hl.dsp.window.move({ window = "address:0x5afe", x = %1, y = %2, exact = true }))";
+        QSize size;
+        QCOMPARE(WindowPlacement::resizeCommands(client(6244, 200, 500, 680), monitors, 1360, 820, false, &size),
+                 QStringList{resize.arg(1360).arg(820)});
+        QCOMPARE(size, QSize(1360, 820));
+        // Already that size: nothing to send.
+        QVERIFY(WindowPlacement::resizeCommands(client(6244, 200, 1360, 820), monitors, 1360, 820).isEmpty());
+        // Growing only: each side at least as large as now.
+        QCOMPARE(WindowPlacement::resizeCommands(client(6244, 200, 1100, 600), monitors, 900, 760, true, &size),
+                 QStringList{resize.arg(1100).arg(760)});
+        QVERIFY(WindowPlacement::resizeCommands(client(6244, 200, 1688, 1137), monitors, 900, 760, true).isEmpty());
+        // Larger than the free area (2560 x 1408 below a 32 px bar): the
+        // area's size, in its middle.
+        QCOMPARE(WindowPlacement::resizeCommands(client(6244, 200, 500, 680), monitors, 3000, 2000, false, &size),
+                 (QStringList{resize.arg(2560).arg(1408), move.arg(6144).arg(32)}));
+        QCOMPARE(size, QSize(2560, 1408));
+        // Would hang off the right edge: centred.
+        QCOMPARE(WindowPlacement::resizeCommands(client(8400, 900, 500, 680), monitors, 1360, 820),
+                 (QStringList{resize.arg(1360).arg(820), move.arg(6144 + (2560 - 1360) / 2).arg(32 + (1408 - 820) / 2)}));
+        // Unknown monitor: nothing.
+        QJsonObject lost = client(0, 0, 500, 680);
+        lost["monitor"] = 7;
+        QVERIFY(WindowPlacement::resizeCommands(lost, monitors, 1360, 820).isEmpty());
+    }
+
+    // The panel and its Next button stay inside the window at every step,
+    // small or large, with the panel at the top or the bottom and with the
+    // skip question showing.
+    void panelStaysInsideAtEveryStep() {
+        QTemporaryDir dir;
+        Window w(dir);
+        QVERIFY(w.load());
+        QTRY_VERIFY(w.wizardOpen());
+        for (const QSize size : {QSize(440, 460), QSize(520, 560), QSize(900, 760), QSize(1600, 1000)}) {
+            w.window->resize(size);
+            QTRY_COMPARE(w.size(), size);
+            for (int step = 0; step < 5; ++step) {
+                QMetaObject::invokeMethod(w.wizard(), "goTo", Q_ARG(QVariant, step));
+                QTRY_COMPARE(w.step(), step);
+                QTRY_VERIFY2(w.panelOutside().isEmpty(), qPrintable(w.panelOutside()));
+                if (step == 2) {
+                    // The large bar at the bottom puts the panel at the top.
+                    w.layout()->setBarPosition("bottom");
+                    QTRY_VERIFY(w.wizard()->property("dockTop").toBool());
+                    QTRY_VERIFY2(w.panelOutside().isEmpty(), qPrintable(w.panelOutside()));
+                    w.layout()->setBarPosition("top");
+                }
+                w.wizard()->setProperty("confirmingSkip", true);
+                QTRY_VERIFY2(w.panelOutside().isEmpty(), qPrintable(w.panelOutside()));
+                w.wizard()->setProperty("confirmingSkip", false);
+                // The window doesn't change size under the setup.
+                QCOMPARE(w.size(), size);
+            }
+        }
+    }
+
+    // A floating window on Hyprland, too small for the setup: Hyprland is
+    // asked to grow it, and it then keeps that size through every step (the
+    // deck's preview shows in it); Finish asks Hyprland for the start view's
+    // own size, and the content fills the window it gets.
+    void floatingWindowGrowsThenSettlesOnFinish() {
+        QTemporaryDir dir;
+        const QString hyprctl = fakeHyprctl(dir.path(), true, "500,680", "6244,200");
+        Window w(dir, hyprctl);
+        QVERIFY(w.load());
+        QTRY_VERIFY(w.wizardOpen());
+        QTRY_COMPARE(w.size(), QSize(900, 760));
+        QTRY_COMPARE(hyprSize(dir.path()), QSize(900, 760));
+        QVERIFY(resizeBatches(dir.path()).value(0).contains("x = 900, y = 760, exact"));
+        QVERIFY(!w.placement->managed());
+        QVERIFY(w.click("setupStart_library"));
+        QTRY_VERIFY(w.advanced());
+        for (int step = 0; step < 5; ++step) {
+            if (step > 0) {
+                QVERIFY(w.click("setupNext"));
+                QTRY_COMPARE(w.step(), step);
+            }
+            QTest::qWait(100);
+            QCOMPARE(w.size(), QSize(900, 760));
+            QCOMPARE(hyprSize(dir.path()), QSize(900, 760));
+            QVERIFY2(w.panelOutside().isEmpty(), qPrintable(w.panelOutside()));
+            QVERIFY2(w.gap().isEmpty(), qPrintable(w.gap()));
+        }
+        // Only the one resize while the setup was open.
+        QCOMPARE(resizeBatches(dir.path()).size(), 1);
+        QVERIFY(w.click("setupNext")); // Finish
+        QTRY_VERIFY(!w.wizardOpen());
+        QVERIFY(w.advanced());
+        QTRY_COMPARE(hyprSize(dir.path()), QSize(1360, 820));
+        QTRY_COMPARE(w.size(), QSize(1360, 820));
+        QTRY_VERIFY2(w.gap().isEmpty(), qPrintable(w.gap()));
+        QTRY_COMPARE(w.saved("window/advancedWidth").toInt(), 1360);
+        QCOMPARE(w.saved("window/advancedHeight").toInt(), 820);
+        // The deck kept its own size from before the setup.
+        QCOMPARE(w.saved("window/deckWidth").toInt(), 500);
+        QCOMPARE(w.saved("window/deckHeight").toInt(), 680);
+        // Tab back to the deck: Hyprland sizes it too, no gap.
+        QTest::keyClick(w.window, Qt::Key_Tab);
+        QTRY_VERIFY(!w.advanced());
+        QTRY_COMPARE(hyprSize(dir.path()), QSize(500, 680));
+        QTRY_COMPARE(w.size(), QSize(500, 680));
+        QTRY_VERIFY2(w.gap().isEmpty(), qPrintable(w.gap()));
+    }
+
+    // Skip, floating: back to the view and size from before the setup.
+    void floatingWindowSettlesOnSkip() {
+        QTemporaryDir dir;
+        const QString hyprctl = fakeHyprctl(dir.path(), true, "500,680", "6244,200");
+        Window w(dir, hyprctl);
+        QVERIFY(w.load());
+        QTRY_VERIFY(w.wizardOpen());
+        QTRY_COMPARE(w.size(), QSize(900, 760));
+        QVERIFY(w.click("setupStart_library"));
+        QTRY_VERIFY(w.advanced());
+        QVERIFY(w.click("setupNext"));
+        QTRY_COMPARE(w.step(), 1);
+        QVERIFY(w.click("setupSkip"));
+        QVERIFY(w.click("setupSkipYes"));
+        QTRY_VERIFY(!w.wizardOpen());
+        QVERIFY(!w.advanced());
+        QTRY_COMPARE(hyprSize(dir.path()), QSize(500, 680));
+        QTRY_COMPARE(w.size(), QSize(500, 680));
+        QTRY_VERIFY2(w.gap().isEmpty(), qPrintable(w.gap()));
+    }
+
+    // A large floating window isn't shrunk while the setup is open, and
+    // Hyprland's own size wins: asked for more than the monitor has, the
+    // window takes what Hyprland gives and the content fills it.
+    void floatingWindowTakesHyprlandsSize() {
+        QTemporaryDir dir;
+        // Matt's window: 1688 x 1137 on a floating workspace; the library
+        // remembered taller than the monitor's free area.
+        writeConf(dir, {{"window/deckWidth", 1688}, {"window/deckHeight", 1137},
+                        {"window/advancedWidth", 1500}, {"window/advancedHeight", 1900}});
+        const QString hyprctl = fakeHyprctl(dir.path(), true, "1688,1137", "6300,100");
+        Window w(dir, hyprctl);
+        QVERIFY(w.load());
+        QTRY_COMPARE(w.size(), QSize(1688, 1137));
+        // An older install: run it from Help.
+        w.run("setup");
+        QTRY_VERIFY(w.wizardOpen());
+        QTest::qWait(300);
+        QCOMPARE(w.size(), QSize(1688, 1137));
+        QVERIFY(resizeBatches(dir.path()).isEmpty());
+        QVERIFY(w.click("setupStart_library"));
+        for (int i = 0; i < 5; ++i)
+            QTest::keyClick(w.window, Qt::Key_Return);
+        QTRY_VERIFY(!w.wizardOpen());
+        QVERIFY(w.advanced());
+        // 1500 x 1900 doesn't fit the 2560 x 1408 free area.
+        QTRY_COMPARE(hyprSize(dir.path()), QSize(1500, 1408));
+        QTRY_COMPARE(w.size(), QSize(1500, 1408));
+        QTRY_VERIFY2(w.gap().isEmpty(), qPrintable(w.gap()));
+        QTRY_COMPARE(w.saved("window/advancedHeight").toInt(), 1408);
+    }
+
+    // Tiled: the compositor decides; the setup never asks for a size.
+    void tiledWindowKeepsItsSize() {
+        QTemporaryDir dir;
+        const QString hyprctl = fakeHyprctl(dir.path(), false);
+        Window w(dir, hyprctl);
+        QVERIFY(w.load());
+        w.placement->refresh();
+        QTRY_VERIFY(w.placement->managed());
+        // As Hyprland would have it: the tile's size.
+        w.window->resize(1700, 1000);
+        QTRY_COMPARE(w.size(), QSize(1700, 1000));
+        QTRY_VERIFY(w.wizardOpen());
+        QVERIFY(w.click("setupStart_library"));
+        for (int i = 0; i < 5; ++i) {
+            QTest::keyClick(w.window, Qt::Key_Return);
+            QTest::qWait(50);
+            QCOMPARE(w.size(), QSize(1700, 1000));
+        }
+        QTRY_VERIFY(!w.wizardOpen());
+        QTest::qWait(200);
+        QCOMPARE(w.size(), QSize(1700, 1000));
+        QVERIFY(w.gap().isEmpty());
+        QVERIFY(batches(dir.path()).isEmpty());
+        // The tile's size isn't kept as the library's floating size.
+        QVERIFY(w.saved("window/advancedWidth").toInt() != 1700);
     }
 
     // The setup fits the deck's smallest window.

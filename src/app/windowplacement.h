@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QProcess>
+#include <QSize>
 #include <QStringList>
 #include <QTimer>
 #include <functional>
@@ -28,6 +29,13 @@
 //
 // Each step runs in the background; compactPlaced / compactLeft say whether
 // it worked, so the window can lay out the strip on its own when not.
+//
+// Resizing a floating window: Hyprland doesn't follow a floating window that
+// changes its own size (measured on 0.56.2: Qt went to the library's
+// 1360 x 820 while Hyprland kept the window at 1100 x 760, so the bottom of
+// the content was cut off; going back to the deck's 500 x 680 left a gap).
+// So the window asks Hyprland for the size too (resizeFloating), and takes
+// whatever size Hyprland then reports (floatingResized).
 class WindowPlacement : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool managed READ managed NOTIFY managedChanged)
@@ -51,6 +59,12 @@ public:
     Q_INVOKABLE void enterCompact(const QString &title, int width, int height, bool fresh = false);
     // Unpins and puts back the tiled or floating state, size and place.
     Q_INVOKABLE void leaveCompact();
+    // Asks Hyprland to size a floating window, kept within its monitor and
+    // moved back on to it when it would hang off. growOnly: never smaller
+    // than it is now in either direction. Answers with floatingResized and
+    // the number returned here; a request replaced by a newer one before it
+    // ran never answers.
+    Q_INVOKABLE int resizeFloating(int width, int height, bool growOnly = false);
 
     // One client from `hyprctl -j clients`, for the tests: true when the
     // client with this pid is tiled or fullscreen. found says whether it was there.
@@ -71,6 +85,13 @@ public:
     static QStringList enterCommands(const QJsonObject &client, const QJsonArray &monitors, int width, int height);
     // The Lua dispatches that put the client at `address` back as `saved`.
     static QStringList leaveCommands(const QString &address, const Saved &saved);
+    // The Lua dispatches that size the floating `client` to width x height
+    // (or at least its present size, growOnly), no larger than its monitor's
+    // free area, and centre it there when it would hang off. *size gets the
+    // size asked for. Empty when nothing needs to change or the monitor
+    // isn't listed.
+    static QStringList resizeCommands(const QJsonObject &client, const QJsonArray &monitors, int width, int height,
+                                      bool growOnly = false, QSize *size = nullptr);
     // `hyprctl --batch` argument for these dispatches.
     static QString batch(const QStringList &luas);
     // hyprctl's reply to a batch: every line "ok" (Lua errors say "error: …").
@@ -82,22 +103,31 @@ signals:
     void compactPlaced(bool ok);
     // leaveCompact finished: ok when the window was put back.
     void compactLeft(bool ok);
+    // resizeFloating finished: request is the number it returned. floating: the window floats (false when
+    // Hyprland tiles it or it is fullscreen); width x height: its size as
+    // Hyprland now reports it, 0 x 0 when unknown.
+    void floatingResized(int request, bool floating, int width, int height);
 
 private:
     void ask();
     void setManaged(bool managed);
     // Runs hyprctl with args in the background; done gets ok and stdout.
     void run(const QStringList &args, std::function<void(bool, const QByteArray &)> done);
-    // One compact request at a time; a newer one waiting replaces an older.
+    // One request at a time, in order.
+    enum class Kind { Enter, Leave, Resize };
     struct Request {
-        bool enter = false;
+        Kind kind = Kind::Enter;
         QString title;
         int width = 0, height = 0;
-        bool fresh = false;
+        bool fresh = false;   // Enter
+        bool growOnly = false; // Resize
+        int id = 0;            // Resize
     };
     void submit(const Request &r);
     void startNext();
-    void finish(bool enter, bool ok);
+    void finish(Kind kind, bool ok);
+    void doResize(const Request &r);
+    void resizeDone(int id, const QString &address);
     void enterFind(const Request &r, int tries);
     void enterPlace(const Request &r, const QJsonObject &client);
     void enterCheck(const Request &r, const QString &address, int tries);
@@ -110,8 +140,9 @@ private:
     bool m_managed = false;
 
     bool m_busy = false;
-    bool m_hasPending = false;
-    Request m_pending;
+    // In order; a resize waiting is replaced by a newer one.
+    QList<Request> m_queue;
+    int m_lastResize = 0;
     Saved m_saved;
     QString m_address;
 };

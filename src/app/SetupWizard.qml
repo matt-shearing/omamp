@@ -46,17 +46,25 @@ Popup {
     padding: 0
     // Nothing dimmed: the window behind is the preview.
     Overlay.modal: Rectangle { color: "transparent" }
-    width: Math.min(660, parent ? parent.width - 24 : 660)
-    // As tall as the step needs, scrolling when the window is shorter.
+    width: Math.max(0, Math.min(660, parent ? parent.width - 24 : 660))
+    // As tall as the step needs, never taller than the room the window has
+    // (the step scrolls inside instead), so Next and Finish always show.
     readonly property real pageHeight: pages.children[step] ? pages.children[step].implicitHeight : 200
-    height: Math.min(titleRow.implicitHeight + pageHeight + footerRow.implicitHeight
-                     + (confirmingSkip ? skipBar.implicitHeight : 0) + 28,
-                     parent ? parent.height - 24 : 392)
+    readonly property real wantedHeight: titleRow.implicitHeight + pageHeight + footerRow.implicitHeight
+                                         + (confirmingSkip ? skipBar.implicitHeight : 0) + 28
+    readonly property real dockTopY: menuHeight + 8
+    readonly property real room: !parent ? 392 : Math.max(0, parent.height - (dockTop ? dockTopY : 12) - 12)
+    height: Math.min(wantedHeight, room)
     x: parent ? Math.round((parent.width - width) / 2) : 0
     readonly property bool dockTop: stepId === "layout" && layoutPrefs.barPosition === "bottom"
     // Below the menu bar when at the top: the overlay covers the whole window.
     readonly property real menuHeight: window && window.menuBar && window.menuBar.visible ? window.menuBar.height : 0
-    y: !parent ? 0 : dockTop ? menuHeight + 8 : parent.height - height - 12
+    y: !parent ? 0 : dockTop ? dockTopY : parent.height - height - 12
+    // The room the setup wants: the panel's tallest step with the view
+    // behind it showing, and wide enough for the library. A floating window
+    // grows to it when it opens; a tiled one keeps the size it is given.
+    readonly property int comfortableWidth: 900
+    readonly property int comfortableHeight: 760
     Material.roundedScale: theme.radius
     enter: null
     exit: null
@@ -102,10 +110,14 @@ Popup {
         layoutPrefs.barSize = s.barSize
         layoutPrefs.barPosition = s.barPosition
         prefs.browserVisible = s.browser
-        showView(s.advanced ? "library" : "player")
     }
     function openWizard() {
         saved = snapshot()
+        // The present view's size is its own; then room for the setup.
+        if (window) {
+            window.rememberLayout()
+            window.growTo(comfortableWidth, comfortableHeight)
+        }
         startView = prefs.advanced ? "library" : "player"
         wantSpotify = spotify.enabled
         confirmingSkip = false
@@ -116,7 +128,17 @@ Popup {
     function showView(view) {
         // Straight to the window, not through runAction(), so the action
         // that opened the setup stays the last one run.
-        if (window) window.setAdvanced(view === "library")
+        // At the window's present size: the previews of both views show in
+        // it, and nothing is remembered until the setup ends (settle()).
+        if (window) window.setAdvanced(view === "library", true)
+    }
+    // Finish and Skip: the start view at its own size, so the window and
+    // its content agree again (a floating window is resized by Hyprland and
+    // the content then takes the size it got).
+    function settle(view) {
+        if (!window) return
+        window.setAdvanced(view === "library", true)
+        window.settleSize()
     }
     // The window behind shows what the step is about: the deck for Look,
     // the library for Layout, and the chosen start view otherwise.
@@ -137,7 +159,7 @@ Popup {
     function finish() {
         firstRun.markCompleted()
         prefs.libraryHintDone = true
-        showView(startView)
+        settle(startView)
         close()
         finished(false)
         if (wantSpotify && !spotify.enabled) {
@@ -148,6 +170,7 @@ Popup {
     function skip() {
         restore(saved)
         firstRun.markCompleted()
+        settle(saved.advanced ? "library" : "player")
         close()
         finished(true)
     }

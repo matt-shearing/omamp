@@ -141,6 +141,49 @@ QStringList WindowPlacement::enterCommands(const QJsonObject &client, const QJso
     };
 }
 
+QStringList WindowPlacement::resizeCommands(const QJsonObject &client, const QJsonArray &monitors, int width,
+                                            int height, bool growOnly, QSize *size) {
+    const QString address = client.value("address").toString();
+    if (address.isEmpty())
+        return {};
+    QJsonObject monitor;
+    for (const QJsonValue &v : monitors)
+        if (v.toObject().value("id").toInt(-1) == client.value("monitor").toInt(-2))
+            monitor = v.toObject();
+    if (monitor.isEmpty())
+        return {};
+    const double scale = monitor.value("scale").toDouble(1) > 0 ? monitor.value("scale").toDouble(1) : 1;
+    int mw = int(std::round(monitor.value("width").toInt() / scale));
+    int mh = int(std::round(monitor.value("height").toInt() / scale));
+    if (monitor.value("transform").toInt() % 2 == 1)
+        std::swap(mw, mh);
+    // The free area: the monitor less the bar and anything else reserved
+    // (left, top, right, bottom).
+    const QJsonArray reserved = monitor.value("reserved").toArray();
+    const int left = reserved.at(0).toInt(), top = reserved.at(1).toInt();
+    const int areaX = monitor.value("x").toInt() + left, areaY = monitor.value("y").toInt() + top;
+    const int areaW = std::max(1, mw - left - reserved.at(2).toInt());
+    const int areaH = std::max(1, mh - top - reserved.at(3).toInt());
+
+    const int x = pairAt(client, "at", 0), y = pairAt(client, "at", 1);
+    const int nowW = pairAt(client, "size", 0), nowH = pairAt(client, "size", 1);
+    int w = growOnly ? std::max(width, nowW) : width;
+    int h = growOnly ? std::max(height, nowH) : height;
+    w = std::min(w, areaW);
+    h = std::min(h, areaH);
+    if (size)
+        *size = QSize(w, h);
+    const QString win = luaString("address:" + address);
+    QStringList out;
+    if (w != nowW || h != nowH)
+        out << QString("hl.dsp.window.resize({ window = %1, x = %2, y = %3, exact = true })").arg(win).arg(w).arg(h);
+    // Hanging off the free area at the new size: back to its middle.
+    if (x < areaX || y < areaY || x + w > areaX + areaW || y + h > areaY + areaH)
+        out << QString("hl.dsp.window.move({ window = %1, x = %2, y = %3, exact = true })")
+                   .arg(win).arg(areaX + (areaW - w) / 2).arg(areaY + (areaH - h) / 2);
+    return out;
+}
+
 QStringList WindowPlacement::leaveCommands(const QString &address, const Saved &saved) {
     if (address.isEmpty())
         return {};
@@ -205,47 +248,73 @@ void WindowPlacement::run(const QStringList &args, std::function<void(bool, cons
 }
 
 void WindowPlacement::enterCompact(const QString &title, int width, int height, bool fresh) {
-    submit({true, title, width, height, fresh});
+    Request r;
+    r.kind = Kind::Enter;
+    r.title = title;
+    r.width = width;
+    r.height = height;
+    r.fresh = fresh;
+    submit(r);
 }
 
 void WindowPlacement::leaveCompact() {
-    submit({false, {}, 0, 0, false});
+    Request r;
+    r.kind = Kind::Leave;
+    submit(r);
+}
+
+int WindowPlacement::resizeFloating(int width, int height, bool growOnly) {
+    Request r;
+    r.id = ++m_lastResize;
+    r.kind = Kind::Resize;
+    r.width = width;
+    r.height = height;
+    r.growOnly = growOnly;
+    submit(r);
+    return r.id;
 }
 
 void WindowPlacement::submit(const Request &r) {
     if (!m_available) {
         // Asynchronous all the same, so the window always waits for a signal.
-        QTimer::singleShot(0, this, [this, enter = r.enter] {
-            if (enter)
+        QTimer::singleShot(0, this, [this, kind = r.kind, id = r.id] {
+            if (kind == Kind::Enter)
                 emit compactPlaced(false);
-            else
+            else if (kind == Kind::Leave)
                 emit compactLeft(false);
+            else
+                emit floatingResized(id, false, 0, 0);
         });
         return;
     }
-    m_pending = r;
-    m_hasPending = true;
+    // A newer request of the same sort still waiting replaces the older:
+    // only the last size asked for, or the last compact switch, matters.
+    if (!m_queue.isEmpty() && (m_queue.last().kind == Kind::Resize) == (r.kind == Kind::Resize))
+        m_queue.last() = r;
+    else
+        m_queue.append(r);
     if (!m_busy)
         startNext();
 }
 
 void WindowPlacement::startNext() {
-    if (!m_hasPending)
+    if (m_queue.isEmpty())
         return;
-    m_hasPending = false;
     m_busy = true;
-    const Request r = m_pending;
-    if (r.enter)
+    const Request r = m_queue.takeFirst();
+    if (r.kind == Kind::Enter)
         enterFind(r, 0);
-    else
+    else if (r.kind == Kind::Leave)
         doLeave();
+    else
+        doResize(r);
 }
 
-void WindowPlacement::finish(bool enter, bool ok) {
+void WindowPlacement::finish(Kind kind, bool ok) {
     m_busy = false;
-    if (enter)
+    if (kind == Kind::Enter)
         emit compactPlaced(ok);
-    else
+    else if (kind == Kind::Leave)
         emit compactLeft(ok);
     startNext();
 }
@@ -259,7 +328,7 @@ void WindowPlacement::enterFind(const Request &r, int tries) {
                 QTimer::singleShot(100, this, [this, r, tries] { enterFind(r, tries + 1); });
                 return;
             }
-            finish(true, false);
+            finish(Kind::Enter, false);
             return;
         }
         enterPlace(r, client);
@@ -271,7 +340,7 @@ void WindowPlacement::enterPlace(const Request &r, const QJsonObject &client) {
         const QStringList luas = ok ? enterCommands(client, QJsonDocument::fromJson(out).array(), r.width, r.height)
                                     : QStringList();
         if (luas.isEmpty()) {
-            finish(true, false);
+            finish(Kind::Enter, false);
             return;
         }
         const QString address = client.value("address").toString();
@@ -291,7 +360,7 @@ void WindowPlacement::enterPlace(const Request &r, const QJsonObject &client) {
         }
         run({"--batch", batch(luas)}, [this, r, address](bool ok, const QByteArray &reply) {
             if (!ok || !batchOk(reply)) {
-                finish(true, false);
+                finish(Kind::Enter, false);
                 return;
             }
             enterCheck(r, address, 0);
@@ -311,12 +380,63 @@ void WindowPlacement::enterCheck(const Request &r, const QString &address, int t
         const bool sized = pairAt(client, "size", 0) <= r.width + 40 && pairAt(client, "size", 1) <= r.height + 40;
         if (floating && sized) {
             setManaged(false);
-            finish(true, true);
+            finish(Kind::Enter, true);
         } else if (ok && !client.isEmpty() && tries < 5) {
             QTimer::singleShot(50, this, [this, r, address, tries] { enterCheck(r, address, tries + 1); });
         } else {
-            finish(true, false);
+            finish(Kind::Enter, false);
         }
+    });
+}
+
+void WindowPlacement::doResize(const Request &r) {
+    run({"-j", "clients"}, [this, r](bool ok, const QByteArray &out) {
+        const QJsonObject client = ok ? clientIn(out, QCoreApplication::applicationPid()) : QJsonObject();
+        if (client.isEmpty()) {
+            emit floatingResized(r.id, false, 0, 0);
+            finish(Kind::Resize, false);
+            return;
+        }
+        // Tiled or fullscreen: the compositor decides; say so and its size.
+        if (!client.value("floating").toBool() || fullscreenOf(client)) {
+            setManaged(true);
+            emit floatingResized(r.id, false, pairAt(client, "size", 0), pairAt(client, "size", 1));
+            finish(Kind::Resize, false);
+            return;
+        }
+        setManaged(false);
+        run({"-j", "monitors"}, [this, r, client](bool ok, const QByteArray &out) {
+            const QString address = client.value("address").toString();
+            const QStringList luas = ok ? resizeCommands(client, QJsonDocument::fromJson(out).array(), r.width,
+                                                         r.height, r.growOnly)
+                                        : QStringList();
+            if (luas.isEmpty()) {
+                // Already that size (or no monitor to measure): report it.
+                emit floatingResized(r.id, true, pairAt(client, "size", 0), pairAt(client, "size", 1));
+                finish(Kind::Resize, true);
+                return;
+            }
+            run({"--batch", batch(luas)}, [this, id = r.id, address](bool, const QByteArray &) { resizeDone(id, address); });
+        });
+    });
+}
+
+// Whatever Hyprland made of it, its size now is the one to lay out at.
+void WindowPlacement::resizeDone(int id, const QString &address) {
+    run({"-j", "clients"}, [this, id, address](bool ok, const QByteArray &out) {
+        QJsonObject client;
+        if (ok)
+            for (const QJsonValue &v : QJsonDocument::fromJson(out).array())
+                if (v.toObject().value("address").toString() == address)
+                    client = v.toObject();
+        if (client.isEmpty()) {
+            emit floatingResized(id, false, 0, 0);
+            finish(Kind::Resize, false);
+            return;
+        }
+        const bool floating = client.value("floating").toBool() && !fullscreenOf(client);
+        emit floatingResized(id, floating, pairAt(client, "size", 0), pairAt(client, "size", 1));
+        finish(Kind::Resize, floating);
     });
 }
 
@@ -324,7 +444,7 @@ void WindowPlacement::doLeave() {
     const QStringList luas = m_saved.valid ? leaveCommands(m_address, m_saved) : QStringList();
     if (luas.isEmpty()) {
         m_saved = {};
-        finish(false, false);
+        finish(Kind::Leave, false);
         return;
     }
     const bool tiles = !m_saved.floating;
@@ -334,7 +454,7 @@ void WindowPlacement::doLeave() {
             m_saved = {};
             setManaged(tiles);
         }
-        finish(false, done);
+        finish(Kind::Leave, done);
         refresh();
     });
 }

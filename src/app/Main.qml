@@ -9,8 +9,11 @@ ApplicationWindow {
     // Now playing: the mini and micro players and the big view (NowPlayingModes.qml).
     width: modes.compact !== "" ? modes.compactWidth : prefs.advanced ? prefs.advancedWidth : prefs.deckWidth
     height: modes.compact !== "" ? modes.compactHeight : prefs.advanced ? prefs.advancedHeight : prefs.deckHeight
-    minimumWidth: modes.compact !== "" ? modes.minimumWidth : advanced ? 820 : 440
-    minimumHeight: modes.compact !== "" ? modes.minimumHeight : advanced ? 520 : 460
+    // The setup previews both views at one size, so it keeps the deck's
+    // smaller minimum: Qt growing the window by itself would leave it larger
+    // than Hyprland's box for a floating window.
+    minimumWidth: modes.compact !== "" ? modes.minimumWidth : advanced && !setupUi.sheetOpen ? 820 : 440
+    minimumHeight: modes.compact !== "" ? modes.minimumHeight : advanced && !setupUi.sheetOpen ? 520 : 460
     visible: true
     title: modes.compact !== "" ? modes.title
            : backend.currentIndex >= 0 && backend.title
@@ -106,10 +109,64 @@ ApplicationWindow {
     // window floats (or without Hyprland).
     readonly property bool sizeManaged: typeof windowPlacement !== "undefined" && windowPlacement !== null
                                         && windowPlacement.managed
+    readonly property var placement: typeof windowPlacement !== "undefined" ? windowPlacement : null
+    // The size last asked of Hyprland, and for which mode: its answer is
+    // remembered as that mode's size only if the mode hasn't changed since.
+    property var asked: null
     function resizeTo(w, h) {
         if (sizeManaged) return
         width = w
         height = h
+        // Hyprland doesn't follow a floating window that resizes itself: Qt
+        // would lay out at the new size inside the old box, cut off when
+        // larger and with a gap when smaller. Ask Hyprland too, and take
+        // the size it answers with (onFloatingResized below).
+        askHyprland(w, h, false)
+    }
+    // At least w x h: a floating window grows to it, a tiled one is left alone.
+    function growTo(w, h) {
+        if (sizeManaged || (width >= w && height >= h)) return
+        width = Math.max(width, w)
+        height = Math.max(height, h)
+        askHyprland(w, h, true)
+    }
+    function askHyprland(w, h, growOnly) {
+        if (!placement || !placement.available || modes.compact !== "") return
+        asked = { advanced: advanced, request: placement.resizeFloating(w, h, growOnly) }
+    }
+    // Takes the size Hyprland gives the window, so the content fills it
+    // exactly; then it is that mode's size.
+    Connections {
+        target: win.placement
+        ignoreUnknownSignals: true
+        function onFloatingResized(request, floating, w, h) {
+            // Only the answer to the last request: an older one is stale.
+            const asked = win.asked
+            if (!asked || asked.request !== request) return
+            win.asked = null
+            if (modes.compact !== "" || modes.placing || w <= 0 || h <= 0) return
+            if (win.width !== w || win.height !== h) {
+                win.width = w
+                win.height = h
+            }
+            if (floating && asked.advanced === win.advanced && !setupUi.sheetOpen) win.rememberSize()
+        }
+    }
+    // The window's present size as the present mode's size.
+    function rememberSize() {
+        if (sizeManaged || modes.compact !== "") return
+        if (advanced) {
+            prefs.advancedWidth = width
+            prefs.advancedHeight = height
+        } else {
+            prefs.deckWidth = width
+            prefs.deckHeight = height
+        }
+    }
+    // Back to the present mode's own size: after the setup, whose previews
+    // keep one size for both modes.
+    function settleSize() {
+        resizeTo(advanced ? prefs.advancedWidth : prefs.deckWidth, advanced ? prefs.advancedHeight : prefs.deckHeight)
     }
     onActiveChanged: if (typeof windowPlacement !== "undefined" && windowPlacement) windowPlacement.refresh()
     onWidthChanged: if (typeof windowPlacement !== "undefined" && windowPlacement) windowPlacement.refresh()
@@ -134,12 +191,14 @@ ApplicationWindow {
         }
     }
 
-    function setAdvanced(on) {
+    // keepSize: switch the view only, at the window's present size, and
+    // remember nothing (the setup's previews).
+    function setAdvanced(on, keepSize) {
         if (modes.compact !== "") modes.setCompact("")
         if (on === advanced) return
-        rememberLayout()
+        if (!keepSize) rememberLayout()
         prefs.advanced = on
-        resizeTo(on ? prefs.advancedWidth : prefs.deckWidth, on ? prefs.advancedHeight : prefs.deckHeight)
+        if (!keepSize) resizeTo(on ? prefs.advancedWidth : prefs.deckWidth, on ? prefs.advancedHeight : prefs.deckHeight)
         if (on) prefs.libraryHintDone = true
         if (on && advancedLoader.item) advancedLoader.item.focusList()
     }
@@ -772,6 +831,7 @@ ApplicationWindow {
 
     Item {
         id: root
+        objectName: "windowRoot"
         anchors.fill: parent
         // Hidden while Hyprland moves into or out of a compact player.
         opacity: modes.placing ? 0 : 1

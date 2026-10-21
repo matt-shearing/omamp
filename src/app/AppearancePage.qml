@@ -75,6 +75,8 @@ ScrollView {
         }
         // The large bar's visualiser, the idle animation and Reduce motion.
         BarVisualiserSettings { Layout.fillWidth: true }
+        // Sharing it with the Omarchy bar plugin.
+        BarFeedSettings { Layout.fillWidth: true }
 
         Heading { text: qsTr("Big Now Playing view") }
         Note { text: qsTr("Press N for the big view, F11 for fullscreen, Esc to come back.") }

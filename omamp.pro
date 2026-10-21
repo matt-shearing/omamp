@@ -13,6 +13,7 @@ INCLUDEPATH += src/app
 HEADERS += \
     src/app/albumgridmodel.h \
     src/app/appearance.h \
+    src/app/levelsfeed.h \
     src/app/nowplaying.h \
     src/app/visualiser.h \
     src/app/artprovider.h \
@@ -49,6 +50,7 @@ HEADERS += \
 SOURCES += \
     src/app/albumgridmodel.cpp \
     src/app/appearance.cpp \
+    src/app/levelsfeed.cpp \
     src/app/nowplaying.cpp \
     src/app/visualiser.cpp \
     src/app/artprovider.cpp \

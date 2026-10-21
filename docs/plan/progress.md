@@ -6597,3 +6597,58 @@ Night Ride.
 - **The Omarchy bar's visualiser** now gets the auto-ranged levels too; it
   was not re-checked against its own "show more strongly" setting.
 - **Translations**: the new strings are English only.
+
+## Renamed to Thrum, 0.4.0 (22 October 2026)
+
+Omamp is now Thrum, everywhere in the repository: binary, qmake projects,
+tests, desktop file, icon, Wayland app id, window titles (`Thrum mini`,
+`Thrum micro`), MPRIS name `org.mpris.MediaPlayer2.thrum`, levels socket
+`$XDG_RUNTIME_DIR/thrum-levels.sock`, bar plugin `contra.thrum`, the Spotify
+helper `thrum-spotify-session`, environment variables `THRUM_*`, docs and
+site. The packages conflict with and replace `omamp`. The site's address is
+`https://matt-shearing.github.io/thrum/`, and Pages publishes on pushes to
+`main` that change `site/`.
+
+```
+src/core/renamemigration.{h,cpp}   first start: omamp folders -> thrum folders
+tests/renamemigration_tests.cpp     old only, both, neither, Omamp still running
+```
+
+- **Folders move once, whole.** `main()` (window and command line) calls
+  `RenameMigration::runAtStartup` before anything opens a file. Each of
+  `<config>/omamp`, `<data>/omamp` and `<cache>/omamp` (QStandardPaths, so
+  the XDG variables count) is renamed to `thrum` in one `rename()`, so
+  `library.db` never parts from its `-wal` and `-shm`. Another filesystem
+  falls back to a copy beside the target, renamed into place, with the old
+  folder left. A `thrum` folder that already exists wins and the old one is
+  left alone. `omamp.conf` becomes `thrum.conf`. Picture paths the library
+  stored into the old cache (`artwork.cache_path`, `radio_stations.art_path`)
+  are rewritten. A log goes to stderr and to
+  `<config>/thrum/renamed-from-omamp.log`.
+- **Omamp still running.** A process with a file open under
+  `<data>/omamp` (read from `/proc/*/fd`) means Omamp has the library open:
+  Thrum moves nothing, says so on stderr and in a notification, and exits.
+  A name check was tried first and was wrong: it saw an Omamp running for a
+  different home.
+- **Old names still read:** keyring entries under `application=omamp`
+  (copied to `thrum` on first use, the old one kept; removing a source
+  clears both), `.omamp-volume-id` markers on shares, and `.omamp-sync.json`
+  manifests on devices (replaced by `.thrum-sync.json` on the next sync).
+- **The bar plugin installer** puts `contra.thrum` where `contra.omamp` was
+  on the bar, takes the old one off and removes its link.
+
+Checked for real: the screenshot home, still in Omamp's layout, moved by the
+new binary on its first `thrum volume list`. The Omamp running on this
+machine shows in `/proc/*/fd` with `library.db` open, which is what the check
+reads; the check itself is covered by a test that holds a file open.
+
+### Screenshots
+
+Retaken because they showed the old name: `docs/setup-*-{light,dark}.png`,
+`docs/sidebar-{light,dark}.png`, `docs/spotify-multiselect-{light,dark}.png`,
+`docs/settings-spotify.png`, `docs/volumes.png`, `docs/report.png` and
+`docs/omarchy-plugin-{light,dark}.png`, with the same made-up library, fake
+spotify_player, fake Navidrome and made-up Wikipedia as before, offscreen in
+software in throwaway homes. The report is now of the demo library (53
+tracks). `site/og.jpg` and the site's copies of the changed pictures were
+rebuilt with `site/tools/build-assets.sh`.

@@ -248,9 +248,9 @@ Appearance** does.
 Opened from the large bar, the picker also has the bar's places (**Whole
 bar**, **Seek bar**, **Edge**, **Beside cover**, **Off**) and whether the bar
 uses the **Same as the player** style or its **Own style**. With its own
-style, the previews choose the bar's style only. **Reduce motion** and
-**More settings…** (Settings > Appearance) are along the bottom of every
-picker.
+style, the previews choose the bar's style only. **Reduce motion**,
+[**Sensitivity**](#sensitivity) and **More settings…** (Settings >
+Appearance) are along the bottom of every picker.
 
 ![The picker in the big Now Playing view](visualiser-picker-big-dark.png)
 
@@ -282,18 +282,22 @@ Appearance > Visualiser** places a visualiser in it:
   <img alt="The library with Synthwave behind the whole large bar" src="fullbar-synthwave-light.png">
 </picture>
 
-The visualiser fills the bar and fades out over the last sixth of its
-width at each end, and towards the edge that faces the library, so it
-melts into the window rather than stopping at a line. It centres on the
-play button: Synthwave's sun rises behind it, with hills, a city of
-spectrum bars and the rolling grid running out to both ends. Under the
-title, the times and the controls on the right it is dimmed, so the words
-stay readable; the play button gets a ring in the bar's colour.
+The visualiser fills the bar, softening only over the last few dozen
+pixels at each end and a little towards the edge that faces the library,
+so it melts into the window rather than stopping at a line. It centres on
+the play button: Synthwave's sun rises behind it, with hills, a city of
+spectrum bars and the rolling grid running out to both ends, behind the
+cover and the title too. The title, the artist and the times carry a soft
+halo in the bar's colour, and the picture is dimmed a little under them
+and under the controls on the right, so the words stay readable (at least
+4.5:1 for the title and 3:1 for the artist, in light and dark themes);
+the play button gets a ring in the bar's colour.
 
 ![Every style behind the whole bar, in Night Ride](fullbar-styles-dark.png)
 
 Synthwave, Star field, Pulse and Spectrum line suit it best. The busier
-styles show more faintly: Skyline and Fire at 60 %, and the bars, Bars with
+styles show more faintly: Oscilloscope at 70 %, Skyline and Fire at 60 %,
+and the bars, Bars with
 peaks, Mirrored spectrum and LED matrix at 45 %, spread over thin columns,
 with the LED matrix's unlit cells left out. A click on the bar's empty
 space does nothing here, so `Shift+V` moves the style on.
@@ -305,6 +309,29 @@ own, that moves the shared style. The wheel works behind the whole bar too,
 over any part that is not a button or a slider. The bar's waveform button
 opens the [picker](#choosing-a-visualiser) with its places and its style. The palette (`Ctrl+K`) has **Large bar visualiser: Along the edge**
 and the rest.
+
+### Sensitivity
+
+The visualisers follow the music's loudness, so a loud modern master and a
+quiet old recording both move them over most of their height. Omamp keeps
+track of how loud each part of the spectrum has been over the last few
+seconds and scales the bars to that: on loud rock Synthwave's towers reach
+most of the way up the sky on the beats, and a quiet passage fills the bars
+again after a few seconds. Kick drums push the lowest bars a little
+higher.
+
+**Settings > Appearance > Visualiser > Sensitivity**, and the
+**Sensitivity** buttons along the bottom of the
+[picker](#choosing-a-visualiser), choose how readily the bars fill:
+
+| Sensitivity | Does |
+| --- | --- |
+| Low | Calmer: the bars sit lower and reach the top only on the loudest moments |
+| Normal | Tall on the beats without sitting at the top. The default, for loud and quiet music alike |
+| High | Taller and busier, for quiet music or a small visualiser |
+
+It applies to every visualiser, the Omarchy bar's included, and is kept in
+`window.conf` as `appearance/visualiserSensitivity`.
 
 ### Edge to edge in the big view
 

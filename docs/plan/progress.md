@@ -6421,3 +6421,179 @@ new bar visualiser cards.
 - **Without music playing** the real bar behind the panel draws nothing to
   compare; the cards' small drawings move on made-up levels.
 - **Translations**: the new strings are English only.
+
+## Full-bar tuning on real music (21 October 2026)
+
+Matt ran the whole-bar visualiser with Synthwave on a loud rock FLAC and
+said: "The shading seems aggressive on the left here particularly. The EQ
+visualisation doesn't seem to be aggressive enough on this view." In his
+screenshot the left third (cover and title) was a flat dark patch and the
+towers were short and level across the bar. Both came from tuning on
+made-up tones. User documentation is in
+[docs/now-playing.md](../now-playing.md#sensitivity).
+
+### What was built
+
+```
+src/engine/spectrum.{h,cpp}         auto-range: ceilings per group of bands, a window below them, a curve, a kick; sensitivity
+src/engine/player.h                 setVisualiserSensitivity
+src/app/appearance.{h,cpp}          visualiserSensitivity (low, normal, high), kept as appearance/visualiserSensitivity
+src/app/main.cpp, tests/nowplaying_context.h  the setting reaches the player's analyser
+src/app/visualiser.cpp              a narrow end fade, a softer top fade, a light dim under the words; taller towers
+src/app/BigBar.qml                  a halo on the title, artist and times; the title's quiet area only as wide as the words
+src/app/BarVisualiserSettings.qml   Sensitivity in Settings > Appearance > Visualiser
+src/app/VisualiserPicker.qml        Sensitivity chips along the picker's bottom row
+tests/visualiser_tests.cpp          two new tests, the contrast test extended, an opt-in real-music sheet
+```
+
+- **What was wrong with the levels.** Run through the analyser, Bondslave's
+  *Stand Strong* (mean −14 dBFS, a loud modern master) sat between 0.4 and
+  0.75 in most bands nearly all the time: the 60 dB fixed range put a loud
+  master high and flat, and Synthwave's towers could only reach 55 % of the
+  sky, rising into the part the fade dimmed most. A copy 24 dB quieter
+  barely lit two bands; pink noise peaking at −30 dBFS fell below the
+  range altogether.
+- **Auto-range** (`Spectrum`). The analyser keeps each band's decibels
+  unclamped. Each group of four bands has a ceiling: its loudest band, which
+  jumps up at once, holds for a second, then falls 6 dB a second. A band's
+  reference is half way (Normal: 65 % of the way) from the loudest group's
+  ceiling to its own group's, so treble moves without looking as loud as
+  the bass. The band is placed in a 34 dB window below that reference and
+  put through a power curve (1.2), which keeps the average in the middle
+  and the peaks tall. A jump in the bass since the last buffer lifts the
+  lowest quarter of the bands, most at the bottom, so kicks stand out. The
+  reference never drops below −62 dB, so hiss and silence stay low. The
+  existing fast attack and slow fall, and the peaks, work on the result.
+  Every consumer of `Player::levels()` gets it: the deck, the strip, the
+  mini players, the big view, the large bar and the Omarchy bar's feed.
+- **Sensitivity** (`appearance/visualiserSensitivity`, Settings > Appearance
+  > Visualiser and the picker): Low has a 36 dB window, the reference 3 dB
+  higher, a curve of 1.35 and a smaller kick; High a 32 dB window, the
+  reference 4 dB lower, a curve of 1.05, more whitening and a bigger kick.
+  Normal is the default and suits loud masters and quiet recordings alike.
+- **Shading.** The end fade now runs over 4.5 % of the width (20–72 px)
+  instead of 17 % (up to 300 px), so the picture reaches behind the cover
+  and the title. The fade towards the library starts at 45 % rather than
+  20 % and is full by half way down. The dimming under the words is 35 %
+  instead of 72 %, with an 8–13 px feather instead of 22 % of the height,
+  and the title's quiet area is only as wide as the title or the artist
+  reaches, not the whole column. The title, the artist and the two times
+  carry an outline halo in the bar's colour at 60 % behind the whole bar
+  (`Text.Outline`). The oscilloscope, whose bright line crosses the title,
+  is held to 70 % instead of 80 %.
+- **Synthwave.** In the whole scene the towers can reach 90 % of the sky
+  instead of 55 %; the auto-range keeps the average lower, so the hills
+  still show between the beats.
+
+### Real music
+
+The opt-in `realMusicSheet` test (`OMAMP_VIS_REAL="<file>@<seconds>;…"`,
+`OMAMP_VIS_SHOTS=<folder>`) draws the large bar in the library window,
+1,600 px wide, at each moment of each file: Omamp's `Decoder` reads six
+seconds up to the moment and pushes them through `Spectrum` at 30 updates a
+second, as the player does, and it prints how full the analyser was and the
+contrast under the title and the artist. No audio device is opened and the
+files are only read. Run before and after on six moments from Matt's
+Bondslave album (*Stand Strong* three times, *Bold as a Lion*, *Emmaus*)
+and a copy of *Unseen (instrumental)* 24 dB quieter, Night Ride and OneQode
+Light Glass. The sheets stay private, outside the repository.
+
+| Moment | Before: tallest band | After: tallest band | After: mean band |
+|---|---:|---:|---:|
+| Stand Strong 0:35 | 0.83 | 0.96 | 0.28 |
+| Stand Strong 1:35 | 0.86 | 0.96 | 0.25 |
+| Stand Strong 2:40 | 0.87 | 0.96 | 0.30 |
+| Bold as a Lion 1:10 | 0.79 | 0.91 | 0.35 |
+| Emmaus 0:25 | 0.78 | 0.96 | 0.21 |
+| Unseen, 24 dB quieter, 1:00 | 0.41 | 0.96 | 0.31 |
+
+"Tallest band" is the highest level over the last second; with the towers
+able to reach 90 % of the sky, the loudest towers stand at up to about
+86 % of it on the beats, and the quiet copy now looks like the loud one.
+Over the whole of *Stand Strong* (a numpy copy of the analyser, used to
+choose the numbers), the tallest band's median went from 0.71 to 0.81 and
+its 90th percentile from 0.82 to 1.0, while the average band went from
+0.41 to 0.37: taller on the beats, lower between them, and each band moves
+over 43 % more of its height (standard deviation 0.14 to 0.21).
+
+### Contrast
+
+Measured as before: the background under the words with the words hidden,
+against their colour, so the halo is not counted.
+
+- `fullBarInTheWindow` (every style, the made-up fixture, a 31-character
+  title and an artist): at most 2 % of the title's pixels under 4.5:1 and
+  of the artist's under 3:1. Worst single pixels: title 4.10:1 (Star field)
+  and 3.86:1 (Spectrum line, bar at the top) in Night Ride, 7.59:1 in Light
+  Glass; artist 4.21:1 (Oscilloscope) in Night Ride, 7.53:1 in Light Glass.
+- Real music, Synthwave, Bars with peaks, Skyline and LED matrix in Night
+  Ride: title at least 6.56:1, artist at least 6.72:1, no pixel below the
+  aim (before: 11.5:1 and 12.2:1, because the left third was nearly
+  empty). Light Glass with Synthwave, Bars with peaks, Star field and
+  Spectrum line: title at least 8.49:1, artist at least 8.32:1.
+
+### CPU
+
+`OMAMP_VIS_BENCH=1 … cpuBehindTheWholeBar`, as in
+[Full-bar visualisers](#full-bar-visualisers-21-october-2026), run on the
+old build and the new one back to back (load average 6–9, so a point or two
+of noise either way):
+
+| Style | Before: CPU | After: CPU | After: paint |
+|---|---:|---:|---:|
+| (off) | 2.7 % | 2.9 % | – |
+| Bars | 4.6 % | 5.0 % | 0.18 ms |
+| Skyline | 6.6 % | 4.1 % | 0.35 ms |
+| Spectrum line | 7.9 % | 8.7 % | 0.84 ms |
+| Pulse | 10.7 % | 8.1 % | 0.27 ms |
+| LED matrix | 7.8 % | 7.0 % | 0.11 ms |
+| Synthwave | 8.6 % | 7.1 % | 0.27 ms |
+| Star field | 4.1 % | 3.8 % | 0.15 ms |
+
+The auto-range adds a few dozen multiplications and 24 `pow` calls per
+analyser update, which does not show. Every style stays within the earlier
+budget.
+
+### Tests
+
+- `autoRangeFillsLoudAndQuiet`: pink noise with a kick drum twice a second,
+  made by ffmpeg and decoded by `Decoder`, scaled to peak at −6 dBFS (a loud
+  master) and −30 dBFS (a very quiet recording). On Normal, after three
+  seconds, on both: the tallest band's median at least 0.45 and its 90th
+  percentile at least 0.7 (measured 0.56 and 0.78 on both), the average
+  band between 0.2 and 0.7 (0.32 and 0.27) and nearly never above 0.9, and
+  the bass moving with the kicks; the two within 0.12 of each other; High
+  above Normal above Low; silence stays at zero at every sensitivity.
+- `sensitivitySettingPersists`: the default, bad values refused, kept in
+  `window.conf`, reaching the player's analyser at start and on change,
+  Settings' radio buttons and the picker's chips.
+- `fullBarFadeAndEveryStyle`: full strength 80 px from each end; the dim
+  under the words between half and three quarters of the open picture.
+- `fullBarInTheWindow`: the same for the real title, the halo on, and the
+  artist's contrast as well as the title's.
+- `everyStyleRendersAtEverySize` paints on a dark window: loud white noise
+  now lights every star in the peak colour, white by default, which was
+  invisible on the test's white window.
+
+`bin/test` with JOBS=4: 34 Totals lines, 505 passed, 0 failed, 10 skipped (the
+opt-in benchmarks and live tests, and the new opt-in real-music sheet).
+
+### Screenshots
+
+`docs/fullbar-synthwave-{light,dark}.png` and `docs/fullbar-styles-dark.png`,
+retaken: the made-up library from `tests/make-demo-library` with
+`DEMO_SECONDS=60`, playing Neon Coast's Midnight Highway on the native
+engine into a buffer (`OMAMP_NO_AUDIO_DEVICE`), captured with
+`OMAMP_DEMO` and `OMAMP_SCREENSHOT`, offscreen in software, in a throwaway
+HOME with no session bus. Light is a copy of OneQode Light Glass, dark of
+Night Ride.
+
+### Known gaps
+
+- **Not seen on a real screen** with real music playing; the real-music
+  check decoded the files offline into the same analyser.
+- **The fixed hold and fall** (one second, 6 dB a second) mean a sudden
+  quiet passage after a loud one takes about three seconds to fill again.
+- **The Omarchy bar's visualiser** now gets the auto-ranged levels too; it
+  was not re-checked against its own "show more strongly" setting.
+- **Translations**: the new strings are English only.

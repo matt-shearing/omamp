@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "contra.omamp",
   "name": "Omamp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "contra",
   "license": "MIT",
-  "description": "Omamp in the bar: the cover and what is playing while Omamp is open, and a panel led by a large cover, with the track, seek, transport, stop, shuffle, repeat, Omamp's volume, and a button that brings its window forward.",
+  "description": "Omamp in the bar: the cover and what is playing while Omamp is open, a faint copy of Omamp's visualiser behind the track, and a panel led by a large cover, with the track, seek, transport, stop, shuffle, repeat, Omamp's volume, and a button that brings its window forward.",
   "keywords": ["omamp", "winamp", "music", "player", "mpris", "now-playing"],
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
@@ -26,7 +26,10 @@
       "scrollAction": "Previous/next track",
       "showThumbnail": true,
       "coverSize": "Large",
-      "showLcd": false
+      "showLcd": false,
+      "showVisualiser": true,
+      "visualiserStyle": "Same as Omamp",
+      "visualiserStrength": "Subtle"
     },
     "schema": [
       {
@@ -45,6 +48,29 @@
         "label": "Thumbnail in bar",
         "defaultValue": true,
         "description": "A small cover before the play glyph. With no cover, only the glyph shows."
+      },
+      {
+        "key": "showVisualiser",
+        "type": "boolean",
+        "label": "Visualiser behind the track in the bar",
+        "defaultValue": true,
+        "description": "A faint, small copy of Omamp's visualiser behind \"Artist – Title\", and behind the title in the panel. It shows only while music plays through Omamp, and needs Omamp's Settings > Appearance > Share the visualiser with the Omarchy bar (on by default)."
+      },
+      {
+        "key": "visualiserStyle",
+        "type": "enum",
+        "label": "Visualiser style",
+        "options": ["Same as Omamp", "Bars", "Line"],
+        "defaultValue": "Same as Omamp",
+        "description": "Same as Omamp draws a small version of the style chosen in Omamp. Bars and Line keep to one simple style whatever Omamp shows."
+      },
+      {
+        "key": "visualiserStrength",
+        "type": "enum",
+        "label": "Visualiser strength",
+        "options": ["Subtle", "Normal"],
+        "defaultValue": "Subtle",
+        "description": "Subtle is faint enough to read the words over with ease. Normal shows it more."
       },
       {
         "key": "showClock",

@@ -182,7 +182,7 @@ private slots:
             QCOMPARE(a.plain().value("lcdText").toString(), theme.colors().value("green").toString());
             a.setDeckStyle("nonsense");
             QCOMPARE(a.deckStyle(), QString("classic"));
-            a.setVisualiser("fire");
+            a.setVisualiser("stars");
             QCOMPARE(a.nextVisualiser(), QString("bars"));
             a.setVisualiser("scope");
             a.setCoverInDeck(false);

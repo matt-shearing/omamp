@@ -21,7 +21,7 @@ same list, and look in the menu bar: every entry shows its key beside it.
 | `Tab` | Switch between the deck and the library |
 | `N` | The big Now Playing view, and back |
 | `F11` | Fullscreen Now Playing; `Esc` leaves it, then the big view |
-| `Shift+V` | Next visualiser style (or click the visualiser) |
+| `Shift+V` | Next visualiser style (or click the visualiser, or turn the mouse wheel over it: down for the next, up for the one before) |
 | `Shift+L` | Lyrics in the big view on or off |
 | `Ctrl+M` | The mini player, and back |
 | `Ctrl+Shift+M` | The micro player, and back |
@@ -98,6 +98,18 @@ instead of the playlist, and these keys work too.
 | Arrow keys, `Enter` | Move between the channels and tune in |
 | `F` | Mark the channel under the cursor as a favourite |
 | `Delete` | Remove a station of your own |
+
+## In the visualiser picker
+
+The waveform button beside each visualiser, or **Choose visualiser…** in the
+palette and the View menu, opens it.
+
+| Key | Does |
+| --- | --- |
+| Arrow keys | Move between the previews |
+| `Space` | Use the style under the outline, and stay open |
+| `Enter` | Use the style under the outline, and close |
+| `Esc` | Close |
 
 [radio.md](radio.md#keys) and [now-playing.md](now-playing.md) say more about
 the keys for the radio and the Now Playing views.

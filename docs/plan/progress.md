@@ -6014,3 +6014,165 @@ Glass), dark is Night Ride. Looking at them led to:
   themes with two colours look richer.
 - **Deck and strip** keep their framed visualiser (see above).
 - **Translations**: the new strings are English only.
+
+## Visualiser picker (21 October 2026)
+
+Matt asked for "a little shortcut to choose visualiser … that stands out, so
+people can really easily change the visualiser to all the different things."
+Every visualiser now has a waveform button beside it that opens a picker of
+live previews, and the mouse wheel over a visualiser moves through the
+styles. User documentation is in
+[docs/now-playing.md](../now-playing.md#choosing-a-visualiser).
+
+### What was built
+
+```
+src/app/VisualiserPicker.qml  the picker: live tiles, the bar's places and style, Reduce motion, More settings…
+src/app/VisualiserButton.qml  the waveform button for the large bar, the big view and the strip
+src/app/appearance.{h,cpp}    stepVisualiser/stepBarVisualiser (the wheel); choosePicker(), pickerRequested, pickerAnchor
+src/app/Analyser.qml          the wheel over any visualiser; behind the whole bar it takes the wheel only
+src/app/BarVisualiser.qml     the wheel steps the bar's own style when it has one
+src/app/BigBar.qml            the button first among the right-hand controls
+src/app/BigView.qml           the top line's style button opens the picker instead of moving on
+src/app/DeckView.qml          a DeckButton after eject, lit while the picker is open
+src/app/DeckButton.qml        shows its tooltip (it had a `tip` but never showed it)
+src/app/DeckStrip.qml         the button at the right of the LCD (the LCD is 26 px wider)
+src/app/NowPlayingModes.qml   the palette's "Choose visualiser…"
+src/app/MainMenuBar.qml       View → Choose visualiser…
+src/app/Main.qml              one picker instance; it counts as a sheet, so the window's keys wait
+tests/visualiser_tests.cpp    three tests and an opt-in CPU measurement
+```
+
+- **One picker, asked for by signal.** The buttons call
+  `appearance.choosePicker(button, where)`; the picker in Main.qml listens
+  for `pickerRequested` and opens beside that button, so no signal has to
+  be threaded through AdvancedView or the bar. `where` is `bar` (the large
+  bar: places and own style), `big`, `player` or `strip` (the shared style;
+  the strip's previews use the plain palette its analyser wears). From the
+  palette or the menu it opens in the middle of the window for whichever
+  visualiser is in view, using `barVisualiserShown()` as `Shift+V` does.
+- **Placement.** Above or below the button's `edgeItem` (the whole large
+  bar, or the strip), so it never covers the bar it controls; right edges
+  line up in the right half of the window. Four columns of 132 px tiles, or
+  three or two in a narrow window (the deck is 500 px wide).
+- **Tiles.** A `Visualiser` 116 × 44 inside a 120 × 48 screen in the
+  deck's LCD colour, the style's name under it; the style in use is tinted
+  and ticked, the keyboard's tile outlined in the accent. The tiles sit in a
+  `Loader` that is active only while the picker is visible, so closing it
+  destroys them and nothing animates in the background.
+- **Sound.** The previews take `backend.levels` while Omamp is playing its
+  own sound; otherwise a 30 Hz timer in the picker makes up a signal (a
+  beat in the bass and wandering bands, as the setup wizard's previews do),
+  so the first five styles are not empty while paused or on Spotify.
+- **Choosing.** A click or `Space` applies and leaves the picker open, so
+  the real visualiser can be watched behind it; `Enter` applies and closes;
+  arrows only move the outline. **Own style** copies the current shared
+  style into `barVisualiserStyle`, so nothing jumps; **Same as the player**
+  clears it.
+- **Toggle.** Clicking the button while the picker is open closes it. The
+  press outside closes the popup before the click arrives, so the picker
+  remembers when it closed and ignores a request from the same button within
+  300 ms, unless it was closed by a key.
+- **Wheel.** One style per 120 units of `angleDelta`, adding up smaller
+  touchpad steps; down goes on, up goes back, wrapping both ways. Behind the
+  whole bar the visualiser's MouseArea now accepts no buttons instead of
+  being disabled, so clicks still reach the bar and the wheel reaches it.
+- **Looks.** The button is a waveform (`md-waveform`) on a faint tint of
+  the bar's text colour with a thin border; hovered it takes the accent,
+  and it stays accented while its picker is open (`appearance.pickerAnchor`).
+  Chips and tiles take focus only from Tab, so a click leaves the arrows and
+  `Space` on the tiles.
+
+### Tests
+
+`tests/visualiser_tests.cpp` (OMAMP_TESTS=visualiser), offscreen, software,
+no audio device, temporary XDG home:
+
+- `pickerInTheLargeBar`: the button is in the bar; a click opens the picker
+  above the bar, inside the window, with the button lit; one tile per style
+  in `Appearance::visualisers()`, each preview painting; a click picks the
+  shared style and it is saved; **Own style** then picks only the bar's, and
+  **Same as the player** goes back; each place chip sets and saves the place;
+  Reduce motion reaches the previews; arrows move the outline without
+  picking, `Space` picks and stays, `Space` does not start playback,
+  `Enter` picks and closes; closed, the previews are gone and the button is
+  no longer lit; `Esc` closes; the button closes an open picker; the
+  palette's action opens it centred for the bar; **More settings…** opens
+  Settings > Appearance.
+- `pickerInTheOtherPlaces`: the deck, the strip and the big view each have
+  the button, open the picker for the shared style without the bar's
+  controls, and pick; the palette from each view chooses for the same
+  visualiser; the big view's button names the style; the View menu has the
+  entry.
+- `wheelCyclesStyles`: down and up over the bar's visualiser, three small
+  touchpad steps make one, wrapping at the end, the bar's own style, behind
+  the whole bar, and over the deck's analyser (the shared style), saved.
+- `cpuPickerOpen` (opt-in, `OMAMP_VIS_BENCH=1`): below.
+
+`menu_tests`' check that every menu entry is a palette action covers the new
+entry.
+
+`bin/test` with JOBS=4: 33 Totals lines, 479 passed, 0 failed, 9 skipped (the
+existing opt-in benchmarks and live web test, and the three opt-in CPU
+measurements).
+
+### CPU
+
+`OMAMP_VIS_BENCH=1 OMAMP_TESTS=visualiser build/tests/omamp_tests cpuPickerOpen`:
+the library window at 1,400 × 800, Night Ride, large bar, nothing playing
+(so the previews run on the made-up signal, the heavier case), five seconds
+each. Software renderer, Ryzen 9 7950X3D, load average about 5.
+
+| Picker | CPU (one core) | Preview frames a second, all twelve |
+|---|---:|---:|
+| Closed | 2.7 % | 0 |
+| Open | 7.7 % | 588 |
+| Closed again | 4.4 % | 0 |
+
+Open, the picker adds about five per cent of a core: seven animated tiles at
+60 frames a second, five repainting on the 30 Hz signal, and the software
+renderer redrawing their small areas. The second closed figure is noise from
+other work on the machine; the tiles no longer exist then.
+
+### Screenshots
+
+`docs/visualiser-picker-{light,dark}.png` (the picker above the large bar,
+Synthwave behind the whole bar) and `docs/visualiser-picker-big-dark.png`
+(the big view). Made-up library from `tests/make-demo-library`, playing
+Neon Coast's Night Drive on the native engine into a buffer
+(`OMAMP_NO_AUDIO_DEVICE`), opened with `OMAMP_DEMO=click:…`, captured with
+`OMAMP_SCREENSHOT` offscreen in software in a private mount and network
+namespace with a throwaway home. Light is a copy of the desktop's current
+theme (OneQode Light Glass), dark is Night Ride. Looking at them led to:
+
+- the picker opening above the whole bar rather than just above the button,
+  where it covered the bar's visualiser;
+- borders drawn in a faint foreground colour, because the light theme's
+  `lighter_background` is white and the tiles and chips had no edges;
+- fewer columns in a narrow window, after the deck's picker ran off its
+  500 px window;
+- the keys moved onto the content column, after a spare zero-size item left
+  a gap above the footer.
+
+### Decisions
+
+- **A picker, not a menu.** Names alone don't say what Pulse or Skyline look
+  like; a live tile does, and the menus still list the names.
+- **Stays open on click.** Trying styles one after another is the point; the
+  real visualiser changes behind the picker as each is chosen.
+- **The big view's style button now opens the picker** rather than moving to
+  the next style; `Shift+V` and a click on the visualiser still do that.
+- **Main.qml**: one line for the picker and one term in `sheetOpen`, nothing
+  else, to stay clear of the setup work going on there.
+
+### Known gaps
+
+- **Not seen on a real screen** or on the GPU renderer.
+- **The deck's button** sits in the transport row, not inside the LCD beside
+  the analyser: the LCD has no free corner while the clock and the LIVE
+  badge share it.
+- **The mini and micro players** have no button; the wheel and `Shift+V`
+  work there. The palette's action would open the picker inside a window
+  64 px high, which it does not fit.
+- **Party mode** does not lock the picker, as it does not lock `Shift+V`.
+- **Translations**: the new strings are English only.

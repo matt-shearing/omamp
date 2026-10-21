@@ -14,7 +14,7 @@ namespace Net {
 class HttpClient;
 }
 
-// Internet radio: the stations Omamp knows, the Nightride FM catalogue and
+// Internet radio: the stations Thrum knows, the Nightride FM catalogue and
 // its live now-playing feed, ICY titles inside a stream, radio-browser.info
 // search, and .pls/.m3u station lists. docs/radio.md describes it for users.
 //
@@ -66,10 +66,10 @@ bool isRadioPath(const QString &path);
 QString keyFromPath(const QString &path);
 QString networkName(const QString &network);
 
-// nightride.fm, or OMAMP_NIGHTRIDE_URL (tests). Its feed is <base>/meta.
+// nightride.fm, or THRUM_NIGHTRIDE_URL (tests). Its feed is <base>/meta.
 QString nightrideBase();
 QString nightrideFeedUrl();
-// stream.nightride.fm, or OMAMP_NIGHTRIDE_STREAM_URL (tests).
+// stream.nightride.fm, or THRUM_NIGHTRIDE_STREAM_URL (tests).
 QString nightrideStreamBase();
 
 // Every Nightride FM and Rekt Network channel, as seeded. Checked against
@@ -151,7 +151,7 @@ public:
 
     // Adds a station from radio-browser.info or a custom address. A custom
     // station gets the key my/<n>. Returns the stored station; an address
-    // Omamp already has returns that station instead.
+    // Thrum already has returns that station instead.
     Station add(Station station, QString *error = nullptr, bool *existed = nullptr);
     bool remove(const QString &key, QString *error = nullptr);
     bool rename(const QString &key, const QString &name);
@@ -168,13 +168,13 @@ public:
     // Newest first: {station, stationName, artist, title, started, heardMs}.
     QList<QVariantMap> recentlyHeard(int limit = 50) const;
 
-    // Adds channels nightride.fm lists, and ones its feed names, that Omamp
+    // Adds channels nightride.fm lists, and ones its feed names, that Thrum
     // doesn't have yet: on the site, Nightride FM; only in the feed, Rekt
     // Network. Nothing is removed. Returns how many were added.
     int mergeNightrideCatalog(const QList<CatalogEntry> &site, const QStringList &feedIds);
 
     // .pls, .m3u or .m3u8 station lists. Each http(s) entry becomes a
-    // custom station (or is matched to one Omamp has).
+    // custom station (or is matched to one Thrum has).
     int importFile(const QString &file, QString *error = nullptr);
     // group as for group(); the format from the extension (.pls, else M3U).
     bool exportFile(const QString &file, const QString &group, QString *error = nullptr) const;
@@ -186,7 +186,7 @@ private:
 
 // radio-browser.info, the open directory of internet radio.
 namespace Browser {
-// OMAMP_RADIOBROWSER_URL (tests), else one of the API servers named by the
+// THRUM_RADIOBROWSER_URL (tests), else one of the API servers named by the
 // DNS record _api._tcp.radio-browser.info (or its /json/servers list),
 // picked at random as the service asks. No trailing slash.
 QString baseUrl(Net::HttpClient *http = nullptr);

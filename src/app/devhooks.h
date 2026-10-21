@@ -14,7 +14,7 @@ class QQuickWindow;
 // numbers come from the real window, offscreen, without touching anyone's
 // screen.
 //
-//   OMAMP_DEMO="expand:artists;node:artist:12;select:3;queue:0;filter:coast;sort:1"
+//   THRUM_DEMO="expand:artists;node:artist:12;select:3;queue:0;filter:coast;sort:1"
 //       steps run once the window is up: open a tree node (by key), choose
 //       a node, select a row, add a row to Now Playing (not played), search,
 //       sort by a column. Also: action:<id> (any palette action), mask:<text>
@@ -27,8 +27,8 @@ class QQuickWindow;
 //       click:<objectName> (press a named button), wait:<ms> (let
 //       background work land), spotifysection:<section> and
 //       spotifyselect:<rows> ("1-4,+6": choose Spotify rows).
-//   OMAMP_SCREENSHOT=<file.png>   save the window there, then quit
-//   OMAMP_PROFILE=1               print the time to the first frame and, in
+//   THRUM_SCREENSHOT=<file.png>   save the window there, then quit
+//   THRUM_PROFILE=1               print the time to the first frame and, in
 //       advanced mode, how long a jump to the end, a sort and two searches
 //       take to reach the screen, then quit
 class DevHooks : public QObject {

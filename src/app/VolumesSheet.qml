@@ -208,7 +208,7 @@ ToolSheet {
                                     SmallButton {
                                         text: qsTr("Moved…")
                                         visible: !vol.remote
-                                        ToolTip.text: qsTr("The music is somewhere else now: choose the folder, and Omamp points this volume there")
+                                        ToolTip.text: qsTr("The music is somewhere else now: choose the folder, and Thrum points this volume there")
                                         onClicked: sheet.nas.reassignVolume(vol.modelData.id)
                                     }
                                     SmallButton {
@@ -272,7 +272,7 @@ ToolSheet {
                 Text {
                     Layout.fillWidth: true
                     wrapMode: Text.Wrap
-                    text: qsTr("A server's library is copied into Omamp's as a list (no files are downloaded), so it can be searched, rated and put in playlists. Its tracks carry a cloud mark and stream from the server.")
+                    text: qsTr("A server's library is copied into Thrum's as a list (no files are downloaded), so it can be searched, rated and put in playlists. Its tracks carry a cloud mark and stream from the server.")
                     font.pixelSize: 12
                     color: theme.c.muted
                 }

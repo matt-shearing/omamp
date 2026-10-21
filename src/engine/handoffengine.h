@@ -4,11 +4,11 @@
 
 #include "audioengine.h"
 
-// Playback that happens outside Omamp: another program plays the track and
-// Omamp follows it (Spotify, through spotify_player's Connect device).
+// Playback that happens outside Thrum: another program plays the track and
+// Thrum follows it (Spotify, through spotify_player's Connect device).
 // HandoffEngine hands queue entries it handles() to it and everything else
 // to the real engine. Implementations report as an engine would; they never
-// make sound in Omamp.
+// make sound in Thrum.
 class ExternalPlayback : public QObject {
     Q_OBJECT
 public:
@@ -18,7 +18,7 @@ public:
     virtual bool handles(const QString &path) const = 0;
     // Makes path the current track, stopped. Nothing plays yet.
     virtual void load(const QString &path) = 0;
-    // Omamp moved on to a track of its own: stop playing ours, if playing.
+    // Thrum moved on to a track of its own: stop playing ours, if playing.
     virtual void unload() = 0;
     virtual QString source() const = 0;
 
@@ -31,7 +31,7 @@ public:
     virtual qint64 duration() const = 0;
     virtual AudioEngine::State state() const = 0;
     virtual bool buffering() const { return false; }
-    // Omamp's volume, 0..1 linear as AudioEngine takes it, for the outside
+    // Thrum's volume, 0..1 linear as AudioEngine takes it, for the outside
     // player's own volume. Players that can't take it ignore it.
     virtual void setVolume(qreal linear) { Q_UNUSED(linear); }
     // title, artist, album, as AudioEngine::metaData().
@@ -59,7 +59,7 @@ signals:
 //
 // Gapless joins, crossfades, ReplayGain, the equaliser and the analyser
 // stay inside the real engine: they don't cross the boundary. The volume
-// slider and mute act on Omamp's own sound only.
+// slider and mute act on Thrum's own sound only.
 class HandoffEngine : public AudioEngine {
     Q_OBJECT
 public:

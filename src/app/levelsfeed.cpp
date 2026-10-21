@@ -27,13 +27,13 @@ LevelsFeed::LevelsFeed(const QString &settingsPath, const QString &socketPath, Q
 LevelsFeed::~LevelsFeed() { close(); }
 
 QString LevelsFeed::defaultSocketPath() {
-    const QString override = qEnvironmentVariable("OMAMP_LEVELS_SOCKET");
+    const QString override = qEnvironmentVariable("THRUM_LEVELS_SOCKET");
     if (!override.isEmpty())
         return override;
     QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
     if (dir.isEmpty())
         dir = QDir::tempPath();
-    return dir + "/omamp-levels.sock";
+    return dir + "/thrum-levels.sock";
 }
 
 QList<int> LevelsFeed::shrink(const QList<qreal> &levels, int count) {
@@ -97,7 +97,7 @@ void LevelsFeed::listen() {
         m_server->setSocketOptions(QLocalServer::UserAccessOption);
         connect(m_server, &QLocalServer::newConnection, this, &LevelsFeed::onNewConnection);
     }
-    // A socket file is there already. If another Omamp answers on it, that
+    // A socket file is there already. If another Thrum answers on it, that
     // copy feeds the bar and this one stays quiet; a stale file left by a
     // crash is removed. (Ask first: listen() with access options renames
     // its socket over the path, which would take the bar from the other.)
@@ -112,7 +112,7 @@ void LevelsFeed::listen() {
         QLocalServer::removeServer(m_socketPath);
     }
     if (!m_server->listen(m_socketPath))
-        qWarning("omamp: cannot share the visualiser on %s: %s", qPrintable(m_socketPath),
+        qWarning("thrum: cannot share the visualiser on %s: %s", qPrintable(m_socketPath),
                  qPrintable(m_server->errorString()));
 }
 

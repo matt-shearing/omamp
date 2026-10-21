@@ -45,7 +45,7 @@ const QStringList numberFields = {"year", "originalyear", "track", "tracktotal",
 const QStringList customFields = {"custom1", "custom2", "custom3", "custom4", "custom5"};
 // MusicBrainz identifiers that may hold several values (one per artist).
 const QStringList idListFields = {"mbartistid", "mbalbumartistid"};
-// Plain text fields Picard writes, by Omamp's name and TagLib's property
+// Plain text fields Picard writes, by Thrum's name and TagLib's property
 // key. TagLib maps each to the format's own frame or atom (UFID and TXXX in
 // ID3v2, ----:com.apple.iTunes in MP4).
 const QList<QPair<QString, const char *>> &extraFields() {

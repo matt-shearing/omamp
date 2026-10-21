@@ -300,7 +300,7 @@ OrganisePlan Organiser::plan(const QList<qint64> &trackIds, const OrganiseOption
                 item.note = "Not inside a library folder; give a destination";
             } else if (!volumeFor(volumes, item.newPath, &volume, &volumeRel)) {
                 item.status = "error";
-                item.note = "The destination is not on a library volume; add it with omamp scan first";
+                item.note = "The destination is not on a library volume; add it with thrum scan first";
             } else if (!Journal::insideSandbox(m_sandbox, item.newPath) ||
                        !Journal::insideSandbox(m_sandbox, item.oldPath)) {
                 item.status = "error";
@@ -493,7 +493,7 @@ bool Organiser::updatePath(qint64 trackId, const QString &newPath, QString *oldK
     qint64 volume = 0;
     QString rel;
     if (!volumeFor(onlineVolumes(m_library), newPath, &volume, &rel)) {
-        *error = QString("%1 is not on a library volume; add its folder with omamp scan first").arg(newPath);
+        *error = QString("%1 is not on a library volume; add its folder with thrum scan first").arg(newPath);
         return false;
     }
     QSqlDatabase db = m_library.db();

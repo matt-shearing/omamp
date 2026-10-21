@@ -48,16 +48,16 @@ SessionReader::~SessionReader() {
 }
 
 QString SessionReader::findProgram() {
-    static const char *name = "omamp-spotify-session";
-    if (qEnvironmentVariableIsSet("OMAMP_SPOTIFY_SESSION")) {
-        const QString env = qEnvironmentVariable("OMAMP_SPOTIFY_SESSION");
+    static const char *name = "thrum-spotify-session";
+    if (qEnvironmentVariableIsSet("THRUM_SPOTIFY_SESSION")) {
+        const QString env = qEnvironmentVariable("THRUM_SPOTIFY_SESSION");
         if (env.isEmpty() || env == "off")
             return {};
         if (QFileInfo(env).isAbsolute())
             return QFileInfo(env).isExecutable() ? env : QString();
         return QStandardPaths::findExecutable(env);
     }
-    // Beside Omamp first (the package and bin/install-user put it there),
+    // Beside Thrum first (the package and bin/install-user put it there),
     // so a stray copy elsewhere doesn't win.
     if (QCoreApplication::instance()) {
         const QString beside = QCoreApplication::applicationDirPath() + '/' + name;
@@ -126,7 +126,7 @@ bool SessionReader::ensureStarted(QString *error) {
 
 QJsonObject SessionReader::askHere(const QJsonObject &request, int timeoutMs, const CancelFlag &cancel) {
     if (m_program.isEmpty())
-        return failure(tr("omamp-spotify-session isn't installed."));
+        return failure(tr("thrum-spotify-session isn't installed."));
     QString error;
     if (!ensureStarted(&error))
         return failure(error);
@@ -145,8 +145,8 @@ QJsonObject SessionReader::askHere(const QJsonObject &request, int timeoutMs, co
     if (cancel && cancel->load())
         return failure(tr("cancelled"));
     if (m_process->state() != QProcess::Running)
-        return failure(tr("omamp-spotify-session stopped."));
-    return failure(tr("omamp-spotify-session didn't answer in time."));
+        return failure(tr("thrum-spotify-session stopped."));
+    return failure(tr("thrum-spotify-session didn't answer in time."));
 }
 
 // --- The catalogue --------------------------------------------------------------

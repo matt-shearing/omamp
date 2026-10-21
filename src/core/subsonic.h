@@ -44,7 +44,7 @@ public:
     SubsonicClient &operator=(const SubsonicClient &) = delete;
 
     void setTimeoutMs(int ms) { m_timeoutMs = ms; }
-    static constexpr const char *clientName = "omamp";
+    static constexpr const char *clientName = "thrum";
     static constexpr const char *apiVersion = "1.16.1";
 
     struct Reply {

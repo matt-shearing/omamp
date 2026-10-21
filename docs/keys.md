@@ -1,6 +1,6 @@
 # Keys
 
-Everything in Omamp works from the keyboard. Press `?` in the window for the
+Everything in Thrum works from the keyboard. Press `?` in the window for the
 same list, and look in the menu bar: every entry shows its key beside it.
 
 ## Everywhere

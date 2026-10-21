@@ -198,7 +198,7 @@ bool TagEditor::load(const QVariantList &ids) {
         QMetaObject::invokeMethod(this, [this, generation, loaded] { onLoaded(generation, loaded); },
                                   Qt::QueuedConnection);
     });
-    m_loadThread->setObjectName("omamp-tags-read");
+    m_loadThread->setObjectName("thrum-tags-read");
     m_loadThread->start();
     emit loadingChanged();
     emit loadedChanged();
@@ -359,7 +359,7 @@ bool TagEditor::setArtworkFromFile(const QString &path) {
     const QByteArray bytes = f.readAll();
     const QString mime = mimeOf(bytes);
     if (mime.isEmpty() || QImage::fromData(bytes).isNull()) {
-        emit message(tr("%1 isn't a picture Omamp can read").arg(QFileInfo(path).fileName()));
+        emit message(tr("%1 isn't a picture Thrum can read").arg(QFileInfo(path).fileName()));
         return false;
     }
     m_newPicture = bytes;

@@ -1,7 +1,7 @@
 // Phase 4: the web. Every test talks to MockHttp on 127.0.0.1, serving JSON
 // written by hand from the services' documented shapes (tests/fixtures/web),
 // so nothing here reaches the internet. liveSmoke() alone talks to the real
-// MusicBrainz and LRCLIB, and only when OMAMP_LIVE_TESTS=1.
+// MusicBrainz and LRCLIB, and only when THRUM_LIVE_TESTS=1.
 #include <QBuffer>
 #include <QCryptographicHash>
 #include <QDir>
@@ -100,7 +100,7 @@ class WebTests : public QObject {
     int m_counter = 0;
     QMap<QByteArray, QByteArray> m_savedEnv;
 
-    QString fixturePath(const QString &name) const { return QString(OMAMP_TESTS_DIR) + "/fixtures/web/" + name; }
+    QString fixturePath(const QString &name) const { return QString(THRUM_TESTS_DIR) + "/fixtures/web/" + name; }
     QByteArray fixture(const QString &name) const {
         QByteArray b = readAll(fixturePath(name));
         b.replace("{{BASE}}", (m_server->url() + "/caa").toUtf8());
@@ -226,17 +226,17 @@ private slots:
         setEnv("XDG_DATA_HOME", (m_tmp.path() + "/xdg-data").toUtf8());
         setEnv("XDG_CONFIG_HOME", (m_tmp.path() + "/xdg-config").toUtf8());
         const QByteArray base = m_server->url().toUtf8();
-        setEnv("OMAMP_MUSICBRAINZ_URL", base + "/ws/2");
-        setEnv("OMAMP_ACOUSTID_URL", base + "/v2");
-        setEnv("OMAMP_COVERART_URL", base + "/caa");
-        setEnv("OMAMP_LRCLIB_URL", base + "/api");
-        setEnv("OMAMP_LISTENBRAINZ_URL", base + "/1");
-        setEnv("OMAMP_LASTFM_URL", base + "/2.0");
-        setEnv("OMAMP_ACOUSTID_KEY", "");
-        setEnv("OMAMP_LISTENBRAINZ_TOKEN", "");
-        setEnv("OMAMP_LASTFM_API_KEY", "");
-        setEnv("OMAMP_LASTFM_API_SECRET", "");
-        setEnv("OMAMP_OFFLINE", "");
+        setEnv("THRUM_MUSICBRAINZ_URL", base + "/ws/2");
+        setEnv("THRUM_ACOUSTID_URL", base + "/v2");
+        setEnv("THRUM_COVERART_URL", base + "/caa");
+        setEnv("THRUM_LRCLIB_URL", base + "/api");
+        setEnv("THRUM_LISTENBRAINZ_URL", base + "/1");
+        setEnv("THRUM_LASTFM_URL", base + "/2.0");
+        setEnv("THRUM_ACOUSTID_KEY", "");
+        setEnv("THRUM_LISTENBRAINZ_TOKEN", "");
+        setEnv("THRUM_LASTFM_API_KEY", "");
+        setEnv("THRUM_LASTFM_API_SECRET", "");
+        setEnv("THRUM_OFFLINE", "");
 
         m_pristine = m_tmp.path() + "/pristine";
         const QString album = m_pristine + "/Neon Coast/Night Drive";
@@ -278,7 +278,7 @@ private slots:
     // --- the HTTP layer -----------------------------------------------------
 
     void userAgentAndEndpoints() {
-        QCOMPARE(Net::userAgent(), QString("Omamp/%1 ( https://github.com/matt-shearing/omamp )").arg(Net::version()));
+        QCOMPARE(Net::userAgent(), QString("Thrum/%1 ( https://github.com/matt-shearing/thrum )").arg(Net::version()));
         QVERIFY(!Net::version().isEmpty());
         QCOMPARE(Net::defaultBaseUrl(Net::Service::MusicBrainz), QString("https://musicbrainz.org/ws/2"));
         QCOMPARE(Net::baseUrl(Net::Service::MusicBrainz), m_server->url() + "/ws/2");
@@ -291,9 +291,9 @@ private slots:
         // A library setting moves an endpoint when the environment doesn't.
         auto s = library(false);
         s->library->setSetting("net.url.lrclib", "http://example.invalid/api/");
-        qunsetenv("OMAMP_LRCLIB_URL");
+        qunsetenv("THRUM_LRCLIB_URL");
         QCOMPARE(Net::baseUrl(Net::Service::Lrclib, s->library.get()), QString("http://example.invalid/api"));
-        qputenv("OMAMP_LRCLIB_URL", (m_server->url() + "/api").toUtf8());
+        qputenv("THRUM_LRCLIB_URL", (m_server->url() + "/api").toUtf8());
         QCOMPARE(Net::baseUrl(Net::Service::Lrclib, s->library.get()), m_server->url() + "/api");
 
         // Values are percent-encoded once.
@@ -546,9 +546,9 @@ private slots:
         QCOMPARE(AcoustId::applicationKey(s->library.get()), QString());
         s->library->setSetting("acoustid.key", "fromsetting");
         QCOMPARE(AcoustId::applicationKey(s->library.get()), QString("fromsetting"));
-        qputenv("OMAMP_ACOUSTID_KEY", "fromenv");
+        qputenv("THRUM_ACOUSTID_KEY", "fromenv");
         QCOMPARE(AcoustId::applicationKey(s->library.get()), QString("fromenv"));
-        qputenv("OMAMP_ACOUSTID_KEY", "");
+        qputenv("THRUM_ACOUSTID_KEY", "");
     }
 
     void clustering() {
@@ -799,7 +799,7 @@ private slots:
         QCOMPARE(back.value("artwork"), QString());
         // No temporary files were left.
         for (const QString &rel : tree(s->music).keys())
-            QVERIFY2(!QFileInfo(rel).fileName().startsWith(".omamp-"), qPrintable(rel));
+            QVERIFY2(!QFileInfo(rel).fileName().startsWith(".thrum-"), qPrintable(rel));
     }
 
     // --- cover art ------------------------------------------------------------
@@ -1100,7 +1100,7 @@ private slots:
         QCOMPARE(meta["track_name"].toString(), QString("Midnight Highway"));
         QCOMPARE(meta["release_name"].toString(), QString("Night Drive"));
         QCOMPARE(meta["additional_info"].toObject()["duration_ms"].toInteger(), qint64(245000));
-        QCOMPARE(meta["additional_info"].toObject()["submission_client"].toString(), QString("Omamp"));
+        QCOMPARE(meta["additional_info"].toObject()["submission_client"].toString(), QString("Thrum"));
         QCOMPARE(scrobbler.status().first().sent, 2);
 
         // Offline: the listen waits, and goes when the service is back.
@@ -1323,10 +1323,10 @@ private slots:
     // --- the real services, once, by hand ---------------------------------------
 
     void liveSmoke() {
-        if (qEnvironmentVariable("OMAMP_LIVE_TESTS") != "1")
-            QSKIP("Talks to the real MusicBrainz and LRCLIB; run with OMAMP_LIVE_TESTS=1");
+        if (qEnvironmentVariable("THRUM_LIVE_TESTS") != "1")
+            QSKIP("Talks to the real MusicBrainz and LRCLIB; run with THRUM_LIVE_TESTS=1");
         // The real addresses and the real, polite pace.
-        const QStringList overrides = {"OMAMP_MUSICBRAINZ_URL", "OMAMP_LRCLIB_URL"};
+        const QStringList overrides = {"THRUM_MUSICBRAINZ_URL", "THRUM_LRCLIB_URL"};
         QMap<QString, QByteArray> saved;
         for (const QString &name : overrides) {
             saved.insert(name, qgetenv(name.toLatin1().constData()));

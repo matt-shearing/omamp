@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
-import Omamp
+import Thrum
 
 // The visualiser picker: a small window of live previews, one tile per
 // style, that opens beside the visualiser button in the large bar, the big
@@ -16,7 +16,7 @@ import Omamp
 //
 // The previews exist only while the picker shows: the tiles are made when
 // it opens and destroyed when it closes, so nothing animates behind it.
-// While no sound reaches Omamp they play a made-up signal, so every style
+// While no sound reaches Thrum they play a made-up signal, so every style
 // shows what it does rather than a flat line.
 Popup {
     id: picker

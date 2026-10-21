@@ -13,7 +13,7 @@
 #   slow-<verb>         sleeps that many seconds first (Spotify being slow)
 #   ratelimit           writes spotify_player's rate-limit warning, with the
 #                       file's number as retry_after_secs, to a log in
-#                       $OMAMP_SPOTIFY_PLAYER_CACHE, as the real one does
+#                       $THRUM_SPOTIFY_PLAYER_CACHE, as the real one does
 #
 # Spotify's limits for apps made after November 2024, as spotify_player
 # 0.25.1 meets them with your own client ID:
@@ -39,9 +39,9 @@ case "${1:-}" in
     exit 0 ;;
 esac
 
-if [ -f "$D/ratelimit" ] && [ -n "${OMAMP_SPOTIFY_PLAYER_CACHE:-}" ]; then
+if [ -f "$D/ratelimit" ] && [ -n "${THRUM_SPOTIFY_PLAYER_CACHE:-}" ]; then
     printf '%s  WARN client_request{request=GetContext}: spotify_player::client::middleware: Spotify Web API rate limit encountered method=GET url=https://api.spotify.com/v1/%s retry_after_secs=%s\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%S.000000Z)" "$1" "$(cat "$D/ratelimit")" >> "$OMAMP_SPOTIFY_PLAYER_CACHE/spotify-player-26-10-20-00-00.log"
+        "$(date -u +%Y-%m-%dT%H:%M:%S.000000Z)" "$1" "$(cat "$D/ratelimit")" >> "$THRUM_SPOTIFY_PLAYER_CACHE/spotify-player-26-10-20-00-00.log"
 fi
 [ -f "$D/slow-$1" ] && sleep "$(cat "$D/slow-$1")"
 
@@ -50,7 +50,7 @@ if [ -f "$D/fail-$1" ]; then
     exit 1
 fi
 
-LOG="${OMAMP_SPOTIFY_PLAYER_CACHE:-$D}/spotify-player-26-10-20-00-00.log"
+LOG="${THRUM_SPOTIFY_PLAYER_CACHE:-$D}/spotify-player-26-10-20-00-00.log"
 now() { date -u +%Y-%m-%dT%H:%M:%S.000000Z; }
 # spotify_player's line for a request your client ID was refused, then the
 # rate limit its retry through ncspot's ID meets.

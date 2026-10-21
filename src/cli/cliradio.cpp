@@ -1,4 +1,4 @@
-// `omamp radio`: the stations, tuning in, radio-browser.info search and
+// `thrum radio`: the stations, tuning in, radio-browser.info search and
 // station lists from the command line. Kept apart from cli.cpp, as the NAS
 // and sync commands are.
 #include "cli.h"
@@ -32,19 +32,19 @@ struct RadioOptions {
 QString toJson(const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Indented)); }
 
 int fail(const RadioOptions &o, QTextStream &out, QTextStream &err, const QString &message) {
-    err << "omamp: " << message << Qt::endl;
+    err << "thrum: " << message << Qt::endl;
     if (o.json)
         out << toJson({{"ok", false}, {"error", message}}) << Qt::flush;
     return 1;
 }
 
-// Hands radio://<key> to the running Omamp over MPRIS (OpenUri), or starts
-// Omamp with it.
+// Hands radio://<key> to the running Thrum over MPRIS (OpenUri), or starts
+// Thrum with it.
 RadioLauncher &launcher() {
     static RadioLauncher l = [](const QString &uri, QString *how) {
         QDBusConnection bus = QDBusConnection::sessionBus();
         if (bus.isConnected()) {
-            const QString service = QStringLiteral("org.mpris.MediaPlayer2.omamp");
+            const QString service = QStringLiteral("org.mpris.MediaPlayer2.thrum");
             if (bus.interface() && bus.interface()->isServiceRegistered(service).value()) {
                 QDBusMessage call = QDBusMessage::createMethodCall(service, "/org/mpris/MediaPlayer2",
                                                                    "org.mpris.MediaPlayer2.Player", "OpenUri");
@@ -60,7 +60,7 @@ RadioLauncher &launcher() {
             *how = QStringLiteral("started");
             return true;
         }
-        *how = QStringLiteral("Can't start Omamp");
+        *how = QStringLiteral("Can't start Thrum");
         return false;
     };
     return l;
@@ -151,7 +151,7 @@ int runRadio(const QStringList &arguments, QTextStream &out, QTextStream &err) {
         const Radio::Station s = stations.find(arg, &ambiguous);
         if (!s.isValid())
             return fail(o, out, err,
-                        ambiguous.isEmpty() ? QString("No station called \"%1\" (omamp radio list shows them)").arg(arg)
+                        ambiguous.isEmpty() ? QString("No station called \"%1\" (thrum radio list shows them)").arg(arg)
                                             : QString("\"%1\" could be %2").arg(arg, ambiguous.join(", ")));
         stations.notePlayed(s.key);
         QString how;
@@ -160,7 +160,7 @@ int runRadio(const QStringList &arguments, QTextStream &out, QTextStream &err) {
         if (o.json)
             out << toJson({{"ok", true}, {"station", s.toJson()}, {"uri", s.path()}, {"via", how}}) << Qt::flush;
         else
-            out << "Tuning in to " << s.fullName() << (how == "started" ? " (starting Omamp)" : "") << "\n";
+            out << "Tuning in to " << s.fullName() << (how == "started" ? " (starting Thrum)" : "") << "\n";
         return 0;
     }
 
@@ -168,7 +168,7 @@ int runRadio(const QStringList &arguments, QTextStream &out, QTextStream &err) {
         if (arg.isEmpty())
             return fail(o, out, err, "radio search needs some words");
         if (Net::Config::forcedOffline(&library))
-            return fail(o, out, err, "Omamp is set to stay offline (net.offline)");
+            return fail(o, out, err, "Thrum is set to stay offline (net.offline)");
         Net::HttpClient http(&library);
         const Radio::Browser::Result r = Radio::Browser::search(http, Radio::Browser::baseUrl(&http), arg, o.limit);
         if (!r.ok())
@@ -198,7 +198,7 @@ int runRadio(const QStringList &arguments, QTextStream &out, QTextStream &err) {
                 out << "  —  " << bits.join(" · ");
             out << "\n      " << s.streams.value(0) << "\n";
         }
-        out << "Add one with: omamp radio add <address> --name <name>\n";
+        out << "Add one with: thrum radio add <address> --name <name>\n";
         return 0;
     }
 

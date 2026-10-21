@@ -100,7 +100,7 @@ QObject *findItem(QQuickItem *item, const QString &name) {
     return nullptr;
 }
 
-// QML warnings from Omamp's own files, collected while a window runs.
+// QML warnings from Thrum's own files, collected while a window runs.
 QStringList *qmlWarnings = nullptr;
 QtMessageHandler previousHandler = nullptr;
 void collect(QtMsgType type, const QMessageLogContext &context, const QString &message) {
@@ -480,7 +480,7 @@ private slots:
         const QSize full = window->size();
         QTest::keyClick(window, Qt::Key_M, Qt::ControlModifier);
         QVERIFY(QTest::qWaitFor([&] { return window->size() == QSize(420, 64); }, 3000));
-        QCOMPARE(window->title(), QString("Omamp mini"));
+        QCOMPARE(window->title(), QString("Thrum mini"));
         QVERIFY(find("miniPlayer"));
         QVERIFY(find("miniLayout")->property("visible").toBool());
         // Its size is its own: a resized mini player comes back that size.
@@ -488,14 +488,14 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] { return window->size() == QSize(460, 70); }, 3000));
         QTest::keyClick(window, Qt::Key_M, Qt::ControlModifier);
         QVERIFY(QTest::qWaitFor([&] { return window->size() == full; }, 3000));
-        QVERIFY(window->title() != "Omamp mini");
+        QVERIFY(window->title() != "Thrum mini");
         QVERIFY(find("miniPlayer") == nullptr);
         QTest::keyClick(window, Qt::Key_M, Qt::ControlModifier);
         QVERIFY(QTest::qWaitFor([&] { return window->size() == QSize(460, 70); }, 3000));
         // Ctrl+Shift+M from there: the micro player.
         QTest::keyClick(window, Qt::Key_M, Qt::ControlModifier | Qt::ShiftModifier);
         QVERIFY(QTest::qWaitFor([&] { return window->size() == QSize(275, 28); }, 3000));
-        QCOMPARE(window->title(), QString("Omamp micro"));
+        QCOMPARE(window->title(), QString("Thrum micro"));
         QVERIFY(find("microLayout")->property("visible").toBool());
         QTest::keyClick(window, Qt::Key_M, Qt::ControlModifier | Qt::ShiftModifier);
         QVERIFY(QTest::qWaitFor([&] { return window->size() == full; }, 3000));

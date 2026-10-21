@@ -40,14 +40,14 @@ static double sinceStartMs() { return processTimer.isValid() ? processTimer.nsec
 
 static void say(const QString &line) {
     QTextStream err(stderr);
-    err << "omamp: " << line << Qt::endl;
+    err << "thrum: " << line << Qt::endl;
 }
 
 DevHooks::DevHooks(QQmlApplicationEngine *engine, LibraryController *library)
     : QObject(engine), m_engine(engine), m_library(library) {
-    m_profile = qEnvironmentVariableIntValue("OMAMP_PROFILE") > 0;
-    m_screenshot = qEnvironmentVariable("OMAMP_SCREENSHOT");
-    if (!m_profile && m_screenshot.isEmpty() && qEnvironmentVariableIsEmpty("OMAMP_DEMO"))
+    m_profile = qEnvironmentVariableIntValue("THRUM_PROFILE") > 0;
+    m_screenshot = qEnvironmentVariable("THRUM_SCREENSHOT");
+    if (!m_profile && m_screenshot.isEmpty() && qEnvironmentVariableIsEmpty("THRUM_DEMO"))
         return;
     connect(engine, &QQmlApplicationEngine::objectCreated, this, [this](QObject *object) {
         if (auto *window = qobject_cast<QQuickWindow *>(object))
@@ -94,14 +94,14 @@ void DevHooks::afterFirstFrame() {
                    "show the info panel", "refresh (as after the watcher)",
                    "show the column browser again", "browser: search go (two letters)", "browser: clear the search"};
         m_step = -1;
-        // OMAMP_PROFILE_WAIT=<ms> waits longer first, as a person would,
+        // THRUM_PROFILE_WAIT=<ms> waits longer first, as a person would,
         // so what the window does while idle after start-up has happened.
-        QTimer::singleShot(200 + qMax(0, qEnvironmentVariableIntValue("OMAMP_PROFILE_WAIT")), this,
+        QTimer::singleShot(200 + qMax(0, qEnvironmentVariableIntValue("THRUM_PROFILE_WAIT")), this,
                            &DevHooks::nextProfileStep);
         return;
     }
-    QTimer::singleShot(qEnvironmentVariableIntValue("OMAMP_SCREENSHOT_DELAY") > 0
-                           ? qEnvironmentVariableIntValue("OMAMP_SCREENSHOT_DELAY")
+    QTimer::singleShot(qEnvironmentVariableIntValue("THRUM_SCREENSHOT_DELAY") > 0
+                           ? qEnvironmentVariableIntValue("THRUM_SCREENSHOT_DELAY")
                            : 800,
                        this, &DevHooks::finish);
 }
@@ -109,7 +109,7 @@ void DevHooks::afterFirstFrame() {
 void DevHooks::runDemo() {
     if (!m_library)
         return;
-    const QStringList steps = qEnvironmentVariable("OMAMP_DEMO").split(';', Qt::SkipEmptyParts);
+    const QStringList steps = qEnvironmentVariable("THRUM_DEMO").split(';', Qt::SkipEmptyParts);
     for (const QString &step : steps) {
         const QString verb = step.section(':', 0, 0), arg = step.section(':', 1);
         LibraryTree *tree = m_library->tree();

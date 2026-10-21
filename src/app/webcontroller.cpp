@@ -159,7 +159,7 @@ WebController::~WebController() {
 // ---- Identify ---------------------------------------------------------------
 
 bool WebController::acoustIdKeySet() const {
-    if (!qEnvironmentVariable("OMAMP_ACOUSTID_KEY").trimmed().isEmpty())
+    if (!qEnvironmentVariable("THRUM_ACOUSTID_KEY").trimmed().isEmpty())
         return true;
     Library *lib = m_controller->library();
     return lib && !lib->setting("acoustid.key").toString().trimmed().isEmpty();
@@ -890,7 +890,7 @@ void WebController::loadLyrics(qint64 trackId, bool fetch) {
         entry["asked"] = fetch;
         QMetaObject::invokeMethod(this, [this, trackId, entry] { finishLyrics(trackId, entry); }, Qt::QueuedConnection);
     });
-    m_lyricsThread->setObjectName("omamp-lyrics");
+    m_lyricsThread->setObjectName("thrum-lyrics");
     m_lyricsThread->start(QThread::LowPriority);
 }
 

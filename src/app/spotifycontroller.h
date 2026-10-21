@@ -23,7 +23,7 @@
 #include "player.h"
 class SpotifyController;
 
-// Spotify pictures, cached in ~/.cache/omamp/spotify as <key>.jpg: an
+// Spotify pictures, cached in ~/.cache/thrum/spotify as <key>.jpg: an
 // album's cover (album-<id>), or a playlist's or artist's picture.
 // spotify_player's lists carry no pictures, so a picture comes from the
 // playback state (the playing track's album) or, for anything else, from
@@ -155,7 +155,7 @@ private:
     int m_current = -1, m_anchor = -1;
 };
 
-// The handover: a Spotify track's turn in Now Playing. Omamp tells the
+// The handover: a Spotify track's turn in Now Playing. Thrum tells the
 // backend to play it on its Spotify Connect device, pauses its own engine
 // (HandoffEngine does), and follows the position, a pause from elsewhere
 // and the end of the track through the backend's MPRIS service, which costs
@@ -254,7 +254,7 @@ private:
 };
 
 // Settings → Spotify, the Spotify view and the blending, for QML as
-// `spotify`. Off until "Show Spotify in Omamp" is switched on; then every
+// `spotify`. Off until "Show Spotify in Thrum" is switched on; then every
 // call to the backend runs on a worker thread and answers with a signal.
 class SpotifyController : public QObject {
     Q_OBJECT
@@ -264,7 +264,7 @@ class SpotifyController : public QObject {
     Q_PROPERTY(bool blendPalette READ blendPalette WRITE setBlendPalette NOTIFY settingsChanged)
     Q_PROPERTY(bool startDaemon READ startDaemon WRITE setStartDaemon NOTIFY settingsChanged)
     // Read Spotify's own playlists and artists' top tracks the way Spotify's
-    // own app does, through omamp-spotify-session.
+    // own app does, through thrum-spotify-session.
     Q_PROPERTY(bool sessionReads READ sessionReads WRITE setSessionReads NOTIFY settingsChanged)
     Q_PROPERTY(bool sessionReaderInstalled READ sessionReaderInstalled NOTIFY settingsChanged)
     Q_PROPERTY(QString backendName READ backendName NOTIFY settingsChanged)
@@ -290,7 +290,7 @@ class SpotifyController : public QObject {
     // The list has taken longer than a few seconds.
     Q_PROPERTY(bool loadingSlow READ loadingSlow NOTIFY loadingChanged)
     Q_PROPERTY(int loadingSeconds READ loadingSeconds NOTIFY loadingChanged)
-    // Spotify answered "too many requests" lately; Omamp waits retryIn
+    // Spotify answered "too many requests" lately; Thrum waits retryIn
     // seconds before it asks again.
     Q_PROPERTY(bool rateLimited READ rateLimited NOTIFY loadingChanged)
     Q_PROPERTY(int retryIn READ retryIn NOTIFY loadingChanged)
@@ -340,8 +340,8 @@ class SpotifyController : public QObject {
     Q_PROPERTY(bool canCreatePlaylists READ canCreatePlaylists NOTIFY settingsChanged)
 
 public:
-    // settingsPath: spotify.conf (empty: ~/.config/omamp/spotify.conf).
-    // artDir: the picture cache (empty: ~/.cache/omamp/spotify).
+    // settingsPath: spotify.conf (empty: ~/.config/thrum/spotify.conf).
+    // artDir: the picture cache (empty: ~/.cache/thrum/spotify).
     explicit SpotifyController(const QString &settingsPath = {}, const QString &artDir = {}, QObject *parent = nullptr);
     ~SpotifyController() override;
 
@@ -488,10 +488,10 @@ public:
     // Makes a Spotify playlist (spotify_player's `playlist new`) and adds
     // the chosen rows to it.
     Q_INVOKABLE void addChosenToNewSpotifyPlaylist(SpotifyItemsModel *model, const QString &name);
-    // Asks for the chosen tracks to go into an Omamp playlist: emits
-    // omampEntriesReady with them, at once for track rows, or once an
+    // Asks for the chosen tracks to go into a Thrum playlist: emits
+    // thrumEntriesReady with them, at once for track rows, or once an
     // album's or playlist's tracks are read. false when there is nothing.
-    Q_INVOKABLE bool addChosenToOmampPlaylist(SpotifyItemsModel *model, qint64 playlistId);
+    Q_INVOKABLE bool addChosenToThrumPlaylist(SpotifyItemsModel *model, qint64 playlistId);
     // The chosen rows' open.spotify.com links, one a line, put on the
     // clipboard; returns the text.
     Q_INVOKABLE QString copyChosenLinks(SpotifyItemsModel *model);
@@ -541,9 +541,9 @@ signals:
     void showRequested();
     void settingsRequested();
     void availabilityChanged();
-    // Spotify tracks to add to an Omamp playlist (entryFor maps), which
+    // Spotify tracks to add to a Thrum playlist (entryFor maps), which
     // PlaylistsController stores.
-    void omampEntriesReady(qint64 playlistId, const QVariantList &entries);
+    void thrumEntriesReady(qint64 playlistId, const QVariantList &entries);
 
 private:
     enum Mode { Play, Next, Append };
@@ -590,7 +590,7 @@ private:
     void queue(const QList<Spotify::Item> &tracks, int start, Mode mode);
     void queueContext(const Spotify::Item &context, Mode mode, bool shuffle);
     void rememberNames(const QList<Spotify::Item> &items);
-    // Fills in an artist's name from what Omamp has seen.
+    // Fills in an artist's name from what Thrum has seen.
     Spotify::Item withName(Spotify::Item item) const;
     // Opens a playlist, album or artist in the view, looking up an
     // artist's name first when it isn't known.
@@ -606,7 +606,7 @@ private:
     QString m_settingsPath;
     Spotify::Settings m_settings;
     std::shared_ptr<Spotify::Backend> m_backend;
-    // omamp-spotify-session, kept running while Omamp runs once asked.
+    // thrum-spotify-session, kept running while Thrum runs once asked.
     std::shared_ptr<Spotify::SessionReader> m_session;
     QPointer<Player> m_player;
     QPointer<Palette> m_palette;

@@ -46,84 +46,84 @@ const QStringList commands = {"scan", "query", "stats", "help", "--help", "-h", 
                                "tag-from-filename", "audit", "duplicates", "playlist", "autoplaylist",
                                "collection", "autodj", "import", "volume", "nas", "remote", "sync", "report", "spotify", "radio"};
 
-const char *usage = R"(Usage: omamp [files or folders...]      open the player
-       omamp open [files or folders...]  the same, for names that look like commands
-       omamp mini [files or folders...]  open as the mini player (a 420x64 strip)
-       omamp micro [files or folders...] open as the micro player (Winamp's windowshade)
-       omamp scan [folder...]            add folders to the library and scan them;
+const char *usage = R"(Usage: thrum [files or folders...]      open the player
+       thrum open [files or folders...]  the same, for names that look like commands
+       thrum mini [files or folders...]  open as the mini player (a 420x64 strip)
+       thrum micro [files or folders...] open as the micro player (Winamp's windowshade)
+       thrum scan [folder...]            add folders to the library and scan them;
                                          with no folder, rescan every library folder
-       omamp query <text...>             search the library
-       omamp stats                       count what is in the library
-       omamp watch                       watch the library folders and rescan what changes
+       thrum query <text...>             search the library
+       thrum stats                       count what is in the library
+       thrum watch                       watch the library folders and rescan what changes
                                          (in the foreground; Ctrl+C stops)
-       omamp locate <folder>             find missing tracks that moved into a folder
-       omamp art album|track <id>        print the path of a picture (made if needed)
-       omamp art all                     make pictures for every album not done yet
-       omamp tag <query> --set field=value...
+       thrum locate <folder>             find missing tracks that moved into a folder
+       thrum art album|track <id>        print the path of a picture (made if needed)
+       thrum art all                     make pictures for every album not done yet
+       thrum tag <query> --set field=value...
                                          write tags to every track the query finds
-       omamp tag-from-filename <query> --pattern '<Track#> - <Title>'
+       thrum tag-from-filename <query> --pattern '<Track#> - <Title>'
                                          fill tags from file names and folders
-       omamp organise <query> --mask '<Album Artist>/<Album>/<Track#:2> <Title>'
+       thrum organise <query> --mask '<Album Artist>/<Album>/<Track#:2> <Title>'
                        --dry-run | --apply
                                          rename and move files by a mask
-       omamp undo [batch]                undo the last tag edit or organise (or a batch)
-       omamp journal [batch]             list recent batches, or one batch's changes
-       omamp audit [check]               count tracks needing work (Files to Edit),
+       thrum undo [batch]                undo the last tag edit or organise (or a batch)
+       thrum journal [batch]             list recent batches, or one batch's changes
+       thrum audit [check]               count tracks needing work (Files to Edit),
                                          or list one check's tracks
-       omamp duplicates [--by tags|content|fingerprint]
+       thrum duplicates [--by tags|content|fingerprint]
                                          find the same song twice; nothing is deleted
-       omamp playlist list|show|create|add|remove|move|rename|delete|clear|reroll|import|export
+       thrum playlist list|show|create|add|remove|move|rename|delete|clear|reroll|import|export
                                          playlists, playlist folders and playlist files
-       omamp playlist add <playlist> <spotify:track:id or open.spotify.com link>...
-                                         puts Spotify tracks in an Omamp playlist
-       omamp autoplaylist create <name> '<query>'
+       thrum playlist add <playlist> <spotify:track:id or open.spotify.com link>...
+                                         puts Spotify tracks in a Thrum playlist
+       thrum autoplaylist create <name> '<query>'
                                          a playlist that is a saved query, always up to date
-       omamp collection list|show|create|remove|restore-defaults
-       omamp stats --top tracks|artists|albums|years|genres [--since 30d]
-       omamp stats --recent | --never    what was played lately, or never
-       omamp autodj [--source library|collection:<name>|playlist:<name>|query:<text>]
+       thrum collection list|show|create|remove|restore-defaults
+       thrum stats --top tracks|artists|albums|years|genres [--since 30d]
+       thrum stats --recent | --never    what was played lately, or never
+       thrum autodj [--source library|collection:<name>|playlist:<name>|query:<text>]
                     [--count 20] [--seed n]
                                          pick tracks the way Auto-DJ would
-       omamp import mediamonkey <MM.DB> [--map 'D:\Music=/mnt/music'] --dry-run | --apply
+       thrum import mediamonkey <MM.DB> [--map 'D:\Music=/mnt/music'] --dry-run | --apply
                                          ratings, play counts, history and playlists
-       omamp import undo [batch]         undo an import
-       omamp volume list|show <v>        the volumes (disks and shares) and whether they are online
-       omamp volume reassign <v> <folder>
+       thrum import undo [batch]         undo an import
+       thrum volume list|show <v>        the volumes (disks and shares) and whether they are online
+       thrum volume reassign <v> <folder>
                                          point a volume at its music's new place (re-assign drive)
-       omamp volume forget <v> [--force] remove a volume and its tracks from the library
-       omamp volume workers <v> <n>      folders listed at once when scanning it (0: default)
-       omamp nas mount-guide --smb //nas/music --at /mnt/music [--write-to <folder>]
-       omamp nas mount-guide --nfs nas:/export/music --at /mnt/music
+       thrum volume forget <v> [--force] remove a volume and its tracks from the library
+       thrum volume workers <v> <n>      folders listed at once when scanning it (0: default)
+       thrum nas mount-guide --smb //nas/music --at /mnt/music [--write-to <folder>]
+       thrum nas mount-guide --nfs nas:/export/music --at /mnt/music
                                          print systemd automount units and the sudo commands
-       omamp remote add subsonic <url> --user <name> --password-stdin | --api-key-stdin [--name n]
-       omamp remote list|sync [source|all] [--full]|remove <source> [--keep-tracks]
-       omamp remote set <source> --max-bitrate <kbit/s> --format <raw|mp3|opus|...>
+       thrum remote add subsonic <url> --user <name> --password-stdin | --api-key-stdin [--name n]
+       thrum remote list|sync [source|all] [--full]|remove <source> [--keep-tracks]
+       thrum remote set <source> --max-bitrate <kbit/s> --format <raw|mp3|opus|...>
                                          Navidrome and other (Open)Subsonic servers as sources
-       omamp radio list [--group nightride|rekt|favourites|mine|recent]
+       thrum radio list [--group nightride|rekt|favourites|mine|recent]
                                          internet radio stations (Nightride FM built in)
-       omamp radio play <station>        tune the running Omamp in (or start it): a name,
+       thrum radio play <station>        tune the running Thrum in (or start it): a name,
                                          a key, or a Nightride channel such as darksynth
-       omamp radio search <words> [--limit n]
+       thrum radio search <words> [--limit n]
                                          find stations on radio-browser.info
-       omamp radio add <url> [--name n]  keep a stream address under My stations
-       omamp radio remove|favourite|unfavourite <station>
-       omamp radio import <file.pls|.m3u>|export <file> [--group g]|heard
-       omamp sync list|devices           sync profiles; USB drives and Syncthing folders to sync to
-       omamp sync create <name> --to <folder> [--kind folder|usb|syncthing]
+       thrum radio add <url> [--name n]  keep a stream address under My stations
+       thrum radio remove|favourite|unfavourite <station>
+       thrum radio import <file.pls|.m3u>|export <file> [--group g]|heard
+       thrum sync list|devices           sync profiles; USB drives and Syncthing folders to sync to
+       thrum sync create <name> --to <folder> [--kind folder|usb|syncthing]
                     --source playlist:<name>|collection:<name>|query:<text>|library ...
                     [--rule 'lossless->opus:128' ...] [--mask '<Artist>/<Album>/<Title>']
                     [--delete-others] [--no-playlists]
-       omamp sync set <profile> [the same options; --clear-rules, --keep-others, --playlists]
-       omamp sync run <profile> [--dry-run [--limit n] [--all]] [--workers n]
+       thrum sync set <profile> [the same options; --clear-rules, --keep-others, --playlists]
+       thrum sync run <profile> [--dry-run [--limit n] [--all]] [--workers n]
                                          copy and convert the list to the device
-       omamp sync show|remove <profile>
-       omamp report [query] | --playlist <p> | --collection <c>
+       thrum sync show|remove <profile>
+       thrum report [query] | --playlist <p> | --collection <c>
                     [--format csv|html] [--columns title,artist,...] [--out <file>] [--title t]
                                          a track list as CSV or an HTML page (stdout without --out)
 
 Options:
   --json         print JSON on stdout
-  --db <path>    use this library file (default ~/.local/share/omamp/library.db)
+  --db <path>    use this library file (default ~/.local/share/thrum/library.db)
   --limit <n>    query: print at most n tracks (after the query's own limit:)
   --offset <n>   query: skip the first n tracks
   --count        query: print only how many tracks match
@@ -176,19 +176,19 @@ Report columns: title, artist, albumartist, album, disc, track, year, genre, com
   length, rating, plays, lastplayed, added, format, bitrate, size, path
 
 Tag and organise examples:
-  omamp tag 'album:"night drive"' --set genre=Synthwave --set year=1997
-  omamp tag-from-filename 'artist:none' --pattern '<Artist>/<Album>/<Track#> - <Title>' --dry-run
-  omamp organise 'path:inbox' --mask '<Album Artist>/<Album> (<Year>)/<Track#:2> <Title>' --dry-run
-  omamp undo
+  thrum tag 'album:"night drive"' --set genre=Synthwave --set year=1997
+  thrum tag-from-filename 'artist:none' --pattern '<Artist>/<Album>/<Track#> - <Title>' --dry-run
+  thrum organise 'path:inbox' --mask '<Album Artist>/<Album> (<Year>)/<Track#:2> <Title>' --dry-run
+  thrum undo
 
 Query examples:
-  omamp query neon coast
-  omamp query 'artist:"neon coast" year:1997..2001'
-  omamp query 'rating:4.. -genre:christmas'
-  omamp query 'genre:rock OR genre:metal'
-  omamp query 'added:<30d plays:0 sort:-added'
-  omamp query 'rating:4.. played:>1y sort:random limit:2h'
-  omamp query --count 'genre:none'
+  thrum query neon coast
+  thrum query 'artist:"neon coast" year:1997..2001'
+  thrum query 'rating:4.. -genre:christmas'
+  thrum query 'genre:rock OR genre:metal'
+  thrum query 'added:<30d plays:0 sort:-added'
+  thrum query 'rating:4.. played:>1y sort:random limit:2h'
+  thrum query --count 'genre:none'
 )";
 
 struct Options {
@@ -227,7 +227,7 @@ QString formatDuration(qint64 ms) {
 QString json(const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Indented)); }
 
 int failWith(const Options &o, QTextStream &out, QTextStream &err, const QString &message) {
-    err << "omamp: " << message << Qt::endl;
+    err << "thrum: " << message << Qt::endl;
     // Agents read stdout; give them the error there too, as JSON.
     if (o.json)
         out << json({{"ok", false}, {"error", message}}) << Qt::flush;
@@ -276,7 +276,7 @@ int scan(Library &library, const Options &o, const VolumeResolver &resolver, QTe
                                         .arg(r.failed))
                 << Qt::endl;
         for (const QString &dir : r.unreadable)
-            err << "omamp: could not list " << dir << Qt::endl;
+            err << "thrum: could not list " << dir << Qt::endl;
         if (r.skippedMounts)
             out << QString("Skipped %1 other filesystems mounted inside; scan them as folders of their own.")
                        .arg(r.skippedMounts)
@@ -419,7 +419,7 @@ int stats(Library &library, const Options &o, const VolumeResolver &resolver, QT
     return 0;
 }
 
-// Ctrl+C and SIGTERM end `omamp watch` through the event loop, so the
+// Ctrl+C and SIGTERM end `thrum watch` through the event loop, so the
 // watcher stops cleanly and the library closes.
 int signalPipe[2] = {-1, -1};
 
@@ -468,10 +468,10 @@ int watch(const Options &o, const VolumeResolver &resolver, QTextStream &out, QT
         for (const QJsonValue &m : r.value("moved_paths").toArray())
             out << "moved    " << m.toString() << Qt::endl;
         if (!r.value("ok").toBool(true))
-            err << "omamp: " << r.value("error").toString() << Qt::endl;
+            err << "thrum: " << r.value("error").toString() << Qt::endl;
     });
     QObject::connect(&watcher, &Watcher::watchLimitReached, [&](int watched, int limit) {
-        err << "omamp: the watch limit (" << limit << ") ran out after " << watched
+        err << "thrum: the watch limit (" << limit << ") ran out after " << watched
             << " folders; the rest are rescanned every " << o.interval << " s" << Qt::endl;
     });
     // Shares that go away and come back: the monitor marks their tracks
@@ -500,7 +500,7 @@ int watch(const Options &o, const VolumeResolver &resolver, QTextStream &out, QT
     });
     QString error;
     if (!watcher.start(&error) && !error.isEmpty())
-        err << "omamp: " << error << Qt::endl;
+        err << "thrum: " << error << Qt::endl;
     mounts.start();
     if (o.json) {
         line({{"event", "watching"},
@@ -514,7 +514,7 @@ int watch(const Options &o, const VolumeResolver &resolver, QTextStream &out, QT
         for (const QString &root : watcher.scheduledRoots())
             out << "Rescanning every " << o.interval << " s (not watched): " << root << Qt::endl;
         if (watcher.localRoots().isEmpty() && watcher.scheduledRoots().isEmpty())
-            out << "The library has no folders online. Add one with: omamp scan <folder>" << Qt::endl;
+            out << "The library has no folders online. Add one with: thrum scan <folder>" << Qt::endl;
         out << "Press Ctrl+C to stop." << Qt::endl;
     }
 
@@ -537,7 +537,7 @@ int watch(const Options &o, const VolumeResolver &resolver, QTextStream &out, QT
 
 int locate(Library &library, const Options &o, const VolumeResolver &resolver, QTextStream &out, QTextStream &err) {
     if (o.rest.size() != 1)
-        return failWith(o, out, err, "locate needs one folder, for example: omamp locate /mnt/music");
+        return failWith(o, out, err, "locate needs one folder, for example: thrum locate /mnt/music");
     Scanner scanner(library, resolver);
     const LocateResult r = scanner.locate(o.rest.first());
     if (!r.ok)
@@ -618,7 +618,7 @@ void printTagResult(const TagBatchResult &r, const Options &o, QTextStream &out,
     }
     for (const TagFileResult &f : r.files) {
         if (!f.ok) {
-            err << "omamp: " << (f.path.isEmpty() ? QString("track %1").arg(f.trackId) : f.path) << ": " << f.error
+            err << "thrum: " << (f.path.isEmpty() ? QString("track %1").arg(f.trackId) : f.path) << ": " << f.error
                 << Qt::endl;
             continue;
         }
@@ -639,7 +639,7 @@ void printTagResult(const TagBatchResult &r, const Options &o, QTextStream &out,
         out << QString("Changed %1 tracks, %2 already matched, %3 failed.").arg(r.changed).arg(r.unchanged).arg(r.failed)
             << Qt::endl;
     if (!r.batch.isEmpty())
-        out << "Undo with: omamp undo " << r.batch << Qt::endl;
+        out << "Undo with: thrum undo " << r.batch << Qt::endl;
 }
 
 // A rating on the command line is in stars, as in the query language.
@@ -659,7 +659,7 @@ bool ratingFromStars(const QString &text, QString *value) {
 int tag(Library &library, const Options &o, const VolumeResolver &resolver, QTextStream &out, QTextStream &err) {
     const QString text = o.rest.join(' ');
     if (text.trimmed().isEmpty())
-        return failWith(o, out, err, "tag needs a query, for example: omamp tag 'album:\"night drive\"' --set year=1997");
+        return failWith(o, out, err, "tag needs a query, for example: thrum tag 'album:\"night drive\"' --set year=1997");
     if (o.sets.isEmpty() && o.setMasks.isEmpty())
         return failWith(o, out, err, "tag needs at least one --set field=value");
     library.refreshVolumes(resolver);
@@ -735,7 +735,7 @@ int tagFromFilename(Library &library, const Options &o, const VolumeResolver &re
     if (text.trimmed().isEmpty() || o.pattern.isEmpty())
         return failWith(o, out, err,
                         "tag-from-filename needs a query and --pattern, for example: "
-                        "omamp tag-from-filename 'title:none' --pattern '<Track#> - <Title>'");
+                        "thrum tag-from-filename 'title:none' --pattern '<Track#> - <Title>'");
     const Mask::FilenameMatch check = Mask::matchFilename(o.pattern, "/");
     if (check.position >= 0)
         return failWith(o, out, err,
@@ -787,7 +787,7 @@ int organise(Library &library, const Options &o, const VolumeResolver &resolver,
     const QString text = o.rest.join(' ');
     if (text.trimmed().isEmpty() || o.mask.isEmpty())
         return failWith(o, out, err,
-                        "organise needs a query and --mask, for example: omamp organise 'path:inbox' "
+                        "organise needs a query and --mask, for example: thrum organise 'path:inbox' "
                         "--mask '<Album Artist>/<Album>/<Track#:2> <Title>' --dry-run");
     if (o.dryRun == o.apply)
         return failWith(o, out, err, "organise needs --dry-run to preview or --apply to move the files");
@@ -845,7 +845,7 @@ int organise(Library &library, const Options &o, const VolumeResolver &resolver,
     }
     for (const OrganiseItem &item : r.items)
         if (item.status == "failed")
-            err << "omamp: " << item.oldPath << ": " << item.note << Qt::endl;
+            err << "thrum: " << item.oldPath << ": " << item.note << Qt::endl;
     out << QString("Moved %1 files (%2 copied across filesystems), %3 already in place, %4 failed; %5 extra files "
                    "moved, %6 empty folders removed.")
                .arg(r.moved)
@@ -856,7 +856,7 @@ int organise(Library &library, const Options &o, const VolumeResolver &resolver,
                .arg(r.foldersRemoved)
         << Qt::endl;
     if (!r.batch.isEmpty())
-        out << "Undo with: omamp undo " << r.batch << Qt::endl;
+        out << "Undo with: thrum undo " << r.batch << Qt::endl;
     return r.ok ? 0 : 1;
 }
 
@@ -867,7 +867,7 @@ int undo(Library &library, const Options &o, const VolumeResolver &resolver, QTe
     const QString batch = o.rest.isEmpty() ? Journal::lastUndoable(library) : o.rest.first();
     if (batch.isEmpty())
         return failWith(o, out, err, "There is nothing to undo");
-    // A MediaMonkey import has its own journal; `omamp undo <batch>` takes it too.
+    // A MediaMonkey import has its own journal; `thrum undo <batch>` takes it too.
     if (MmImport::isImportBatch(batch)) {
         Options importUndo = o;
         importUndo.rest = QStringList{"undo", batch};
@@ -892,7 +892,7 @@ int undo(Library &library, const Options &o, const VolumeResolver &resolver, QTe
     if (!r.value("batch").toString().isEmpty())
         out << "The undo is itself batch " << r.value("batch").toString() << "; undo that to redo." << Qt::endl;
     if (!ok && !r.value("error").toString().isEmpty())
-        err << "omamp: " << r.value("error").toString() << Qt::endl;
+        err << "thrum: " << r.value("error").toString() << Qt::endl;
     return ok ? 0 : 1;
 }
 
@@ -975,7 +975,7 @@ int audit(Library &library, const Options &o, const VolumeResolver &resolver, QT
         }
         for (const Audits::Count &c : counts)
             out << QString("%1  %2  (%3)").arg(c.count, 7).arg(c.audit.title, c.audit.id) << '\n';
-        out << "List one with: omamp audit <check>" << Qt::endl;
+        out << "List one with: thrum audit <check>" << Qt::endl;
         return 0;
     }
     const QString id = o.rest.first();
@@ -1027,7 +1027,7 @@ int duplicates(Library &library, const Options &o, const VolumeResolver &resolve
         if (!f.ok)
             return failWith(o, out, err, f.error);
         if (!o.json && f.total)
-            err << "omamp: fingerprinted " << f.computed << " files (" << f.failed << " could not be read)" << Qt::endl;
+            err << "thrum: fingerprinted " << f.computed << " files (" << f.failed << " could not be read)" << Qt::endl;
     }
     const Duplicates::Report r = Duplicates::find(library, options);
     if (!r.ok)
@@ -1128,7 +1128,7 @@ int playlist(Library &library, const Options &o, QTextStream &out, QTextStream &
             out << QString(depthOf(all, p) * 2, ' ') << QString("%1  %2  (%3)").arg(p.id, 4).arg(p.name, kindLabel(p))
                 << '\n';
         if (all.isEmpty())
-            out << "No playlists yet. Make one with: omamp playlist create <name>" << '\n';
+            out << "No playlists yet. Make one with: thrum playlist create <name>" << '\n';
         out << Qt::flush;
         return 0;
     }
@@ -1172,7 +1172,7 @@ int playlist(Library &library, const Options &o, QTextStream &out, QTextStream &
         }
         for (const PlaylistFiles::ImportResult &r : results) {
             if (!r.ok()) {
-                err << "omamp: " << r.error << Qt::endl;
+                err << "thrum: " << r.error << Qt::endl;
                 continue;
             }
             out << QString("%1 (%2): %3 entries, %4 matched by path, %5 by artist and title, %6 not in the library")
@@ -1235,7 +1235,7 @@ int playlist(Library &library, const Options &o, QTextStream &out, QTextStream &
             if (added < 0)
                 return failWith(o, out, err, error);
             if (!note.isEmpty() && !o.json)
-                err << "omamp: " << note << Qt::endl;
+                err << "thrum: " << note << Qt::endl;
             QJsonObject j{{"ok", true}, {"playlist_id", id}, {"added", added}, {"spotify", added}};
             if (!note.isEmpty())
                 j["note"] = note;
@@ -1656,7 +1656,7 @@ int importCommand(Library &library, const Options &o, QTextStream &out, QTextStr
     for (const QString &n : r.notes)
         out << n << '\n';
     if (r.applied)
-        out << "Imported as batch " << r.batch << "; undo it with: omamp import undo " << r.batch << '\n';
+        out << "Imported as batch " << r.batch << "; undo it with: thrum import undo " << r.batch << '\n';
     else
         out << "Nothing was changed. Run again with --apply to import." << '\n';
     out << Qt::flush;
@@ -1802,18 +1802,18 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
         if (o.json)
             out << json({{"version", version}, {"schema_version", Library::latestVersion()}}) << Qt::flush;
         else
-            out << "omamp " << version << Qt::endl;
+            out << "thrum " << version << Qt::endl;
         return 0;
     }
     if (command == "query" && o.rest.isEmpty())
-        return failWith(o, out, err, "query needs some text, for example: omamp query neon coast");
+        return failWith(o, out, err, "query needs some text, for example: thrum query neon coast");
 
     Library library(o.db);
     QString error;
     if (!library.open(&error))
         return failWith(o, out, err, error);
     if (!library.lastBackup().isEmpty() && !o.json)
-        err << "omamp: upgraded the library; the old one is saved as " << library.lastBackup() << Qt::endl;
+        err << "thrum: upgraded the library; the old one is saved as " << library.lastBackup() << Qt::endl;
 
     VolumeResolver system;
     const VolumeResolver &volumes = resolver ? *resolver : system;

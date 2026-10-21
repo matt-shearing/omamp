@@ -1,7 +1,7 @@
 // Phase 5: network volumes. Hung, stale and unmounted shares, the mount
 // monitor, re-assigning a volume, the parallel folder walker and its latency
 // cost model, the waveform cache, the database-on-a-share guard, the mount
-// guide and the `omamp volume` commands. Every share here is a temporary
+// guide and the `thrum volume` commands. Every share here is a temporary
 // folder that a fake mount table calls cifs or nfs; nothing is mounted and
 // no network is touched.
 
@@ -439,7 +439,7 @@ private slots:
         QVERIFY2(Volumes::reassign(library, resolver, volume, newRoot, &error, &report), qPrintable(error));
         QCOMPARE(report["new_key"].toString(), key); // the old marker carried over
         QVERIFY(report["marker_written"].toBool());
-        QVERIFY(QFile::exists(newRoot + "/.omamp-volume-id"));
+        QVERIFY(QFile::exists(newRoot + "/.thrum-volume-id"));
         QCOMPARE(value(library, "SELECT root_path FROM volumes").toString(), newRoot);
         QCOMPARE(value(library, "SELECT count(*) FROM tracks WHERE availability = 'online'").toInt(), 6);
         QCOMPARE(value(library, QString("SELECT rating FROM tracks WHERE id = %1").arg(rated)).toInt(), 80);
@@ -527,7 +527,7 @@ private slots:
     // The cost model behind "a NAS rescan takes minutes, not hours": every
     // listing and every stat is one round trip. Measured here on 2,000 files
     // with 0.5 ms per round trip; the 100,000-file numbers come from
-    // `omamp_bench nas` and are recorded in docs/plan/progress.md.
+    // `thrum_bench nas` and are recorded in docs/plan/progress.md.
     void latencyCostModel() {
         MemoryFileSystem memory;
         int files = 0;
@@ -641,10 +641,10 @@ private slots:
 
         // Library::open checks the real mount table, which tests can replace.
         mounts.setMounts({{root, "/", "cifs", "//nas/home"}});
-        qputenv("OMAMP_MOUNTINFO", QFile::encodeName(mounts.mountInfo()));
+        qputenv("THRUM_MOUNTINFO", QFile::encodeName(mounts.mountInfo()));
         Library library(root + "/library.db");
         const bool opened = library.open(&error);
-        qunsetenv("OMAMP_MOUNTINFO");
+        qunsetenv("THRUM_MOUNTINFO");
         QVERIFY(!opened);
         QVERIFY(error.contains("network share"));
         QVERIFY(!QFile::exists(root + "/library.db"));

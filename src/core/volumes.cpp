@@ -114,7 +114,7 @@ QString VolumeResolver::writeMarker(const QString &dir) {
     QSaveFile file(dir + '/' + markerName);
     if (!file.open(QIODevice::WriteOnly))
         return {};
-    file.write(id.toUtf8() + "\n# Omamp uses this file to recognise this music share wherever it is mounted.\n");
+    file.write(id.toUtf8() + "\n# Thrum uses this file to recognise this music share wherever it is mounted.\n");
     return file.commit() ? id : QString();
 }
 
@@ -384,7 +384,7 @@ VolumeRow find(Library &library, const QString &which, QString *error) {
         return best;
     if (error)
         *error = byLabel.size() > 1 ? QString("Several volumes are labelled %1; use the id").arg(which)
-                                    : QString("No volume matches %1 (see: omamp volume list)").arg(which);
+                                    : QString("No volume matches %1 (see: thrum volume list)").arg(which);
     return {};
 }
 
@@ -404,7 +404,7 @@ bool reassign(Library &library, const VolumeResolver &resolver, qint64 volumeId,
     if (!old.id)
         return fail(why);
     if (old.kind == "subsonic")
-        return fail("A Subsonic source is changed with: omamp remote add (a new address), not volume reassign");
+        return fail("A Subsonic source is changed with: thrum remote add (a new address), not volume reassign");
 
     const ProbeResult probe = PathProbe::probe(newRoot);
     if (!probe.online() || !probe.isDir)
@@ -462,7 +462,7 @@ bool reassign(Library &library, const VolumeResolver &resolver, qint64 volumeId,
         if (existing.isEmpty()) {
             QSaveFile out(root + '/' + VolumeResolver::markerName);
             if (out.open(QIODevice::WriteOnly)) {
-                out.write(id.toUtf8() + "\n# Omamp uses this file to recognise this music share wherever it is mounted.\n");
+                out.write(id.toUtf8() + "\n# Thrum uses this file to recognise this music share wherever it is mounted.\n");
                 wroteMarker = out.commit();
             }
             existing = wroteMarker ? id : QString();
@@ -503,7 +503,7 @@ bool reassign(Library &library, const VolumeResolver &resolver, qint64 volumeId,
     if (other.next()) {
         if (other.value(1).toLongLong() > 0)
             return fail(QString("Volume %1 already has that identity and holds %2 tracks. Forget one of them first "
-                                "(omamp volume forget %1 --force), then reassign.")
+                                "(thrum volume forget %1 --force), then reassign.")
                             .arg(other.value(0).toLongLong())
                             .arg(other.value(1).toLongLong()));
         dropId = other.value(0).toLongLong();

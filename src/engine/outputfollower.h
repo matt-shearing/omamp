@@ -9,7 +9,7 @@
 class QMediaDevices;
 class QProcess;
 
-// Keeping Omamp's audio on the desktop's default output.
+// Keeping Thrum's audio on the desktop's default output.
 //
 // Qt pins every stream to one device: its PipeWire backend connects with a
 // target node and PW_STREAM_FLAG_DONT_RECONNECT, so PipeWire never moves the

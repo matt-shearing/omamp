@@ -32,7 +32,7 @@
 namespace DeviceSync {
 
 const char *const defaultMask = "<Album Artist>/<Album>/$If(<Disc#>,<Disc#>-)<Track#:2> <Title>";
-const char *const manifestName = ".omamp-sync.json";
+const char *const manifestName = ".thrum-sync.json";
 
 namespace {
 
@@ -217,7 +217,7 @@ bool writeManifest(const QString &target, const QString &profile, const Manifest
                                            {"size", QString::number(it->size)},
                                            {"mtime_ns", QString::number(it->mtimeNs)},
                                            {"rule", it->rule}});
-    const QJsonObject o{{"omamp", 1},
+    const QJsonObject o{{"thrum", 1},
                         {"profile", profile},
                         {"written", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
                         {"files", files},
@@ -335,7 +335,7 @@ FormatRule FormatRule::fromString(const QString &text, QString *error) {
             r.bitrate = right.section(':', 1).remove('k').toInt(&ok);
         if (codecFor(r.to).encoder.isEmpty()) {
             if (error)
-                *error = QString("Omamp converts to opus, mp3, aac, vorbis or flac, not \"%1\"").arg(what);
+                *error = QString("Thrum converts to opus, mp3, aac, vorbis or flac, not \"%1\"").arg(what);
             return {};
         }
         if (!ok || r.bitrate < 0 || r.bitrate > 512) {
@@ -432,8 +432,8 @@ Profile find(Library &library, const QString &idOrName, QString *error) {
         if ((isNumber && p.id == id) || p.name.compare(idOrName.trimmed(), Qt::CaseInsensitive) == 0)
             return p;
     if (error)
-        *error = all.isEmpty() ? QString("There are no sync profiles yet; make one with: omamp sync create")
-                               : QString("No sync profile called \"%1\" (see omamp sync list)").arg(idOrName);
+        *error = all.isEmpty() ? QString("There are no sync profiles yet; make one with: thrum sync create")
+                               : QString("No sync profile called \"%1\" (see thrum sync list)").arg(idOrName);
     return {};
 }
 
@@ -536,8 +536,8 @@ TargetState checkTarget(Library &library, const Profile &profile) {
         t.mountPoint = storage.rootPath();
     }
     // Tests make a device look nearly full.
-    if (qEnvironmentVariableIsSet("OMAMP_SYNC_FREE_BYTES"))
-        t.freeBytes = qEnvironmentVariable("OMAMP_SYNC_FREE_BYTES").toLongLong();
+    if (qEnvironmentVariableIsSet("THRUM_SYNC_FREE_BYTES"))
+        t.freeBytes = qEnvironmentVariable("THRUM_SYNC_FREE_BYTES").toLongLong();
     for (const QString &root : Scanner::roots(library)) {
         if (root.isEmpty())
             continue;
@@ -597,9 +597,9 @@ void setDeviceRoots(const QStringList &mediaRoots, const QStringList &syncthingC
 
 QList<Device> detectDevices() {
     QStringList media = g_mediaRoots, configs = g_syncthingConfigs;
-    // OMAMP_MEDIA_ROOTS (colon-separated) stands in for /run/media/$USER in
+    // THRUM_MEDIA_ROOTS (colon-separated) stands in for /run/media/$USER in
     // screenshots and tests.
-    const QString mediaEnv = qEnvironmentVariable("OMAMP_MEDIA_ROOTS");
+    const QString mediaEnv = qEnvironmentVariable("THRUM_MEDIA_ROOTS");
     if (!g_rootsSet) {
         const QString user = qEnvironmentVariable("USER");
         media = {"/run/media/" + user, "/media/" + user, "/media"};
@@ -965,7 +965,7 @@ bool convertFile(const QString &source, const QString &target, const QString &si
     const QString codecName = signature.section(':', 0, 0);
     const int bitrate = signature.section(':', 1).toInt();
     const Codec codec = codecFor(codecName);
-    const QString temp = QFileInfo(target).absolutePath() + "/.omamp-sync-" +
+    const QString temp = QFileInfo(target).absolutePath() + "/.thrum-sync-" +
                          QString::number(quintptr(QThread::currentThreadId()), 16) + '.' + extensionFor(codecName);
     auto args = [&](bool cover) {
         QStringList a = {"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", source, "-map", "0:a:0"};
@@ -995,7 +995,7 @@ bool convertFile(const QString &source, const QString &target, const QString &si
 }
 
 bool copyFile(const QString &source, const QString &target, QString *error) {
-    const QString temp = QFileInfo(target).absolutePath() + "/.omamp-sync-" +
+    const QString temp = QFileInfo(target).absolutePath() + "/.thrum-sync-" +
                          QString::number(quintptr(QThread::currentThreadId()), 16);
     QFile::remove(temp);
     QFile in(source);

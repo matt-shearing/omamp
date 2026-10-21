@@ -12,7 +12,7 @@
 namespace AcoustId {
 
 QString applicationKey(const Library *library) {
-    const QString env = qEnvironmentVariable("OMAMP_ACOUSTID_KEY").trimmed();
+    const QString env = qEnvironmentVariable("THRUM_ACOUSTID_KEY").trimmed();
     if (!env.isEmpty())
         return env;
     if (library && library->isOpen())
@@ -22,7 +22,7 @@ QString applicationKey(const Library *library) {
 
 QString missingKeyMessage() {
     return "AcoustID was skipped: no application key. Register one at https://acoustid.org/new-application and set "
-           "it with `omamp net set acoustid.key <key>` or OMAMP_ACOUSTID_KEY. Matching used "
+           "it with `thrum net set acoustid.key <key>` or THRUM_ACOUSTID_KEY. Matching used "
            "MusicBrainz tags and IDs only.";
 }
 

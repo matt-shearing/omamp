@@ -1,4 +1,4 @@
-// Omamp — a Winamp-style music player that wears the Omarchy theme.
+// Thrum — a Winamp-style music player that wears the Omarchy theme.
 
 #include <QCoreApplication>
 #include <QDir>
@@ -42,23 +42,23 @@ static const char *version = "0.3.3";
 int main(int argc, char *argv[]) {
     DevHooks::markStart();
     // Commands run without a display: a QCoreApplication never touches the
-    // GUI platform, so `omamp scan` works over SSH and in scripts.
+    // GUI platform, so `thrum scan` works over SSH and in scripts.
     if (argc > 1 && Cli::isCommand(QString::fromLocal8Bit(argv[1]))) {
         QCoreApplication app(argc, argv);
-        app.setApplicationName("omamp");
+        app.setApplicationName("thrum");
         app.setApplicationVersion(version);
         QTextStream out(stdout), err(stderr);
         return Cli::run(app.arguments().mid(1), out, err);
     }
 
     QGuiApplication app(argc, argv);
-    app.setApplicationName("omamp");
+    app.setApplicationName("thrum");
     app.setApplicationVersion(version);
 
-    // Matches the window to omamp.desktop, so the compositor (Wayland app_id)
+    // Matches the window to thrum.desktop, so the compositor (Wayland app_id)
     // and the launcher pick up the installed icon.
-    app.setDesktopFileName("omamp");
-    app.setWindowIcon(QIcon::fromTheme("omamp"));
+    app.setDesktopFileName("thrum");
+    app.setWindowIcon(QIcon::fromTheme("thrum"));
 
     QQuickStyle::setStyle("Material");
 
@@ -78,10 +78,10 @@ int main(int argc, char *argv[]) {
     streams.setRadioResolver([&radio](const QString &path, QString *error) { return radio.resolve(path, error); });
     // Spotify (docs/spotify.md), off until switched on in Settings. Its
     // tracks sit in Now Playing and play on the backend's Spotify Connect
-    // device: HandoffEngine passes them over and pauses Omamp's own engine.
+    // device: HandoffEngine passes them over and pauses Thrum's own engine.
     SpotifyController spotify;
     const QString statePath =
-        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/state.json";
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/thrum/state.json";
     Player player(new HandoffEngine(Player::createEngine(statePath), spotify.playback()), statePath,
                   streams.function());
     spotify.setPlayer(&player);
@@ -93,14 +93,14 @@ int main(int argc, char *argv[]) {
     // and the first of them starts playing. A first run with nothing to play
     // offers the Music folder.
     QStringList arguments = app.arguments().mid(1);
-    // `omamp mini` and `omamp micro` open the compact players, so a
+    // `thrum mini` and `thrum micro` open the compact players, so a
     // Hyprland rule can float and pin them as they open (docs/now-playing.md).
     QString startMode;
     if (arguments.value(0) == "mini" || arguments.value(0) == "micro")
         startMode = arguments.takeFirst();
     if (arguments.value(0) == "open")
         arguments.removeFirst();
-    // radio://<station> on the command line (`omamp radio play` when Omamp
+    // radio://<station> on the command line (`thrum radio play` when Thrum
     // isn't running) tunes in once the window is up.
     QStringList stations;
     for (int i = arguments.size() - 1; i >= 0; --i)
@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
 
     // Spotify in the palette, the tree and the deck's cover.
     spotify.setPalette(library.palette());
-    // Mixed playlists: Spotify tracks in Omamp playlists.
+    // Mixed playlists: Spotify tracks in Thrum playlists.
     library.playlists()->setSpotify(&spotify);
     NowPlaying::setReferenceArt([&spotify](const QString &path) { return spotify.art()->fileForPath(path); });
     auto spotifyNode = [&] { library.tree()->setExtraNode("spotify", QObject::tr("Spotify"), spotify.enabled()); };
@@ -159,12 +159,12 @@ int main(int argc, char *argv[]) {
     QObject::connect(&spotify, &SpotifyController::playingArtChanged, &nowPlaying, &NowPlaying::refreshSoon);
     QObject::connect(&library, &LibraryController::revisionChanged, &nowPlaying, &NowPlaying::refreshSoon);
     const QString windowConf =
-        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/window.conf";
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/thrum/window.conf";
     // Before anything reads window.conf: a new install gets the setup, an
     // older one the sidebar switched on once (firstrun.h).
     FirstRun firstRun(windowConf);
     Appearance appearance(windowConf, &theme);
-    qmlRegisterType<Visualiser>("Omamp", 1, 0, "Visualiser");
+    qmlRegisterType<Visualiser>("Thrum", 1, 0, "Visualiser");
 
     QObject mprisHost;
     registerMpris(&mprisHost, &player, &nowPlaying);
@@ -208,7 +208,7 @@ int main(int argc, char *argv[]) {
     // The command palette (Ctrl+K) searches the library once it is open, and
     // lists the actions Main.qml registers before that.
     engine.rootContext()->setContextProperty("commandPalette", library.palette());
-    // Album and track pictures: image://omamp-art/album/<id>/<size>.
+    // Album and track pictures: image://thrum-art/album/<id>/<size>.
     engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider);
     engine.rootContext()->setContextProperty("settingsUrl", QUrl::fromLocalFile(windowConf));
     DevHooks hooks(&engine, &library);

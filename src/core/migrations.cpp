@@ -278,7 +278,7 @@ static const QStringList version2 = {
 // - tag_rating and tag_play_count keep what the file itself says. The
 //   library's own rating and play_count are filled from them only while
 //   empty, and only when the file's value is new, so a rating the user
-//   cleared in Omamp is not brought back by every rescan.
+//   cleared in Thrum is not brought back by every rescan.
 // - quick_hash is a hash of 64 KiB from the middle of the file, which
 //   identifies a moved file even when its tags are empty.
 // - albums.art_checked is when the album was last searched for artwork; NULL
@@ -448,7 +448,7 @@ static const QStringList version8 = {
 // - remote_sources holds each OpenSubsonic or Subsonic server. The password
 //   or API key is never stored here: secret_ref names it in the system
 //   keyring (secret_store 'libsecret') or in a private file
-//   (secret_store 'file', ~/.config/omamp/credentials.json, mode 0600).
+//   (secret_store 'file', ~/.config/thrum/credentials.json, mode 0600).
 // - remote_albums remembers what each server's albums looked like at the
 //   last sync, so the next sync fetches only the albums that changed.
 // - remote_tracks links a mirrored track to its album and cover on the
@@ -514,7 +514,7 @@ static const QStringList version9 = {
 
 // Internet radio (docs/radio.md).
 //
-// - radio_stations holds every station Omamp knows: the built-in Nightride FM
+// - radio_stations holds every station Thrum knows: the built-in Nightride FM
 //   and Rekt Network channels (builtin = 1, refreshed from nightride.fm), the
 //   ones found on radio-browser.info, and addresses the user typed or
 //   imported. key is stable ("nightride/darksynth", "rb/<station uuid>",
@@ -568,7 +568,7 @@ static const QStringList version10 = {
 // files. A Spotify entry is a row with no track_id whose path is
 // spotify://track/<id>; it already keeps its title, artist and length, and
 // now its album and art too, so it shows properly without asking Spotify.
-// art is the Spotify album id (for the cover Omamp caches) or a picture URL.
+// art is the Spotify album id (for the cover Thrum caches) or a picture URL.
 static const QStringList version11 = {
     "ALTER TABLE playlist_items ADD COLUMN album TEXT",
     "ALTER TABLE playlist_items ADD COLUMN art TEXT",

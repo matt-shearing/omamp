@@ -30,7 +30,7 @@ void setOptions(const Options &options);
 // station's ICY titles), and reconnected when it drops.
 inline bool isLive(const QString &path) { return path.startsWith(QLatin1String("radio://")); }
 
-// "Omamp/<version>".
+// "Thrum/<version>".
 QString userAgent();
 
 // What FFmpeg is asked to open for a location: the local path, or the URL

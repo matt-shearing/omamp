@@ -8,7 +8,7 @@
 
 class OutputFollower;
 
-// The engine Omamp has always used: QMediaPlayer with Qt's FFmpeg backend.
+// The engine Thrum has always used: QMediaPlayer with Qt's FFmpeg backend.
 // No gapless playback, crossfade, ReplayGain or equaliser; it moves to the
 // queued file when the current one ends, as the Player used to do itself.
 class QtEngine : public AudioEngine {
@@ -16,7 +16,7 @@ class QtEngine : public AudioEngine {
 
 public:
     // withDevice false leaves out the audio output, so nothing is ever heard
-    // (tests). OMAMP_NO_AUDIO_DEVICE=1 forces that too.
+    // (tests). THRUM_NO_AUDIO_DEVICE=1 forces that too.
     explicit QtEngine(bool withDevice = true, QObject *parent = nullptr);
 
     QString name() const override { return QStringLiteral("qt"); }

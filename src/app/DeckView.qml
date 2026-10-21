@@ -163,7 +163,7 @@ ColumnLayout {
                         clip: true
 
                         readonly property string line: backend.currentIndex < 0
-                            ? qsTr("Omamp — drop some music in")
+                            ? qsTr("Thrum — drop some music in")
                             : (backend.currentIndex + 1) + ". " + (backend.artist ? backend.artist + " - " : "")
                               + backend.title + (backend.duration > 0 ? " (" + deck.clock(backend.duration) + ")" : "")
                               + (backend.live && backend.album ? "  ·  " + backend.album : "")

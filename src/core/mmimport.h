@@ -41,8 +41,8 @@ struct PathMap {
 struct Options {
     QList<PathMap> maps;
     bool apply = false;
-    // Overwrite Omamp's values. Off: a rating or custom field is filled only
-    // where Omamp has none; counts and dates always merge (the larger count,
+    // Overwrite Thrum's values. Off: a rating or custom field is filled only
+    // where Thrum has none; counts and dates always merge (the larger count,
     // the later last play, the earlier date added), so importing twice
     // changes nothing the second time.
     bool overwrite = false;

@@ -4,7 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // The first-run setup (SetupWizard.qml), its palette action and Help entry
-// ("setup"), and the one-time banner that offers it to people who used Omamp
+// ("setup"), and the one-time banner that offers it to people who used Thrum
 // before it had one (firstRun.bannerPending). Kept out of Main.qml as
 // RadioActions keeps the radio's.
 Item {

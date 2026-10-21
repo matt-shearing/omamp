@@ -208,7 +208,7 @@ Output render(Library &library, const QList<qint64> &trackIds, const Options &op
     for (int c = 0; c < titles.size(); ++c)
         head += QString("<th%1>%2</th>").arg(numeric(ids[c].trimmed().toLower()) ? " class=\"n\"" : "", titles[c].toHtmlEscaped());
     const QString title = options.title.isEmpty() ? QString("Tracks") : options.title;
-    const QString summary = QString("%1 %2 · %3 · %4 · made by Omamp on %5")
+    const QString summary = QString("%1 %2 · %3 · %4 · made by Thrum on %5")
                                 .arg(out.tracks)
                                 .arg(out.tracks == 1 ? "track" : "tracks")
                                 .arg(duration(out.durationMs), bytesText(out.bytes),

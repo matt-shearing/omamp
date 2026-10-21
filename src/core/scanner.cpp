@@ -283,7 +283,7 @@ public:
         // The file's rating and play count fill the library's only while
         // those are empty, and only when the file says something new (SET
         // reads the old tag_rating), so the library's own stats always win
-        // and a rating cleared in Omamp stays cleared.
+        // and a rating cleared in Thrum stays cleared.
         static const char *stats =
             "rating = CASE WHEN rating IS NULL AND tag_rating IS NOT :tag_rating THEN :tag_rating ELSE rating END, "
             "play_count = CASE WHEN play_count = 0 AND tag_play_count IS NOT :tag_play_count "
@@ -644,7 +644,7 @@ ScanResult Scanner::rescanAll(Mode mode) {
     if (online.isEmpty()) {
         ScanResult result;
         result.ok = false;
-        result.error = "The library has no folders that are online. Add one with: omamp scan <folder>";
+        result.error = "The library has no folders that are online. Add one with: thrum scan <folder>";
         return result;
     }
     return scan(online, mode);

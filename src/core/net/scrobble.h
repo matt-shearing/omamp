@@ -61,7 +61,7 @@ struct FlushResult {
 };
 
 namespace ListenBrainz {
-// The user's token, from OMAMP_LISTENBRAINZ_TOKEN or the setting
+// The user's token, from THRUM_LISTENBRAINZ_TOKEN or the setting
 // listenbrainz.token.
 QString token(const Library &library);
 // Asks ListenBrainz whether a token is valid; on success user is its name.

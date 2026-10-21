@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 
-// "Add to playlist" for the chosen Spotify rows, in two groups: Omamp's own
+// "Add to playlist" for the chosen Spotify rows, in two groups: Thrum's own
 // playlists (a mixed playlist can hold Spotify tracks beside local files)
 // and your Spotify playlists. Each group starts with a way to make a new
 // one; the window asks for its name (SpotifyHooks).
@@ -15,7 +15,7 @@ Menu {
     // Which list, for the window's "new playlist" actions: view or blend.
     property string source: "view"
     signal action(string id)
-    readonly property bool omampAllowed: { void library.dj.partyOn; return library.dj.allowed("edit-playlists") }
+    readonly property bool thrumAllowed: { void library.dj.partyOn; return library.dj.allowed("edit-playlists") }
 
     topPadding: 4; bottomPadding: 4
     // As wide as its widest line (Material's menus stay 200 pixels wide and
@@ -55,19 +55,19 @@ Menu {
     }
 
     AddEntry {
-        objectName: "spotifyAddOmampHeading"
-        text: qsTr("Omamp playlists")
+        objectName: "spotifyAddThrumHeading"
+        text: qsTr("Thrum playlists")
         enabled: false
         implicitHeight: 28
         font.bold: true
         font.pixelSize: 12
     }
     AddEntry {
-        id: newOmamp
-        objectName: "spotifyAddNewOmamp"
-        text: qsTr("New Omamp playlist…")
-        enabled: menu.omampAllowed
-        onTriggered: menu.action("spotify-new-omamp-playlist:" + menu.source)
+        id: newThrum
+        objectName: "spotifyAddNewThrum"
+        text: qsTr("New Thrum playlist…")
+        enabled: menu.thrumAllowed
+        onTriggered: menu.action("spotify-new-thrum-playlist:" + menu.source)
     }
     MenuSeparator { }
     AddEntry {
@@ -91,12 +91,12 @@ Menu {
         model: { void library.playlists.revision; return library.playlists.staticPlaylists() }
         delegate: AddEntry {
             required property var modelData
-            objectName: "spotifyAddOmamp:" + modelData.name
+            objectName: "spotifyAddThrum:" + modelData.name
             text: modelData.name
-            enabled: menu.omampAllowed
-            onTriggered: spotify.addChosenToOmampPlaylist(menu.rows, modelData.id)
+            enabled: menu.thrumAllowed
+            onTriggered: spotify.addChosenToThrumPlaylist(menu.rows, modelData.id)
         }
-        onObjectAdded: (index, object) => menu.insertItem(menu.indexAfter(newOmamp) + index, object)
+        onObjectAdded: (index, object) => menu.insertItem(menu.indexAfter(newThrum) + index, object)
         onObjectRemoved: (index, object) => menu.removeItem(object)
     }
     Instantiator {

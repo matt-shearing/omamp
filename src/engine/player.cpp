@@ -18,13 +18,13 @@
 #include "streaming.h"
 
 namespace {
-// The settings file beside the state file: ~/.config/omamp/omamp.conf.
+// The settings file beside the state file: ~/.config/thrum/thrum.conf.
 QString settingsPathFor(const QString &statePath) {
-    return statePath.isEmpty() ? QString() : QFileInfo(statePath).absolutePath() + "/omamp.conf";
+    return statePath.isEmpty() ? QString() : QFileInfo(statePath).absolutePath() + "/thrum.conf";
 }
 
 AudioEngine *chooseEngine(const QString &settingsPath) {
-    QString choice = qEnvironmentVariable("OMAMP_ENGINE").trimmed().toLower();
+    QString choice = qEnvironmentVariable("THRUM_ENGINE").trimmed().toLower();
     if (choice.isEmpty() && !settingsPath.isEmpty())
         choice = QSettings(settingsPath, QSettings::IniFormat).value("playback/engine").toString().trimmed().toLower();
     if (choice == "native")
@@ -768,7 +768,7 @@ bool Player::applyEqPreset(const QString &name) {
     return true;
 }
 
-// Playback settings live in omamp.conf, beside the state file, where the
+// Playback settings live in thrum.conf, beside the state file, where the
 // window keeps its own; the engine choice is read from there at start.
 void Player::saveSettings() {
     if (m_settingsPath.isEmpty())

@@ -7,8 +7,8 @@ import QtQuick
 // window's size and title while a compact player shows.
 //
 // Each compact player remembers its own size in window.conf under
-// [compact]. Which mode was showing is not remembered: Omamp opens as the
-// full window unless started with `omamp mini` or `omamp micro`, because a
+// [compact]. Which mode was showing is not remembered: Thrum opens as the
+// full window unless started with `thrum mini` or `thrum micro`, because a
 // compact player that Hyprland tiles instead of floating is no use.
 //
 // On Hyprland a window rule applies only when a window opens, so switching
@@ -20,7 +20,7 @@ QtObject {
     required property var window
     required property var prefs
 
-    // "", "mini" or "micro". `omamp mini` / `omamp micro` start in one, so
+    // "", "mini" or "micro". `thrum mini` / `thrum micro` start in one, so
     // the window has its title and size before its first frame and a
     // Hyprland window rule for the title applies when it opens.
     property string compact: typeof startMode === "string" && (startMode === "mini" || startMode === "micro")
@@ -35,7 +35,7 @@ QtObject {
     readonly property bool fullScreen: window.visibility === Window.FullScreen
 
     // A fixed title, so a Hyprland window rule can find a compact player.
-    readonly property string title: compact === "micro" ? "Omamp micro" : "Omamp mini"
+    readonly property string title: compact === "micro" ? "Thrum micro" : "Thrum mini"
     readonly property int compactWidth: compact === "micro" ? sizes.microWidth : sizes.miniWidth
     readonly property int compactHeight: compact === "micro" ? sizes.microHeight : sizes.miniHeight
     readonly property int minimumWidth: compact === "micro" ? 220 : 320
@@ -152,7 +152,7 @@ QtObject {
         else if (bigView) bigView = false
     }
 
-    // `omamp mini` and `omamp micro` start here.
+    // `thrum mini` and `thrum micro` start here.
     // The window already opened as that player (compact starts from
     // startMode); without a window rule Hyprland tiled it, so ask it to
     // float the window too. Going back then tiles it.

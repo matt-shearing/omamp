@@ -701,7 +701,7 @@ private slots:
             QSKIP("needs ffmpeg for the fixtures");
         QTemporaryDir dir;
         QProcess make;
-        make.start(QString(OMAMP_TESTS_DIR) + "/make-fixtures", {dir.filePath("music")});
+        make.start(QString(THRUM_TESTS_DIR) + "/make-fixtures", {dir.filePath("music")});
         QVERIFY(make.waitForFinished(120000));
         QCOMPARE(make.exitCode(), 0);
 
@@ -1037,7 +1037,7 @@ private slots:
             QSKIP("needs ffmpeg for the fixtures");
         QTemporaryDir dir;
         QProcess make;
-        make.start(QString(OMAMP_TESTS_DIR) + "/make-fixtures", {dir.filePath("music")});
+        make.start(QString(THRUM_TESTS_DIR) + "/make-fixtures", {dir.filePath("music")});
         QVERIFY(make.waitForFinished(120000));
         QCOMPARE(make.exitCode(), 0);
         startInAdvancedMode(dir);

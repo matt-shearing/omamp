@@ -10,11 +10,11 @@ class Library;
 
 // AcoustID: from a Chromaprint fingerprint to MusicBrainz recordings.
 //
-// Lookups need an application key (the "client" parameter). Omamp has none
+// Lookups need an application key (the "client" parameter). Thrum has none
 // registered yet, so the key comes from the setting acoustid.key or the
-// environment variable OMAMP_ACOUSTID_KEY; without one, identification
+// environment variable THRUM_ACOUSTID_KEY; without one, identification
 // says so and carries on with the MusicBrainz search alone. AcoustID is free
-// for non-commercial use only, at most three requests a second. Omamp never
+// for non-commercial use only, at most three requests a second. Thrum never
 // submits fingerprints.
 namespace AcoustId {
 

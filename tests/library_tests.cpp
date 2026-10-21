@@ -102,7 +102,7 @@ private slots:
         if (QStandardPaths::findExecutable("ffmpeg").isEmpty())
             return;
         QProcess make;
-        make.start(QString(OMAMP_TESTS_DIR) + "/make-fixtures", {m_fixtures.filePath("music")});
+        make.start(QString(THRUM_TESTS_DIR) + "/make-fixtures", {m_fixtures.filePath("music")});
         QVERIFY(make.waitForFinished(120000));
         QVERIFY2(make.exitCode() == 0, make.readAllStandardError().constData());
         m_haveFixtures = true;
@@ -197,7 +197,7 @@ private slots:
         QCOMPARE(info.key, QString("uuid:1234-ABCD"));
         QCOMPARE(info.kind, QString("local"));
         QCOMPARE(info.rootPath, root);
-        QVERIFY(!QFile::exists(root + "/Music/Album/.omamp-volume-id")); // markers are for shares only
+        QVERIFY(!QFile::exists(root + "/Music/Album/.thrum-volume-id")); // markers are for shares only
 
         // Unplugged, then plugged in somewhere else.
         fake.setMounts({});
@@ -221,14 +221,14 @@ private slots:
 
         // Looking (not adding) never writes to the share.
         QCOMPARE(r.identify(mount + "/music", false).key, QString("net://nas/share"));
-        QVERIFY(!QFile::exists(mount + "/music/.omamp-volume-id"));
+        QVERIFY(!QFile::exists(mount + "/music/.thrum-volume-id"));
 
         const VolumeInfo added = r.identify(mount + "/music", true);
         QVERIFY(added.key.startsWith("marker:"));
         QVERIFY(added.markerWritten);
         QCOMPARE(added.rootPath, mount + "/music");
         QCOMPARE(added.mountSubpath, QString("music"));
-        QVERIFY(QFile::exists(mount + "/music/.omamp-volume-id"));
+        QVERIFY(QFile::exists(mount + "/music/.thrum-volume-id"));
 
         // A subfolder of a known share reuses the share's marker.
         const VolumeInfo sub = r.identify(mount + "/music/jazz", true);
@@ -244,7 +244,7 @@ private slots:
         QTemporaryDir elsewhere;
         const QString moved = QFileInfo(elsewhere.path()).canonicalFilePath();
         QDir().mkpath(moved + "/music");
-        QFile::copy(mount + "/music/.omamp-volume-id", moved + "/music/.omamp-volume-id");
+        QFile::copy(mount + "/music/.thrum-volume-id", moved + "/music/.thrum-volume-id");
         fake.setMounts({{moved, "/", "nfs4", "nas:/share"}});
         QCOMPARE(r.locate(added.key, added.rootPath, added.mountSubpath), moved + "/music");
         fake.setMounts({});

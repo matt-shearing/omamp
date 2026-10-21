@@ -1,6 +1,6 @@
-# Plan: Omamp advanced mode
+# Plan: Thrum advanced mode
 
-Omamp's advanced mode turns the Winamp-style player into a MediaMonkey-style
+Thrum's advanced mode turns the Winamp-style player into a MediaMonkey-style
 library manager. It handles big local libraries, from a few hundred albums to
 more than 100,000 tracks, on local disks and on a NAS. It keeps the 2000s
 features that made MediaMonkey worth using and adds what modern tools do
@@ -14,12 +14,12 @@ Written 19 October 2026. Nothing in it is built yet except the player.
 
 ## The pitch
 
-**Arch, Omarchy and Hyprland first.** Omamp follows the Omarchy theme,
+**Arch, Omarchy and Hyprland first.** Thrum follows the Omarchy theme,
 Hyprland's rounding and Omarchy's keyboard habits. It installs as an Arch
 package and has an Omarchy bar plugin. Other desktops work, but they are not
 the target.
 
-**Powerful, modern library management.** Omamp tags from MusicBrainz and
+**Powerful, modern library management.** Thrum tags from MusicBrainz and
 AcoustID. One query language drives search, smart playlists and collections.
 Files are organised by a pattern, with a preview and undo. Background jobs
 never block the window, and a command-line interface lets scripts and agents
@@ -32,7 +32,7 @@ properly.
 
 ## What we keep from MediaMonkey, and what we fix
 
-| MediaMonkey | In Omamp |
+| MediaMonkey | In Thrum |
 |---|---|
 | SQLite library with ratings, play counts, custom fields | Same, plus an undo journal for every tag change |
 | Drive IDs for removable and network drives, which break on a new PC | Volume IDs from filesystem UUIDs or a marker file at the share root; paths stored relative to the volume |
@@ -68,7 +68,7 @@ src/core/     library database, scanner, volumes, query and mask languages,
               tagging, organise, jobs, metadata providers, sync
 src/engine/   audio playback (QMediaPlayer now, our own engine later)
 src/app/      Qt Quick window: deck, advanced mode, dialogs
-src/cli/      `omamp scan`, `omamp query`, `omamp tag`, `omamp organise`
+src/cli/      `thrum scan`, `thrum query`, `thrum tag`, `thrum organise`
 omarchy-plugin/   the Omarchy bar widget and panel
 ```
 
@@ -77,7 +77,7 @@ the tests.
 
 ### Database
 
-- SQLite in `~/.local/share/omamp/library.db` with WAL mode, through Qt SQL.
+- SQLite in `~/.local/share/thrum/library.db` with WAL mode, through Qt SQL.
   It always lives on a local disk. SQLite on a network mount risks locking
   failures and corruption.
 - Main tables: `volumes`, `folders`, `tracks`, `artists` with
@@ -96,7 +96,7 @@ the tests.
 
 Each library root belongs to a volume. A local disk is identified by its
 filesystem UUID. A network share is identified by a marker file,
-`.omamp-volume-id`, written once at its root, with the server and share name
+`.thrum-volume-id`, written once at its root, with the server and share name
 as a fallback. When a volume disappears, its tracks show as offline. They
 stay in playlists and keep their ratings and history. Remounting the share
 somewhere else needs no rescan.
@@ -170,10 +170,10 @@ one panel and as Omarchy notifications, never as modal dialogs.
 
 ### Command line
 
-`omamp scan`, `omamp query 'rating:5 genre:jazz'`,
-`omamp tag --set genre=Jazz <query>`, `omamp organise --dry-run`, and
-`omamp import mediamonkey <MM5.DB>`. Each command takes `--json` and exits 0
-or 1. `omamp skill install` installs an agent skill, as Hype does.
+`thrum scan`, `thrum query 'rating:5 genre:jazz'`,
+`thrum tag --set genre=Jazz <query>`, `thrum organise --dry-run`, and
+`thrum import mediamonkey <MM5.DB>`. Each command takes `--json` and exits 0
+or 1. `thrum skill install` installs an agent skill, as Hype does.
 
 ## The window in advanced mode
 
@@ -215,11 +215,11 @@ Each subagent works in its own worktree and is reviewed before merging.
 ### Phase 0: the core (one agent, in order)
 
 Split the code into core, engine, app and CLI. Add the database, migrations,
-volumes, scanner and `omamp scan` and `omamp query`. Build a test fixture
+volumes, scanner and `thrum scan` and `thrum query`. Build a test fixture
 generator that makes tagged audio files with `ffmpeg`, and a 200,000-row
 synthetic library for performance tests.
 
-*Done when:* `omamp scan ~/Music` fills the library, a rescan of an unchanged
+*Done when:* `thrum scan ~/Music` fills the library, a rescan of an unchanged
 library only checks file sizes and times, and the player still works.
 
 ### Phase 1: the library window (three agents in parallel)
@@ -257,14 +257,14 @@ and filtering answer in under 100 ms.
 1. Network volumes over SMB and NFS: offline handling, scheduled rescans,
    local artwork and waveform caches, and a guide to mounting shares with
    systemd automount.
-2. An OpenSubsonic client, so Omamp can browse and play a Navidrome library
+2. An OpenSubsonic client, so Thrum can browse and play a Navidrome library
    on the NAS without scanning across the network.
 
 ### Phase 6: sync and release
 
 Sync profiles (folder, USB, Syncthing) with transcoding; reports; the AUR
 package; the full README (see [README-outline.md](../README-outline.md));
-and proposing Omamp to `omacom/omarchy-pkgs`.
+and proposing Thrum to `omacom/omarchy-pkgs`.
 
 ### Later, if wanted
 
@@ -306,5 +306,5 @@ scripting API, and translations.
 3. Do you still have a MediaMonkey database (`MM.DB` or `MM5.DB`)? Importing
    ratings and play counts would move up the list.
 4. Should ratings and play counts be written into the music files, or kept in
-   Omamp's database only? The plan assumes the database.
+   Thrum's database only? The plan assumes the database.
 5. Do you use ListenBrainz or Last.fm, and do you have a Discogs account?

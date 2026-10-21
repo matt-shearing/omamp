@@ -1,6 +1,6 @@
 # Now playing
 
-Omamp shows what is playing in five places: the deck, the strip at the top
+Thrum shows what is playing in five places: the deck, the strip at the top
 of advanced mode, the Now Playing list, the info panel and the big Now
 Playing view. Each shows the track's cover. The mini and micro players
 shrink the window to a strip, and the deck can wear three styles.
@@ -24,11 +24,11 @@ The cover comes from the first of these that has one:
    looks one folder up.
 
 The deck finds covers without opening the library window. Pictures go into
-the artwork cache, `~/.cache/omamp/art`, at 96, 256 and 600 pixels. When
+the artwork cache, `~/.cache/thrum/art`, at 96, 256 and 600 pixels. When
 nothing is found, a music note in the style's colours takes the cover's
 place.
 
-Omamp also sends the 600-pixel cover over MPRIS as `mpris:artUrl`, so the
+Thrum also sends the 600-pixel cover over MPRIS as `mpris:artUrl`, so the
 Omarchy bar, `playerctl metadata` and other MPRIS clients show it.
 
 ## The big Now Playing view
@@ -92,19 +92,19 @@ bottom. It is Winamp's windowshade mode.
 
 Click the button at the right end, or double-click an empty part, to go
 back to the full window. Each player remembers its own size.
-`omamp mini` and `omamp micro` start Omamp in that player.
+`thrum mini` and `thrum micro` start Thrum in that player.
 
 ### Floating and pinning them in Hyprland
 
 Wayland lets no window place itself or keep itself on top, so on Hyprland
-Omamp asks Hyprland to do it. When you switch to a compact player, Omamp:
+Thrum asks Hyprland to do it. When you switch to a compact player, Thrum:
 
-1. sets the window's title to `Omamp mini` or `Omamp micro`;
+1. sets the window's title to `Thrum mini` or `Thrum micro`;
 2. finds its own window in `hyprctl clients -j`, by its process ID;
 3. asks Hyprland to float it, size it, move it to the top right of its
    monitor under the bar, and pin it to every workspace.
 
-When you switch back, Omamp unpins the window and puts it back as it was
+When you switch back, Thrum unpins the window and puts it back as it was
 before the first compact player: a tiled window tiles again, and a floating
 window returns to its old size and place. Going from the mini player to the
 micro player keeps that earlier state.
@@ -113,7 +113,7 @@ The window's content stays hidden while Hyprland moves it, so you never see
 the deck squeezed into a strip or the strip stretched across the deck. It
 shows again when the new size arrives, or after one second.
 
-Hyprland 0.56 reads dispatches as Lua, so Omamp sends one batch such as:
+Hyprland 0.56 reads dispatches as Lua, so Thrum sends one batch such as:
 
 ```sh
 hyprctl --batch 'dispatch hl.dsp.window.float({ window = "address:0x…", action = "on" });
@@ -132,27 +132,27 @@ strip along the top, full width, with the line "Your window manager keeps
 this window large. Make it floating to shrink it." below it, never a small
 strip in the middle of empty space.
 
-#### A window rule for `omamp mini`
+#### A window rule for `thrum mini`
 
-`omamp mini` and `omamp micro` open the window with its compact title and
+`thrum mini` and `thrum micro` open the window with its compact title and
 size from the first frame, so a window rule can float and place it as it
-opens. Omamp asks Hyprland as well, so the rule is optional. With the rule,
+opens. Thrum asks Hyprland as well, so the rule is optional. With the rule,
 the player never shows tiled, even for a moment. On Omarchy 4 (Hyprland's
 Lua configuration), put this in a file of your own in `~/.config/hypr/`,
-such as `omamp.lua`, and add `require("omamp")` to
+such as `thrum.lua`, and add `require("thrum")` to
 `~/.config/hypr/hyprland.lua`:
 
 ```lua
--- Omamp's mini and micro players: floating, on every workspace, top right
+-- Thrum's mini and micro players: floating, on every workspace, top right
 -- under the bar, without taking the focus.
-o.window({ class = "^omamp$", title = "^Omamp mini$" }, {
+o.window({ class = "^thrum$", title = "^Thrum mini$" }, {
   float = true,
   pin = true,
   no_initial_focus = true,
   size = { 420, 64 },
   move = { "(monitor_w-window_w-24)", "(monitor_h*0.05)" },
 })
-o.window({ class = "^omamp$", title = "^Omamp micro$" }, {
+o.window({ class = "^thrum$", title = "^Thrum micro$" }, {
   float = true,
   pin = true,
   no_initial_focus = true,
@@ -162,11 +162,11 @@ o.window({ class = "^omamp$", title = "^Omamp micro$" }, {
 ```
 
 On a Hyprland that still reads `hyprland.conf`, write the same rule in its
-`windowrule` syntax: match the class `omamp` and the title, then float, pin,
+`windowrule` syntax: match the class `thrum` and the title, then float, pin,
 size and move.
 
 Hyprland applies a rule only when a window opens, which is why switching
-asks Hyprland directly. A window opened with `omamp mini` goes back to
+asks Hyprland directly. A window opened with `thrum mini` goes back to
 tiling when you leave the player, as a new window would.
 
 ## Visualisers
@@ -181,7 +181,7 @@ first five follow the analyser as it updates, about 30 times a second:
 
 - **Bars**: the analyser's bars, rising from green through cyan to the
   accent.
-- **Bars with peaks**: the same with a falling cap on each bar, Omamp's
+- **Bars with peaks**: the same with a falling cap on each bar, Thrum's
   original analyser and the default.
 - **Mirrored spectrum**: the bass in the middle, spreading to both sides,
   with a faint reflection below.
@@ -233,7 +233,7 @@ opens the same picker in the middle of the window.
 
 The picker shows each style as a small live preview with its name, the one
 in use ticked. The previews follow what is playing; while nothing plays
-through Omamp they play a made-up sample, so each style shows what it does.
+through Thrum they play a made-up sample, so each style shows what it does.
 Choosing a style applies it at once and keeps it, as **Settings >
 Appearance** does.
 
@@ -313,7 +313,7 @@ and the rest.
 ### Sensitivity
 
 The visualisers follow the music's loudness, so a loud modern master and a
-quiet old recording both move them over most of their height. Omamp keeps
+quiet old recording both move them over most of their height. Thrum keeps
 track of how loud each part of the spectrum has been over the last few
 seconds and scales the bars to that: on loud rock Synthwave's towers reach
 most of the way up the sky on the beats, and a quiet passage fills the bars
@@ -344,24 +344,24 @@ fades out at both ends and towards the cover and words above it.
 
 ### Paused, stopped, or Spotify
 
-Spotify's sound never reaches Omamp, so there is nothing to analyse while a
+Spotify's sound never reaches Thrum, so there is nothing to analyse while a
 Spotify track plays; the same goes for a paused or stopped player. The
 seven new styles then show a slow, calm animation at 30 frames a second.
 **Hide the large bar's visualiser** under **While nothing plays through
-Omamp** hides the bar's instead.
+Thrum** hides the bar's instead.
 
 **Reduce motion** slows every new style down, drops the beat flashes, runs
 at 30 frames a second, and shows a still picture while idle.
 
 ### In the Omarchy bar
 
-The Omamp widget in the Omarchy bar (see
+The Thrum widget in the Omarchy bar (see
 [omarchy-plugin/README.md](../omarchy-plugin/README.md#the-visualiser-behind-the-track))
 draws a small, faint copy of the player's visualiser behind the track's
 name, in the style chosen above. **Settings > Appearance > Share the
-visualiser with the Omarchy bar** controls it on Omamp's side; it is on by
+visualiser with the Omarchy bar** controls it on Thrum's side; it is on by
 default and sends nothing unless the bar is connected and music plays
-through Omamp. The widget has its own settings to turn it off, to keep it to
+through Thrum. The widget has its own settings to turn it off, to keep it to
 bars or a line, and to show it more strongly.
 
 ![The bar widget with each small visualiser style behind the track](omarchy-plugin-visualiser-dark.png)
@@ -384,5 +384,5 @@ and the large bar's, chooses the big view's background, and turns its
 lyrics on or off. The
 palette (`Ctrl+K`) has **Deck style: Classic** and the rest.
 
-These settings live in `~/.config/omamp/window.conf`, under `[appearance]`
+These settings live in `~/.config/thrum/window.conf`, under `[appearance]`
 and, for the compact players' sizes, `[compact]`.

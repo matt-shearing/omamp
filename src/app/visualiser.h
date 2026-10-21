@@ -21,7 +21,7 @@
 //       peaks: backend.peaks
 //       waveform: backend.waveform // -1..1, the last few milliseconds
 //       stereoWaveform: backend.stereoWaveform // left then right
-//       idle: backend.state !== "playing"     // no sound reaches Omamp
+//       idle: backend.state !== "playing"     // no sound reaches Thrum
 //       reduceMotion: appearance.reduceMotion
 //       low: "green"; mid: "cyan"; high: "yellow"; peak: "white"
 //   }
@@ -29,7 +29,7 @@
 // The first five follow the data as it arrives, about 30 times a second:
 //
 // bars:   bars rising from green through the middle colour to the top one
-// peaks:  the same with a falling cap on each bar (Omamp's own analyser)
+// peaks:  the same with a falling cap on each bar (Thrum's own analyser)
 // mirror: the bars reflected about the middle line, quieter below
 // scope:  the waveform as a line, Winamp's oscilloscope
 // fire:   flames fed by the spectrum, a nod to Winamp's AVS and MilkDrop

@@ -20,7 +20,7 @@
 // MusicBrainz only when the search scores it 100 and the names agree.
 // Every answer is cached in the HTTP cache (MusicBrainz for a week,
 // Wikidata and Wikipedia for 30 days), each service at its own polite pace,
-// with Omamp's User-Agent.
+// with Thrum's User-Agent.
 //
 // Packaged notes are text files an album carries in its folder: album.txt,
 // info.txt, notes.md, liner notes.*, README*, credits.txt, *.nfo.
@@ -69,7 +69,7 @@ QString wikidataIdFromUrl(const QString &url);
 
 class Client {
 public:
-    // cacheDir holds the pictures (empty: ~/.cache/omamp/about).
+    // cacheDir holds the pictures (empty: ~/.cache/thrum/about).
     explicit Client(Net::HttpClient &http, const QString &cacheDir = {});
     static QString defaultCacheDir();
 

@@ -12,7 +12,7 @@ import QtQuick.Layouts
 // Ctrl+M (or the button at the right) goes back to the full window.
 // Wayland lets no window place itself or stay on top: on Hyprland the
 // window asks Hyprland to (WindowPlacement), and a rule for the title
-// "Omamp mini" / "Omamp micro" does it for `omamp mini` (docs/now-playing.md).
+// "Thrum mini" / "Thrum micro" does it for `thrum mini` (docs/now-playing.md).
 Rectangle {
     id: mini
     objectName: "miniPlayer"
@@ -32,7 +32,7 @@ Rectangle {
 
     readonly property string mono: "JetBrainsMono Nerd Font"
     readonly property bool micro: mode === "micro"
-    readonly property string line: backend.currentIndex < 0 ? qsTr("Omamp — drop some music in")
+    readonly property string line: backend.currentIndex < 0 ? qsTr("Thrum — drop some music in")
                                   : (backend.artist ? backend.artist + " - " : "") + backend.title
                                     + (backend.live && backend.album ? "  ·  " + backend.album : "")
     function clock(ms) {

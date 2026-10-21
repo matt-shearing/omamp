@@ -310,7 +310,7 @@ QVariantMap Appearance::palette(const QString &style, const QVariantMap &c, int 
         };
     } else {
         // Omarchy: the theme's own colours in the roles the deck has always
-        // used them for, so this is the look Omamp had before styles.
+        // used them for, so this is the look Thrum had before styles.
         const QString accent = t("accent");
         p = {
             {"window", t("background")},           {"panel", t("dark_background")},

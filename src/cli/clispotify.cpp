@@ -1,6 +1,6 @@
-// `omamp spotify`: Spotify through the configured backend, from a shell or
+// `thrum spotify`: Spotify through the configured backend, from a shell or
 // an agent. The same rules as every command: --json, results on stdout,
-// errors on stderr, exit 0 or 1. Omamp never signs in itself; `omamp
+// errors on stderr, exit 0 or 1. Thrum never signs in itself; `thrum
 // spotify status` says what to do when the backend isn't signed in.
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -45,14 +45,14 @@ QJsonArray itemsJson(const QList<Spotify::Item> &items) {
 
 } // namespace
 
-const char *spotifyUsage = R"(       omamp spotify status              the backend: installed, signed in, running, device
-       omamp spotify search <text>       search Spotify (tracks, albums, artists, playlists)
-       omamp spotify playlists|liked|albums|artists
+const char *spotifyUsage = R"(       thrum spotify status              the backend: installed, signed in, running, device
+       thrum spotify search <text>       search Spotify (tracks, albums, artists, playlists)
+       thrum spotify playlists|liked|albums|artists
                                          your playlists, Liked Songs, saved albums, followed artists
-       omamp spotify tracks <uri>        a playlist's or album's tracks, an artist's top tracks
-       omamp spotify play <uri or link>  play it on the backend's Spotify Connect device
-       omamp spotify now                 what the backend is playing
-       omamp spotify pause|resume
+       thrum spotify tracks <uri>        a playlist's or album's tracks, an artist's top tracks
+       thrum spotify play <uri or link>  play it on the backend's Spotify Connect device
+       thrum spotify now                 what the backend is playing
+       thrum spotify pause|resume
                     [--backend spotify_player|spotifast]  (default: Settings → Spotify)
 )";
 
@@ -70,7 +70,7 @@ int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err)
             rest << a;
     }
     auto fail = [&](const QString &message) {
-        err << "omamp: " << message << Qt::endl;
+        err << "thrum: " << message << Qt::endl;
         if (json)
             out << toJson({{"ok", false}, {"error", message}}) << Qt::flush;
         return 1;
@@ -221,7 +221,7 @@ int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err)
             out << toJson({{"ok", true}}) << Qt::flush;
         return 0;
     }
-    return fail(QString("unknown spotify command %1; try omamp help").arg(verb));
+    return fail(QString("unknown spotify command %1; try thrum help").arg(verb));
 }
 
 } // namespace Cli
@@ -238,7 +238,7 @@ QList<SpotifyTrackInfo> lookUpSpotifyTracks(const QStringList &paths, QString *n
     const Spotify::Settings settings = Spotify::Settings::load();
     if (!settings.enabled || settings.backend != "spotify_player") {
         if (note)
-            *note = "Spotify is off in Omamp, so the tracks were added without their names; "
+            *note = "Spotify is off in Thrum, so the tracks were added without their names; "
                     "they show their Spotify ids until they are added again with Spotify on";
         return out;
     }

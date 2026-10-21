@@ -4,7 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // Settings > Spotify: the switch, which program talks to Spotify, where it
-// stands, and the sign-in. Omamp never asks for a Spotify password: Sign in
+// stands, and the sign-in. Thrum never asks for a Spotify password: Sign in
 // runs the backend's own sign-in (spotify_player authenticate) in a
 // terminal, and the backend keeps what it gets. docs/spotify.md.
 ScrollView {
@@ -49,16 +49,16 @@ ScrollView {
         Heading { text: qsTr("Spotify") }
         Switch {
             objectName: "spotifyEnabled"
-            text: qsTr("Show Spotify in Omamp")
+            text: qsTr("Show Spotify in Thrum")
             font.pixelSize: 13
             checked: spotify.enabled
             onToggled: spotify.enabled = checked
         }
         Note {
-            text: qsTr("Adds Spotify to the library tree, and Spotify tracks can sit in Now Playing beside your own. When a Spotify track's turn comes, Spotify plays it and Omamp follows. Playing needs Spotify Premium; a Free account can browse and search.")
+            text: qsTr("Adds Spotify to the library tree, and Spotify tracks can sit in Now Playing beside your own. When a Spotify track's turn comes, Spotify plays it and Thrum follows. Playing needs Spotify Premium; a Free account can browse and search.")
         }
 
-        Heading { text: qsTr("How Omamp reaches Spotify"); enabled: spotify.enabled }
+        Heading { text: qsTr("How Thrum reaches Spotify"); enabled: spotify.enabled }
         RadioButton {
             objectName: "backend_spotify_player"
             ButtonGroup.group: backendGroup
@@ -133,14 +133,14 @@ ScrollView {
                     visible: spotify.enabled
                     label: qsTr("Follows playback")
                     value: spotify.followMode === "mpris" ? qsTr("Through MPRIS, without asking Spotify")
-                         : spotify.followMode === "polling" ? qsTr("By asking Spotify every 5 seconds while a Spotify track plays in Omamp (no MPRIS from %1)").arg(spotify.backendName)
+                         : spotify.followMode === "polling" ? qsTr("By asking Spotify every 5 seconds while a Spotify track plays in Thrum (no MPRIS from %1)").arg(spotify.backendName)
                          : qsTr("Not yet")
                 }
                 Fact {
                     objectName: "spotifyRefused"
                     visible: spotify.enabled && spotify.refused.length > 0
                     label: qsTr("Refused today")
-                    value: qsTr("Spotify refused your app %n kind(s) of request today, so Omamp doesn't ask for them: %1", "",
+                    value: qsTr("Spotify refused your app %n kind(s) of request today, so Thrum doesn't ask for them: %1", "",
                                 spotify.refused.length).arg(spotify.refused.join(", "))
                     valueColor: theme.c.muted
                 }
@@ -178,7 +178,7 @@ ScrollView {
         }
         Note {
             visible: spotify.backendId === "spotify_player" && !spotify.signedIn
-            text: qsTr("Sign in opens a terminal running “spotify_player authenticate”. It opens your browser, where Spotify asks you to allow it, then asks a second time for playback. spotify_player keeps the sign-in in ~/.cache/spotify-player; Omamp only checks that it is there.")
+            text: qsTr("Sign in opens a terminal running “spotify_player authenticate”. It opens your browser, where Spotify asks you to allow it, then asks a second time for playback. spotify_player keeps the sign-in in ~/.cache/spotify-player; Thrum only checks that it is there.")
         }
         Note {
             visible: spotify.waitingForSignIn
@@ -208,7 +208,7 @@ ScrollView {
                 color: spotify.clientIdKind === "own" ? theme.c.green : theme.c.yellow
                 text: spotify.clientIdKind === "own" ? qsTr("spotify_player uses your own client ID (%1).").arg(spotify.clientId)
                     : spotify.clientIdKind === "desktop" ? qsTr("spotify_player's app.toml sets client_id to Spotify's own desktop app ID, which every player built on librespot shares. Expect rate limits.")
-                    : spotify.clientIdKind === "command" ? qsTr("spotify_player takes its client ID from client_id_command in app.toml. Omamp leaves that alone.")
+                    : spotify.clientIdKind === "command" ? qsTr("spotify_player takes its client ID from client_id_command in app.toml. Thrum leaves that alone.")
                     : qsTr("spotify_player uses its built-in client ID (ncspot's), which many people share. Expect rate limits at busy times.")
             }
             Text {
@@ -221,12 +221,12 @@ ScrollView {
                 linkColor: theme.accent
                 onLinkActivated: (link) => Qt.openUrlExternally(link)
                 text: qsTr("1. Open <a href=\"https://developer.spotify.com/dashboard\">developer.spotify.com/dashboard</a> and sign in with your Spotify account.<br>"
-                         + "2. Press <b>Create app</b>. Any name and description will do, for example “Omamp”.<br>"
+                         + "2. Press <b>Create app</b>. Any name and description will do, for example “Thrum”.<br>"
                          + "3. Under <b>Redirect URIs</b>, add exactly: http://127.0.0.1:8989/login<br>"
                          + "4. Where it asks which APIs you will use, tick <b>Web API</b>. Accept the terms and press <b>Save</b>.<br>"
                          + "5. Open the app's <b>Settings</b> and copy its <b>Client ID</b>.<br>"
                          + "6. Paste it below and press <b>Use this client ID</b>.<br>"
-                         + "7. Sign in again when Omamp asks: spotify_player needs your permission for the new app.")
+                         + "7. Sign in again when Thrum asks: spotify_player needs your permission for the new app.")
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -267,7 +267,7 @@ ScrollView {
                 }
             }
             Note {
-                text: qsTr("Omamp writes the ID into %1, after keeping a copy of the file beside it, and changes nothing else there. It then stops spotify_player, because it needs a new sign-in for the new app; signing in starts it again.").arg(spotify.appConfigPath)
+                text: qsTr("Thrum writes the ID into %1, after keeping a copy of the file beside it, and changes nothing else there. It then stops spotify_player, because it needs a new sign-in for the new app; signing in starts it again.").arg(spotify.appConfigPath)
             }
             Text {
                 objectName: "spotifyClientIdMessage"
@@ -316,7 +316,7 @@ ScrollView {
         CheckBox {
             objectName: "spotifyStartDaemon"
             enabled: spotify.enabled && spotify.backendId === "spotify_player"
-            text: qsTr("Start spotify_player in the background when Omamp needs it")
+            text: qsTr("Start spotify_player in the background when Thrum needs it")
             font.pixelSize: 13
             checked: spotify.startDaemon
             onClicked: spotify.startDaemon = checked
@@ -332,13 +332,13 @@ ScrollView {
         Note {
             visible: spotify.backendId === "spotify_player"
             text: spotify.sessionReaderInstalled
-                  ? qsTr("Spotify doesn't let new apps read these through its public Web API. omamp-spotify-session reads them with spotify_player's sign-in, as Spotifast does, through Spotify's private endpoints, which Spotify's developer terms don't cover and Spotify can change.")
-                  : qsTr("omamp-spotify-session isn't installed, so Spotify-made playlists play as a whole and artists' pages come from search.")
+                  ? qsTr("Spotify doesn't let new apps read these through its public Web API. thrum-spotify-session reads them with spotify_player's sign-in, as Spotifast does, through Spotify's private endpoints, which Spotify's developer terms don't cover and Spotify can change.")
+                  : qsTr("thrum-spotify-session isn't installed, so Spotify-made playlists play as a whole and artists' pages come from search.")
         }
 
         Heading { text: qsTr("What crosses over, and what doesn't"); enabled: spotify.enabled }
         Note {
-            text: qsTr("The deck, the strip, the big view, the mini players, media keys and the Omarchy bar show a Spotify track with its cover and position. Gapless joins, crossfade, ReplayGain, the equaliser and the visualiser work on your own files only: Spotify's sound never passes through Omamp, and its volume is Spotify's.")
+            text: qsTr("The deck, the strip, the big view, the mini players, media keys and the Omarchy bar show a Spotify track with its cover and position. Gapless joins, crossfade, ReplayGain, the equaliser and the visualiser work on your own files only: Spotify's sound never passes through Thrum, and its volume is Spotify's.")
         }
         Item { height: 12; width: 1 }
     }

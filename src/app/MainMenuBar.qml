@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 // The menu bar across the top of the deck and the library: every command
-// Omamp has, with its key beside it, so nothing needs to be remembered.
+// Thrum has, with its key beside it, so nothing needs to be remembered.
 // Each entry runs the same action id as its key and the command palette
 // (Main.qml's runAction), so the three never disagree. An entry is greyed
 // when it can't run now: nothing chosen, nothing to undo, or locked by
@@ -522,9 +522,9 @@ MenuBar {
         Entry { text: qsTr("Command palette…"); command: "palette"; keys: "Ctrl+K" }
         Entry { objectName: "menuRunSetup"; text: qsTr("Run setup again…"); command: "setup" }
         Line {}
-        Entry { text: qsTr("Omamp on GitHub"); command: "open-website" }
+        Entry { text: qsTr("Thrum on GitHub"); command: "open-website" }
         Entry { text: qsTr("Importing from MediaMonkey (guide)"); command: "open-mediamonkey-guide" }
         Line {}
-        Entry { objectName: "menuAbout"; text: qsTr("About Omamp"); command: "about" }
+        Entry { objectName: "menuAbout"; text: qsTr("About Thrum"); command: "about" }
     }
 }

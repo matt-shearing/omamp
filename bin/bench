@@ -23,7 +23,7 @@ mkdir -p "$WORK/build"
 cd "$WORK/build"
 qmake6 "$ROOT/tests/bench/bench.pro" >/dev/null
 make -j"${JOBS:-$(nproc)}" >/dev/null
-BENCH="$WORK/build/omamp_bench"
+BENCH="$WORK/build/thrum_bench"
 
 echo "## Synthetic library: $TRACKS tracks"
 echo

@@ -81,7 +81,7 @@ FocusScope {
         const row = playlistRowAt(scenePos)
         dropRow = -1
         if (row < 0) return false
-        return spotify.addChosenToOmampPlaylist(rows, library.tree.value(row))
+        return spotify.addChosenToThrumPlaylist(rows, library.tree.value(row))
     }
     // Returns true when the tracks went into a playlist.
     function dropAt(scenePos, ids) {

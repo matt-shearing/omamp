@@ -5,7 +5,7 @@
 // search, station lists, the command line and the window's picker.
 //
 // radiohttp.h plays nightride.fm, its stream server and radio-browser.info
-// on 127.0.0.1. Engines run into in-memory sinks (OMAMP_NO_AUDIO_DEVICE is
+// on 127.0.0.1. Engines run into in-memory sinks (THRUM_NO_AUDIO_DEVICE is
 // set by main()), pulled faster than real time where a test needs minutes
 // of radio.
 
@@ -111,7 +111,7 @@ class RadioTests : public QObject {
 
 private slots:
     void initTestCase() {
-        QVERIFY(qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"));
+        QVERIFY(qEnvironmentVariableIsSet("THRUM_NO_AUDIO_DEVICE"));
         QVERIFY(m_dir.isValid());
         // Five seconds of two tones as a 128 kbps MP3: the station's audio.
         QProcess ff;
@@ -152,9 +152,9 @@ private slots:
                                  feedRow("nightride", "Neon Harbour", "Coastline Drive"),
                                  feedRow("chillsynth", "Paper Satellites", "Slow Orbit")});
 
-        qputenv("OMAMP_NIGHTRIDE_URL", m_http->base().toUtf8());
-        qputenv("OMAMP_NIGHTRIDE_STREAM_URL", (m_http->base() + "/live").toUtf8());
-        qputenv("OMAMP_RADIOBROWSER_URL", m_http->base().toUtf8());
+        qputenv("THRUM_NIGHTRIDE_URL", m_http->base().toUtf8());
+        qputenv("THRUM_NIGHTRIDE_STREAM_URL", (m_http->base() + "/live").toUtf8());
+        qputenv("THRUM_RADIOBROWSER_URL", m_http->base().toUtf8());
         m_oldCache = qgetenv("XDG_CACHE_HOME");
         m_oldConfig = qgetenv("XDG_CONFIG_HOME");
         qputenv("XDG_CACHE_HOME", m_dir.filePath("cache").toUtf8());
@@ -166,9 +166,9 @@ private slots:
     }
 
     void cleanupTestCase() {
-        qunsetenv("OMAMP_NIGHTRIDE_URL");
-        qunsetenv("OMAMP_NIGHTRIDE_STREAM_URL");
-        qunsetenv("OMAMP_RADIOBROWSER_URL");
+        qunsetenv("THRUM_NIGHTRIDE_URL");
+        qunsetenv("THRUM_NIGHTRIDE_STREAM_URL");
+        qunsetenv("THRUM_RADIOBROWSER_URL");
         qputenv("XDG_CACHE_HOME", m_oldCache);
         qputenv("XDG_CONFIG_HOME", m_oldConfig);
         if (m_oldCache.isEmpty())
@@ -208,10 +208,10 @@ private slots:
         // stream server is written over the old addresses.
         QVERIFY(stations.setFavourite("nightride/darksynth", true));
         stations.addListened("nightride/darksynth", 90000);
-        qputenv("OMAMP_NIGHTRIDE_STREAM_URL", "http://127.0.0.1:1/elsewhere");
+        qputenv("THRUM_NIGHTRIDE_STREAM_URL", "http://127.0.0.1:1/elsewhere");
         QVERIFY(stations.seed());
         QCOMPARE(stations.byKey("nightride/darksynth").streams.first(), QString("http://127.0.0.1:1/elsewhere/darksynth.mp3"));
-        qputenv("OMAMP_NIGHTRIDE_STREAM_URL", (m_http->base() + "/live").toUtf8());
+        qputenv("THRUM_NIGHTRIDE_STREAM_URL", (m_http->base() + "/live").toUtf8());
         QVERIFY(stations.seed());
         QCOMPARE(stations.all().size(), 11);
         QVERIFY(stations.byKey("nightride/darksynth").favourite);
@@ -394,11 +394,11 @@ private slots:
                 seen << d.streamTitle();
         }
         QCOMPARE(seen, QStringList({"Alpha Artist - First Song", "Beta Artist - Second Song"}));
-        // The server was asked for titles, by Omamp.
+        // The server was asked for titles, by Thrum.
         bool asked = false;
         for (const RadioHttp::Request &r : m_http->requests())
             if (r.path == "/live/icy.mp3")
-                asked = r.headers.value("icy-metadata") == "1" && r.headers.value("user-agent").startsWith("Omamp/");
+                asked = r.headers.value("icy-metadata") == "1" && r.headers.value("user-agent").startsWith("Thrum/");
         QVERIFY(asked);
         // A file never asks.
         Decoder file;
@@ -658,7 +658,7 @@ private slots:
         RadioController radio(db());
         radio.setCacheDir(m_dir.filePath("tiles"));
         QSignalSpy toasts(&radio, &RadioController::toast);
-        // The picker opens: the feed connects, names a channel Omamp doesn't
+        // The picker opens: the feed connects, names a channel Thrum doesn't
         // know, and the catalogue is read again.
         m_http->push(feedRow("brand-new", "Someone", "Something"));
         radio.setPickerVisible(true);

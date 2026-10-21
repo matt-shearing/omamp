@@ -225,7 +225,7 @@ void OutputFollower::scheduleRetry() {
         m_retry.start(m_timing.retryMs.at(m_retries++));
     } else if (!m_warnedStale) {
         m_warnedStale = true;
-        qWarning("Omamp: the sound server's default output isn't among Qt's outputs; staying on the current one");
+        qWarning("Thrum: the sound server's default output isn't among Qt's outputs; staying on the current one");
     }
 }
 

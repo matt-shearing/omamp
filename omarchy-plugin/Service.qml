@@ -6,11 +6,11 @@ import qs.Commons
 import qs.Commons as Commons
 import "Model.js" as Model
 
-// The one place that acts on Omamp. The bar widget exists once per monitor,
+// The one place that acts on Thrum. The bar widget exists once per monitor,
 // so every copy reads from here and calls these functions; the position
 // ticker, the theme-green reader, the launcher and the IPC target live here
 // once. The player itself is Quickshell's shared MPRIS object, so there is no
-// state to keep in sync: Omamp's own D-Bus properties are the truth.
+// state to keep in sync: Thrum's own D-Bus properties are the truth.
 Item {
   id: root
 
@@ -20,7 +20,7 @@ Item {
   property var pluginRegistry: null
 
   readonly property var players: Mpris.players ? Mpris.players.values : []
-  readonly property var player: Model.findOmamp(players)
+  readonly property var player: Model.findThrum(players)
   readonly property bool running: player !== null && player !== undefined
 
   readonly property bool playing: running && player.isPlaying === true
@@ -30,7 +30,7 @@ Item {
   readonly property string title: running ? String(player.trackTitle || "") : ""
   readonly property string artist: running ? String(player.trackArtist || "") : ""
   readonly property string album: running ? String(player.trackAlbum || "") : ""
-  // The cover, as Omamp sends it over MPRIS (mpris:artUrl, a file:// URL).
+  // The cover, as Thrum sends it over MPRIS (mpris:artUrl, a file:// URL).
   readonly property string artUrl: running ? String(player.trackArtUrl || "") : ""
   // The cover the bar and panel draw: artUrl when it is a picture, held for a
   // moment when it goes away so a track change does not blink the thumbnail.
@@ -75,12 +75,12 @@ Item {
   readonly property bool shuffleSupported: running && player.shuffleSupported === true
   readonly property bool shuffle: shuffleSupported && player.shuffle === true
   readonly property bool loopSupported: running && player.loopSupported === true
-  // Omamp repeats the whole playlist or nothing; MPRIS "Track" reads as on.
+  // Thrum repeats the whole playlist or nothing; MPRIS "Track" reads as on.
   readonly property bool repeat: loopSupported && player.loopState !== MprisLoopState.None
 
   // ---------------------------------------------------------------- the green
-  // Omamp draws its clock and title in the theme's `green`. The shell's Color
-  // singleton has no green, so read colors.toml the same way Omamp does, and
+  // Thrum draws its clock and title in the theme's `green`. The shell's Color
+  // singleton has no green, so read colors.toml the same way Thrum does, and
   // re-read whenever the shell reports a theme change.
   readonly property string themeDir: (Quickshell.env("HOME") || "") + "/.local/state/omarchy/current/theme"
   property string themeGreen: ""
@@ -112,9 +112,9 @@ Item {
   }
 
   // ---------------------------------------------------------- the visualiser
-  // Omamp shares its analyser on a local socket (src/app/levelsfeed.h). The
+  // Thrum shares its analyser on a local socket (src/app/levelsfeed.h). The
   // bar widgets that want it register here (vizSet); the socket is open only
-  // while one does and Omamp runs, and Omamp sends only while music plays,
+  // while one does and Thrum runs, and Thrum sends only while music plays,
   // so an idle bar costs nothing. Every monitor's copy reads these.
   readonly property string vizPath: Model.vizSocketPath(Quickshell.env("XDG_RUNTIME_DIR"))
   property var vizClients: []
@@ -147,7 +147,7 @@ Item {
       return
     }
     var now = Date.now()
-    // Omamp sends 20 a second at most; anything faster is dropped here.
+    // Thrum sends 20 a second at most; anything faster is dropped here.
     if (vizActive && !Model.frameDue(vizLastFrame, now, 40)) return
     vizLastFrame = now
     vizActive = true
@@ -162,7 +162,7 @@ Item {
 
   // Connects when asked. A missing socket logs a warning in the journal, so
   // there is no steady retry: it tries when a widget first wants it (and
-  // once more a moment later, as Omamp opens the socket just after it
+  // once more a moment later, as Thrum opens the socket just after it
   // appears on MPRIS), when music starts and when the track changes.
   function vizConnect() {
     if (!vizWanted || vizSocket.connected) return
@@ -266,15 +266,15 @@ Item {
   // by absolute path first and fall back to PATH for the package.
   function launch() {
     Quickshell.execDetached(["bash", "-c",
-      'if [ -x "$HOME/.local/bin/omamp" ]; then app="$HOME/.local/bin/omamp"; else app=omamp; fi; '
-      + 'exec omarchy-launch-or-focus "^omamp$" "uwsm-app -- $app"'])
+      'if [ -x "$HOME/.local/bin/thrum" ]; then app="$HOME/.local/bin/thrum"; else app=thrum; fi; '
+      + 'exec omarchy-launch-or-focus "^thrum$" "uwsm-app -- $app"'])
     return true
   }
 
   Timer {
     id: focusDelay
     interval: 120
-    onTriggered: Quickshell.execDetached(["omarchy-hyprland-focus-app", "^omamp$"])
+    onTriggered: Quickshell.execDetached(["omarchy-hyprland-focus-app", "^thrum$"])
   }
 
   // MPRIS position is only re-read when something asks, so ask while it is
@@ -289,7 +289,7 @@ Item {
   function statusJson() {
     return JSON.stringify({
       running: root.running,
-      copies: Model.countOmamp(root.players),
+      copies: Model.countThrum(root.players),
       state: root.state,
       bus: root.running ? String(root.player.dbusName || "") : "",
       title: root.title,
@@ -315,7 +315,7 @@ Item {
   }
 
   IpcHandler {
-    target: "contra.omamp"
+    target: "contra.thrum"
 
     function status(): string { return root.statusJson() }
     function playPause(): string { return root.playPause() ? "ok" : "unhandled" }

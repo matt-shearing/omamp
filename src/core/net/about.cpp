@@ -132,7 +132,7 @@ Client::Client(Net::HttpClient &http, const QString &cacheDir)
     : m_http(http), m_dir(cacheDir.isEmpty() ? defaultCacheDir() : cacheDir) {}
 
 QString Client::defaultCacheDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/omamp/about";
+    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/thrum/about";
 }
 
 void Client::note(const Net::Response &r) {

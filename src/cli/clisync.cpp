@@ -1,4 +1,4 @@
-// `omamp sync` and `omamp report`: device sync profiles and track-list
+// `thrum sync` and `thrum report`: device sync profiles and track-list
 // reports from the command line. Kept apart from cli.cpp, as the NAS
 // commands are.
 #include "cli.h"
@@ -36,7 +36,7 @@ struct SyncOptions {
 QString toJson(const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Indented)); }
 
 int fail(const SyncOptions &o, QTextStream &out, QTextStream &err, const QString &message) {
-    err << "omamp: " << message << Qt::endl;
+    err << "thrum: " << message << Qt::endl;
     if (o.json)
         out << toJson({{"ok", false}, {"error", message}}) << Qt::flush;
     return 1;
@@ -158,7 +158,7 @@ int syncCommand(Library &library, const SyncOptions &o, const VolumeResolver &re
         }
         if (all.isEmpty()) {
             out << "No sync profiles. Make one with:\n"
-                   "  omamp sync create Phone --to /run/media/$USER/PHONE/Music --kind usb \\\n"
+                   "  thrum sync create Phone --to /run/media/$USER/PHONE/Music --kind usb \\\n"
                    "      --source 'playlist:Road trip' --rule 'lossless->opus:128'"
                 << Qt::endl;
             return 0;
@@ -205,13 +205,13 @@ int syncCommand(Library &library, const SyncOptions &o, const VolumeResolver &re
         } else {
             out << "Made sync profile " << id << ".\n";
             printProfile(out, p);
-            out << "See what it would do with: omamp sync run " << id << " --dry-run" << Qt::endl;
+            out << "See what it would do with: thrum sync run " << id << " --dry-run" << Qt::endl;
         }
         return 0;
     }
 
     if (o.rest.size() < 2)
-        return fail(o, out, err, QString("sync %1 needs a profile (an id or name from: omamp sync list)").arg(sub));
+        return fail(o, out, err, QString("sync %1 needs a profile (an id or name from: thrum sync list)").arg(sub));
     DeviceSync::Profile p = DeviceSync::find(library, o.rest[1], &why);
     if (!p.id)
         return fail(o, out, err, why);
@@ -302,7 +302,7 @@ int syncCommand(Library &library, const SyncOptions &o, const VolumeResolver &re
                        .arg(r.elapsedMs / 1000.0, 0, 'f', 1)
                 << Qt::endl;
             for (const QString &f : r.failures)
-                err << "omamp: " << f << Qt::endl;
+                err << "thrum: " << f << Qt::endl;
         }
         return r.ok ? 0 : 1;
     }

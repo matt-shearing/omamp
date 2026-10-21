@@ -237,7 +237,7 @@ void HandoffEngine::setMuted(bool muted) {
     pushVolume();
 }
 
-// The outside player only hears the volume while it plays Omamp's entry, so
+// The outside player only hears the volume while it plays Thrum's entry, so
 // a Spotify volume set elsewhere is left alone the rest of the time.
 void HandoffEngine::pushVolume() {
     if (m_ext && m_external)

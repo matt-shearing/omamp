@@ -44,7 +44,7 @@ public:
 };
 
 // The sound card through QAudioSink (PipeWire on Omarchy), in pull mode.
-// Refuses to start when OMAMP_NO_AUDIO_DEVICE is set, so a test can never
+// Refuses to start when THRUM_NO_AUDIO_DEVICE is set, so a test can never
 // make a sound by mistake.
 //
 // It follows the default output: when the desktop's default device changes

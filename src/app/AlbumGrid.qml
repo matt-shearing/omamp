@@ -118,7 +118,7 @@ FocusScope {
                     asynchronous: true
                     fillMode: Image.PreserveAspectCrop
                     sourceSize: Qt.size(pane.coverSize, pane.coverSize)
-                    source: tile.artState === 2 ? "" : "image://omamp-art/album/" + tile.albumId + "/" + pane.coverSize + "?v=" + library.revision
+                    source: tile.artState === 2 ? "" : "image://thrum-art/album/" + tile.albumId + "/" + pane.coverSize + "?v=" + library.revision
                 }
                 // No picture (yet): the album's first letter on a plain square.
                 Text {

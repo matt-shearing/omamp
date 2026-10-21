@@ -1,10 +1,10 @@
-# Spotify in Omamp
+# Spotify in Thrum
 
-Omamp can show Spotify beside your own music. Switch it on in **Settings →
+Thrum can show Spotify beside your own music. Switch it on in **Settings →
 Spotify**. A **Spotify** node then appears at the bottom of the library tree
 with your playlists, Liked Songs, saved albums and followed artists, and a
 search. Spotify tracks can sit in Now Playing between your own files. When a
-Spotify track's turn comes, Spotify plays it and Omamp follows: the deck, the
+Spotify track's turn comes, Spotify plays it and Thrum follows: the deck, the
 strip, the big view, the mini players, the media keys and the Omarchy bar show
 the track, its cover and its position.
 
@@ -21,26 +21,26 @@ Free account can browse and search.
 
 ## Signing in
 
-Omamp never asks for your Spotify password and keeps no Spotify token. A
-separate program talks to Spotify and keeps its own sign-in; Omamp runs that
+Thrum never asks for your Spotify password and keeps no Spotify token. A
+separate program talks to Spotify and keeps its own sign-in; Thrum runs that
 program's command line.
 
 With **spotify_player**, the recommended backend:
 
 1. Install it if it is missing: `omarchy-pkg-add spotify-player`.
-2. In Settings → Spotify, switch on **Show Spotify in Omamp** and press
+2. In Settings → Spotify, switch on **Show Spotify in Thrum** and press
    **Sign in…**. A terminal opens running `spotify_player authenticate`.
 3. Your browser opens on Spotify's permission page. Allow it. spotify_player
    then asks a second time, for playback; allow that too.
-4. Close the terminal. Omamp notices the sign-in within a few seconds, starts
+4. Close the terminal. Thrum notices the sign-in within a few seconds, starts
    `spotify_player --daemon` in the background, and fills in the status.
 
-spotify_player keeps the sign-in in `~/.cache/spotify-player`. Omamp only
+spotify_player keeps the sign-in in `~/.cache/spotify-player`. Thrum only
 checks that its files are there (`credentials.json` and a
 `<client id>_token.json`) and never opens them. To sign out, delete those two
 files or run `spotify_player authenticate` again.
 
-With **Spotifast**, sign in inside Spotifast's own window. Omamp can use it
+With **Spotifast**, sign in inside Spotifast's own window. Thrum can use it
 only while it is open.
 
 ## Rate limits and your own client ID
@@ -59,25 +59,25 @@ uses. Both are busy. An app of your own gives you a limit of your own:
 1. Open [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
    and sign in with your Spotify account.
 2. Press **Create app**. Any name and description will do, for example
-   "Omamp".
+   "Thrum".
 3. Under **Redirect URIs**, add exactly `http://127.0.0.1:8989/login`.
 4. Where it asks which APIs you will use, tick **Web API**. Accept the terms
    and press **Save**.
 5. Open the app's **Settings** and copy its **Client ID**: 32 letters and
    digits.
-6. In Omamp, open **Settings → Spotify**, paste the ID under **Use your own
+6. In Thrum, open **Settings → Spotify**, paste the ID under **Use your own
    Spotify app**, and press **Use this client ID**.
 7. Sign in again: press **Sign in…**, or run `spotify_player authenticate`
    in a terminal. Your browser asks you to allow access, once for your app
    and again for each client spotify_player keeps. Allow each one.
 
-In step 6 Omamp copies `app.toml` to `app.toml.omamp-backup-<date>-<time>`,
+In step 6 Thrum copies `app.toml` to `app.toml.thrum-backup-<date>-<time>`,
 replaces the `client_id` line (or adds one above the first `[table]`), and
 changes nothing else in the file. It then stops spotify_player, because
 spotify_player needs a sign-in for the new ID, and started without one it
-would wait for a browser. When the sign-in finishes, Omamp starts it again.
+would wait for a browser. When the sign-in finishes, Thrum starts it again.
 If `app.toml` sets `client_id_command`, which spotify_player uses instead of
-`client_id`, Omamp refuses and says so.
+`client_id`, Thrum refuses and says so.
 
 spotify_player 0.25 still uses ncspot's ID for two things: reading your
 list of playlists and opening a playlist (`me/playlists` and `playlists/`),
@@ -87,7 +87,7 @@ waiting, not all of it.
 While Spotify is rate-limiting, the Spotify view says so and counts down to
 the next try. A list that takes more than a few seconds says it is still
 loading, and **Cancel** stops it. A list that fails shows why, with **Retry**.
-Omamp reads spotify_player's log (`~/.cache/spotify-player/spotify-player-*.log`)
+Thrum reads spotify_player's log (`~/.cache/spotify-player/spotify-player-*.log`)
 to tell a rate limit from a fault; it never writes to it.
 
 ## What Spotify lets your own app do
@@ -106,7 +106,7 @@ plays anything. Spotify refuses it:
 When Spotify refuses your ID, spotify_player asks again with ncspot's shared
 ID, which is nearly always rate-limited, so the answer takes up to a minute.
 spotify_player answers one command at a time, so while it waits, play and
-pause wait too. Omamp therefore avoids those requests:
+pause wait too. Thrum therefore avoids those requests:
 
 - **An artist's page comes from search**: the artist's best-known tracks,
   then their albums. **Play artist** asks Spotify to play the artist, which
@@ -117,26 +117,26 @@ pause wait too. Omamp therefore avoids those requests:
   Spotify plays the playlist on its device and the deck follows whichever
   track plays, through MPRIS. **Show tracks (slow)** lists the tracks
   anyway, the slow way.
-- **Omamp learns what Spotify refused.** It reads the refusals in
+- **Thrum learns what Spotify refused.** It reads the refusals in
   spotify_player's log, for your client ID, and does not ask for them again
   that day. A playlist that turns out to be refused while it loads stops
   waiting and opens as a whole instead. Settings → Spotify lists what was
-  refused today. The list is kept in `~/.cache/omamp/spotify/refused.json`.
+  refused today. The list is kept in `~/.cache/thrum/spotify/refused.json`.
 
 ### Reading them the way Spotify's own app does
 
 Spotify's own apps read those playlists and top tracks through Spotify's
 private endpoints, which have no per-app limit. Spotifast does the same.
-Omamp comes with a small helper, `omamp-spotify-session`, that does it too:
+Thrum comes with a small helper, `thrum-spotify-session`, that does it too:
 
 - It signs in with the sign-in spotify_player already keeps
   (`~/.cache/spotify-player/credentials.json`). It only reads that file and
   stores nothing.
-- It opens no Spotify Connect device and plays nothing. Omamp starts it the
-  first time it is needed and keeps it running while Omamp runs.
+- It opens no Spotify Connect device and plays nothing. Thrum starts it the
+  first time it is needed and keeps it running while Thrum runs.
 - Through it, every playlist lists quickly, Spotify's own included, and an
   artist's page shows their top tracks (albums still come from search).
-- If it can't sign in or answer, Omamp falls back to the Web API, and a
+- If it can't sign in or answer, Thrum falls back to the Web API, and a
   playlist Spotify made opens as a whole again.
 
 Switch it off in Settings → Spotify: **Read Spotify-made playlists and
@@ -145,13 +145,13 @@ when the helper is installed. These are Spotify's private endpoints:
 Spotify's developer terms don't cover them, and Spotify can change them at
 any time.
 
-The helper is built from `sidecar/omamp-spotify-session` (Rust, librespot)
-when `cargo` is installed, and installed beside `omamp`. It also answers on
+The helper is built from `sidecar/thrum-spotify-session` (Rust, librespot)
+when `cargo` is installed, and installed beside `thrum`. It also answers on
 its own:
 
 ```text
-omamp-spotify-session playlist <id>      a playlist's name, owner and tracks
-omamp-spotify-session artist-top <id>    an artist's top ten tracks
+thrum-spotify-session playlist <id>      a playlist's name, owner and tracks
+thrum-spotify-session artist-top <id>    an artist's top ten tracks
 ```
 
 ## What you can do
@@ -196,16 +196,16 @@ row as before: an album or playlist row plays all its tracks. With several,
 they act on the tracks among them, in list order:
 
 - **Play**, **Play next** and **Add to Now Playing**.
-- **Add to playlist ▸** in two groups. **Omamp playlists** puts the tracks
-  in one of Omamp's own playlists, which then mixes them with your files
-  ([playlists.md](playlists.md#mixed-playlists)); **New Omamp playlist…**
+- **Add to playlist ▸** in two groups. **Thrum playlists** puts the tracks
+  in one of Thrum's own playlists, which then mixes them with your files
+  ([playlists.md](playlists.md#mixed-playlists)); **New Thrum playlist…**
   makes one first. **Spotify playlists** adds them to one of your Spotify
   playlists (`spotify_player playlist edit … add`, one track at a time);
   **New Spotify playlist…** makes a private one first
   (`spotify_player playlist new`).
 - **Copy Spotify links** puts their `open.spotify.com` links on the
   clipboard, one a line.
-- **Dragging** the chosen tracks onto an Omamp playlist in the tree adds
+- **Dragging** the chosen tracks onto a Thrum playlist in the tree adds
   them, as dragging library tracks does.
 
 **Like** still acts on the playing track only: spotify_player's command
@@ -226,17 +226,17 @@ Both kinds of blending can be switched off in Settings → Spotify.
 
 ## The command line
 
-`omamp spotify` works without the window and takes `--json`, like every
+`thrum spotify` works without the window and takes `--json`, like every
 command:
 
 ```text
-omamp spotify status              installed, signed in, running, account, Premium, devices
-omamp spotify search <text>       tracks, albums, artists and playlists
-omamp spotify playlists|liked|albums|artists
-omamp spotify tracks <uri>        a playlist's or album's tracks, an artist's best-known tracks
-omamp spotify play <uri or link>  play it on the backend's Spotify Connect device
-omamp spotify now                 what is playing
-omamp spotify pause|resume
+thrum spotify status              installed, signed in, running, account, Premium, devices
+thrum spotify search <text>       tracks, albums, artists and playlists
+thrum spotify playlists|liked|albums|artists
+thrum spotify tracks <uri>        a playlist's or album's tracks, an artist's best-known tracks
+thrum spotify play <uri or link>  play it on the backend's Spotify Connect device
+thrum spotify now                 what is playing
+thrum spotify pause|resume
           [--backend spotify_player|spotifast]
 ```
 
@@ -245,15 +245,15 @@ omamp spotify pause|resume
 
 ## What crosses over and what doesn't
 
-Spotify's sound never passes through Omamp. Spotify plays on its own Spotify
+Spotify's sound never passes through Thrum. Spotify plays on its own Spotify
 Connect device (spotify_player's, named `spotify-player` unless its
-`app.toml` says otherwise) and Omamp pauses its own engine. So:
+`app.toml` says otherwise) and Thrum pauses its own engine. So:
 
 - **No gapless join, crossfade, ReplayGain or equaliser** between a local
   track and a Spotify track, or between two Spotify tracks. Starting each
   Spotify track takes about a second.
 - **The visualiser rests** while Spotify plays; it has no sound to draw.
-- **The volume slider and mute** act on Omamp's own sound. Spotify's volume
+- **The volume slider and mute** act on Thrum's own sound. Spotify's volume
   is Spotify's.
 - **Like** acts on the playing track only: spotify_player's command line can
   save or remove nothing else.
@@ -261,11 +261,11 @@ Connect device (spotify_player's, named `spotify-player` unless its
   `org.mpris.MediaPlayer2.spotify_player` (spotify_player, with
   `enable_media_control = true`, its default on Linux) or
   `org.mpris.MediaPlayer2.spotifast`. That costs Spotify nothing. Without
-  MPRIS, Omamp asks the backend every 5 seconds, and only while a Spotify
-  track plays in Omamp.
-- **A pause from another device** shows as paused in Omamp, as soon as
+  MPRIS, Thrum asks the backend every 5 seconds, and only while a Spotify
+  track plays in Thrum.
+- **A pause from another device** shows as paused in Thrum, as soon as
   spotify_player hears of it. If someone
-  starts something else in Spotify, Omamp pauses its queue and says so.
+  starts something else in Spotify, Thrum pauses its queue and says so.
 
 ## The two backends
 
@@ -275,31 +275,31 @@ Connect device (spotify_player's, named `spotify-player` unless its
 | Search | Yes | No |
 | Spotify tracks in Now Playing | Yes | Yes, from links you paste |
 | Pause, resume, seek, Like | Yes | Yes |
-| Runs | In the background, started by Omamp | Only while its window is open |
+| Runs | In the background, started by Thrum | Only while its window is open |
 
 ## Why it is built this way
 
-**Omamp drives a program that already speaks to Spotify, and spotify_player
+**Thrum drives a program that already speaks to Spotify, and spotify_player
 is the main one.** Spotify allows playback in third-party apps only through
 librespot (a reverse-engineered Spotify Connect client) and only for Premium
-accounts. Omamp could link librespot itself, but then it would have to hold a
+accounts. Thrum could link librespot itself, but then it would have to hold a
 Spotify sign-in and its tokens, keep up with every change Spotify makes, and
 carry a Rust library in a C++ app. spotify_player already does all of that,
 is packaged for Arch, runs as a daemon, and answers on its command line in
 JSON: library, search, playback state, play, pause, seek, Like, add to a
-playlist and choose a device. That gives the whole feature without Omamp ever
+playlist and choose a device. That gives the whole feature without Thrum ever
 touching a credential.
 
 **Spotifast is a second choice, for control only.** It is a good Spotify app,
 but its command line plays a link, pauses, seeks and
-reports what is playing; it has no search or library. Omamp uses it for
+reports what is playing; it has no search or library. Thrum uses it for
 exactly that. The official Spotify app offers only MPRIS, so it isn't a
 backend.
 
-**The queue stays Omamp's.** Each Spotify track is a Now Playing entry, and
-Omamp starts it on Spotify when its turn comes (`playback start track`), so
+**The queue stays Thrum's.** Each Spotify track is a Now Playing entry, and
+Thrum starts it on Spotify when its turn comes (`playback start track`), so
 local and Spotify tracks mix in one list in your order. Handing whole
-playlists to Spotify would have been simpler, but then Omamp's queue, shuffle
+playlists to Spotify would have been simpler, but then Thrum's queue, shuffle
 and repeat would stop meaning anything.
 
 **One seam in the player.** `HandoffEngine` (`src/engine/handoffengine.h`)
@@ -312,7 +312,7 @@ everything that shows or controls the Player (the deck, the big view, the
 mini players, MPRIS and the bar plugin) follows Spotify for free.
 
 **Ask Spotify as little as possible.** Every spotify_player command is a Web
-API request, and the client ID is shared, so Omamp:
+API request, and the client ID is shared, so Thrum:
 
 - follows playback through MPRIS, and reads the state through the command
   line only when MPRIS isn't there;
@@ -332,32 +332,32 @@ API request, and the client ID is shared, so Omamp:
 **Careful with spotify_player.** Three of its habits shape the code:
 
 - When no instance is running, its command line starts a client of its own
-  to answer, and that client may stop to ask for a sign-in. Omamp therefore
+  to answer, and that client may stop to ask for a sign-in. Thrum therefore
   runs a command only when spotify_player is signed in and running, and
   closes the command's input so nothing can wait for a reply.
 - With an instance running, `playback start` returns at once and reports a
-  failure (such as "Premium required") only in its log. Omamp counts a start
+  failure (such as "Premium required") only in its log. Thrum counts a start
   as failed when Spotify's state hasn't shown the track playing after twelve
   seconds, and then says why it probably failed: a Free account, or no
   Spotify Connect device on this computer.
 - It prints its JSON after turning every `\n` escape into a real line break.
-  Omamp puts the escapes back before reading it.
+  Thrum puts the escapes back before reading it.
 
 **Pictures.** spotify_player's lists carry no pictures. The playing track's
 cover comes from Spotify's playback state; covers for list rows come from
 Spotify's public oEmbed page (`open.spotify.com/oembed`), which needs no
 sign-in, as each row is shown. All of them are kept in
-`~/.cache/omamp/spotify`. A row without a picture shows an
+`~/.cache/thrum/spotify`. A row without a picture shows an
 icon.
 
 **MPRIS has no track id in spotify_player.** Its `mpris:trackid` is `/`, so
-Omamp matches the playing track by title and length. Spotifast's metadata
+Thrum matches the playing track by title and length. Spotifast's metadata
 has the Spotify URI in `xesam:url`.
 
-**Settings and files.** The switches live in `~/.config/omamp/spotify.conf`:
+**Settings and files.** The switches live in `~/.config/thrum/spotify.conf`:
 whether Spotify is on, the backend, the two kinds of blending and whether to
 start spotify_player. Nothing about the account is stored. The only file
-outside Omamp's own that Omamp writes is spotify_player's `app.toml`, when you
+outside Thrum's own that Thrum writes is spotify_player's `app.toml`, when you
 press **Use this client ID**. It sets `client_id` and sets
 `ncspot_only_get_endpoints = []`, after backing the file up. spotify_player
 0.25 otherwise sends every playlist request through ncspot's shared client ID,
@@ -379,13 +379,13 @@ The fake can be slow (`slow-<verb>`) and can write spotify_player's
 rate-limit warning to a log (`ratelimit`). It also behaves as Spotify does
 with your own client ID: `get item … artist` logs the three refusals and
 answers late, and so does `get item` on a playlist listed in `restricted`.
-A fake `omamp-spotify-session` answers the helper's line protocol from the
+A fake `thrum-spotify-session` answers the helper's line protocol from the
 same fixtures. The real helper's own tests run with `cargo test`. MPRIS is tested with a fake
 spotify_player MPRIS service on a private `dbus-daemon`, so nothing appears
-on the desktop's session bus; every other test points Omamp at a bus name
+on the desktop's session bus; every other test points Thrum at a bus name
 that doesn't exist. The client ID writer is tested on `app.toml` files in
 temporary folders. `tests/mixed_tests.cpp` covers choosing rows, adding them
-to Omamp playlists, dragging them onto the tree, mixed playlists, playing
+to Thrum playlists, dragging them onto the tree, mixed playlists, playing
 them and the command line, against the same fake.
 
 ## Things to check by hand
@@ -393,10 +393,10 @@ them and the command line, against the same fake.
 The command shapes have not met a real Spotify account. After signing in,
 check:
 
-1. `omamp spotify status` shows your account, `Premium: yes` and the
+1. `thrum spotify status` shows your account, `Premium: yes` and the
    `spotify-player` device.
 2. Play a playlist mixed with local files and listen to the change-overs.
-3. Pause on your phone; Omamp should show paused within a second or two.
+3. Pause on your phone; Thrum should show paused within a second or two.
 4. Open a long playlist. With a shared client ID it may say Spotify is
    rate-limiting; with your own it should open in a second or two.
 5. Settings → Spotify → Status shows **Follows playback: Through MPRIS**.

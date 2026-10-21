@@ -134,7 +134,7 @@ QString version() {
     return v.isEmpty() ? QString::fromLatin1(fallbackVersion) : v;
 }
 
-QString userAgent() { return QString("Omamp/%1 ( https://github.com/matt-shearing/omamp )").arg(version()); }
+QString userAgent() { return QString("Thrum/%1 ( https://github.com/matt-shearing/thrum )").arg(version()); }
 
 QString defaultBaseUrl(Service service) {
     switch (service) {
@@ -152,7 +152,7 @@ QString defaultBaseUrl(Service service) {
 }
 
 QString baseUrl(Service service, const Library *library) {
-    const QByteArray env = "OMAMP_" + serviceName(service).toUpper().toLatin1() + "_URL";
+    const QByteArray env = "THRUM_" + serviceName(service).toUpper().toLatin1() + "_URL";
     QString url = qEnvironmentVariable(env.constData());
     if (url.isEmpty() && library && library->isOpen())
         url = library->setting("net.url." + serviceName(service)).toString();
@@ -181,7 +181,7 @@ int Config::intervalMs(Service service) {
     const int set = intervals[index(service)].load();
     if (set >= 0)
         return set;
-    const QByteArray env = "OMAMP_RATE_" + serviceName(service).toUpper().toLatin1() + "_MS";
+    const QByteArray env = "THRUM_RATE_" + serviceName(service).toUpper().toLatin1() + "_MS";
     return envInt(env.constData(), defaultInterval(service));
 }
 
@@ -189,20 +189,20 @@ void Config::setIntervalMs(Service service, int ms) { intervals[index(service)] 
 
 int Config::maxRetries() {
     const int set = maxRetriesValue.load();
-    return set >= 0 ? set : envInt("OMAMP_NET_RETRIES", 3);
+    return set >= 0 ? set : envInt("THRUM_NET_RETRIES", 3);
 }
 
 void Config::setMaxRetries(int retries) { maxRetriesValue = retries; }
 
 int Config::backoffMs() {
     const int set = backoffValue.load();
-    return set >= 0 ? set : envInt("OMAMP_NET_BACKOFF_MS", 1000);
+    return set >= 0 ? set : envInt("THRUM_NET_BACKOFF_MS", 1000);
 }
 
 void Config::setBackoffMs(int ms) { backoffValue = ms; }
 
 bool Config::forcedOffline(const Library *library) {
-    if (qEnvironmentVariable("OMAMP_OFFLINE") == "1")
+    if (qEnvironmentVariable("THRUM_OFFLINE") == "1")
         return true;
     return library && library->isOpen() &&
            QStringList{"1", "true", "yes"}.contains(library->setting("net.offline", "0").toString().toLower());
@@ -260,7 +260,7 @@ void RateLimiter::reset() {
 HttpCache::HttpCache(const QString &dir) : m_dir(dir.isEmpty() ? defaultDir() : dir) {}
 
 QString HttpCache::defaultDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/omamp/http";
+    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/thrum/http";
 }
 
 QByteArray HttpCache::keyFor(const Request &request) {
@@ -352,7 +352,7 @@ Response HttpClient::send(const Request &request) {
             return cached;
         Response r;
         r.offline = true;
-        r.error = "Offline: the network is turned off for Omamp (net.offline or OMAMP_OFFLINE)";
+        r.error = "Offline: the network is turned off for Thrum (net.offline or THRUM_OFFLINE)";
         return r;
     }
 

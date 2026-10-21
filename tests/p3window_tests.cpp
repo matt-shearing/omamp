@@ -6,7 +6,7 @@
 // Every library and music file lives in a temporary folder. Nothing reaches
 // a sound card: the player runs on the native engine into an in-memory sink
 // (BufferSink), as the engine tests do, and main() sets
-// OMAMP_NO_AUDIO_DEVICE for anything else.
+// THRUM_NO_AUDIO_DEVICE for anything else.
 
 #include <QDir>
 #include <QFile>
@@ -440,7 +440,7 @@ private slots:
         QCOMPARE(t->value("identify.countries").toString(), QString("AU,GB"));
         QCOMPARE(t->scrobbleStatus().size(), 2);
 
-        // The player's side: omamp.conf beside the state file.
+        // The player's side: thrum.conf beside the state file.
         QTemporaryDir dir;
         const QString state = dir.filePath("state.json");
         {
@@ -462,7 +462,7 @@ private slots:
         QVERIFY(player->eqEnabled());
         QCOMPARE(player->eqPreamp(), -3.0);
         QCOMPARE(player->preferredEngine(), QString("native"));
-        QCOMPARE(QSettings(dir.filePath("omamp.conf"), QSettings::IniFormat).value("playback/engine").toString(),
+        QCOMPARE(QSettings(dir.filePath("thrum.conf"), QSettings::IniFormat).value("playback/engine").toString(),
                  QString("native"));
     }
 

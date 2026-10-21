@@ -41,23 +41,23 @@ for n in "${narrow[@]}"; do
 done
 
 # Icons from the package icon.
-cp "$root/pkgbuild/omamp.svg" favicon.svg
-rsvg-convert -w 180 -h 180 "$root/pkgbuild/omamp.svg" -o apple-touch-icon.png
-rsvg-convert -w 32 -h 32 "$root/pkgbuild/omamp.svg" -o favicon-32.png
+cp "$root/pkgbuild/thrum.svg" favicon.svg
+rsvg-convert -w 180 -h 180 "$root/pkgbuild/thrum.svg" -o apple-touch-icon.png
+rsvg-convert -w 32 -h 32 "$root/pkgbuild/thrum.svg" -o favicon-32.png
 
 # The social card: the dark hero screenshot under the name and the pitch.
-rsvg-convert -w 132 -h 132 "$root/pkgbuild/omamp.svg" -o /tmp/omamp-og-icon.png
+rsvg-convert -w 132 -h 132 "$root/pkgbuild/thrum.svg" -o /tmp/thrum-og-icon.png
 magick -size 1200x630 gradient:'#0b0d1a-#1a0f2e' \
   \( "$root/docs/hero-dark.png" -resize 1040x -bordercolor '#ff0080' -border 2 \) \
   -gravity northwest -geometry +120+330 -compose over -composite \
-  /tmp/omamp-og-icon.png -geometry +64+56 -composite \
+  /tmp/thrum-og-icon.png -geometry +64+56 -composite \
   -font "$HOME/.local/share/fonts/oq/JetBrainsMono-Bold.ttf" -fill '#f4f6fb' -pointsize 88 \
-  -annotate +224+72 'Omamp' \
+  -annotate +224+72 'Thrum' \
   -font "$HOME/.local/share/fonts/oq/Manrope-SemiBold.ttf" -fill '#c9d2f0' -pointsize 36 \
   -annotate +66+212 'A Winamp-style player and MediaMonkey-style library' \
   -annotate +66+258 'manager for Omarchy, Hyprland and Arch' \
   -strip -quality 88 og.jpg
-rm -f /tmp/omamp-og-icon.png
+rm -f /tmp/thrum-og-icon.png
 
 # Fonts: Latin subsets of JetBrains Mono and Manrope (both SIL OFL 1.1).
 fontdir=${FONTDIR:-$HOME/.local/share/fonts/oq}

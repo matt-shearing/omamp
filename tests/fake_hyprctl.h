@@ -33,7 +33,7 @@ xy() { echo "$1" | sed 's/.*x = \([0-9-]*\), y = \([0-9-]*\).*/\1,\2/'; }
 case "$1" in
 -j)
   if [ "$2" = monitors ]; then cat "$d/monitors.json"; exit 0; fi
-  printf '[{"address":"0x5afe","pid":%1,"title":"Omamp","floating":%s,"pinned":%s,"fullscreen":0,"monitor":1,"at":[%s],"size":[%s]}]\n' \
+  printf '[{"address":"0x5afe","pid":%1,"title":"Thrum","floating":%s,"pinned":%s,"fullscreen":0,"monitor":1,"at":[%s],"size":[%s]}]\n' \
     "$(st floating)" "$(st pinned)" "$(st at)" "$(st size)" ;;
 --batch)
   printf '%s\n' "$2" >> "$d/log"

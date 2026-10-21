@@ -285,7 +285,7 @@ private slots:
         Scanner scanner(library, VolumeResolver());
         QCOMPARE(scanner.scan({music}).added, 1);
 
-        // The user rates it 5 stars and has played it 30 times in Omamp.
+        // The user rates it 5 stars and has played it 30 times in Thrum.
         QSqlQuery(library.db()).exec("UPDATE tracks SET rating = 100, play_count = 30");
         touch(file, 10);
         QCOMPARE(scanner.scan({music}).updated, 1);

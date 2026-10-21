@@ -1,6 +1,6 @@
 # Internet radio
 
-Omamp plays internet radio. Every Nightride FM and Rekt Network channel is
+Thrum plays internet radio. Every Nightride FM and Rekt Network channel is
 built in, with what each one is playing right now. Any other station can be
 found on radio-browser.info or added by its stream address.
 
@@ -18,7 +18,7 @@ found on radio-browser.info or added by its stream address.
   there too.
 - **From the palette**, press `Ctrl+K` and type a channel's name, for example
   `darksynth`. Every station has an entry such as "Nightride FM: Darksynth".
-- **From a terminal**, run `omamp radio play darksynth`.
+- **From a terminal**, run `thrum radio play darksynth`.
 
 In the picker, each card shows the channel's colour, its genres and the song
 it is playing now. Click a card, or move with the arrow keys and press
@@ -34,7 +34,7 @@ one radio row in the list.
 
 ![The deck playing Darksynth](radio-deck-live.png)
 
-A station has no length, so Omamp treats it as live:
+A station has no length, so Thrum treats it as live:
 
 - The deck, the strip, the big view and the mini players show **LIVE**.
 - The clock counts how long you have listened. `T` has no time left to show.
@@ -52,14 +52,14 @@ A station has no length, so Omamp treats it as live:
 ## Where the song names come from
 
 **Nightride FM and Rekt Network** publish a live feed of what every channel
-plays (`https://nightride.fm/meta`, server-sent events). Omamp listens to it
+plays (`https://nightride.fm/meta`, server-sent events). Thrum listens to it
 while one of their channels plays, and while the picker is open, so every
 card stays current. The feed gives the artist and the title separately. Until
-it speaks, Omamp uses the title inside the stream.
+it speaks, Thrum uses the title inside the stream.
 
 **Other stations** send their song names inside the stream, as ICY titles
-("Artist - Title"). On the native engine, Omamp reads them from the stream it
-plays. On the Qt engine, which can't hand them over, Omamp opens a second,
+("Artist - Title"). On the native engine, Thrum reads them from the stream it
+plays. On the Qt engine, which can't hand them over, Thrum opens a second,
 lightweight connection to the same address and reads only the titles. That
 connection downloads the audio again, so it costs the station's bitrate
 twice; switch to the native engine (**Settings > Playback**) to avoid it.
@@ -82,15 +82,15 @@ Checked against nightride.fm on 20 October 2026:
 | Rekt Network | Rekt, Rektory, Rektify, D-Notive |
 
 Each streams MP3 at 320 kbps from `https://stream.nightride.fm/<channel>.mp3`
-and Opus from `<channel>.ogg`. Omamp plays the MP3, as the site does, and
+and Opus from `<channel>.ogg`. Thrum plays the MP3, as the site does, and
 falls back to the Opus stream if the MP3 won't open.
 
-Once a day, while the picker is open, Omamp reads nightride.fm's channel list.
+Once a day, while the picker is open, Thrum reads nightride.fm's channel list.
 A new channel on the site joins Nightride FM; a channel only the feed names
-joins Rekt Network. Omamp never removes a channel. The live DJ archives stay
+joins Rekt Network. Thrum never removes a channel. The live DJ archives stay
 on the website.
 
-Omamp is not affiliated with Nightride FM. If you listen a lot, support the
+Thrum is not affiliated with Nightride FM. If you listen a lot, support the
 station on [Patreon](https://www.patreon.com/nightridefm).
 
 ## Find stations and add your own
@@ -106,7 +106,7 @@ bitrate, country and tags.
 - **Play** (or `Enter`) keeps the station under My stations and plays it.
 - **Add** (or `A`) keeps it without playing.
 
-When a station from the directory plays, Omamp tells the directory, as it
+When a station from the directory plays, Thrum tells the directory, as it
 asks its clients to.
 
 **Add address…** keeps any `http` or `https` stream address under My
@@ -121,16 +121,16 @@ list doesn't move on.
 
 Right-click a card and choose **Import stations from a list** to read `.pls`,
 `.m3u` or `.m3u8` files; each web address becomes a station. **Save the
-stations as a list** writes every station to `Omamp radio.m3u8` in a folder
+stations as a list** writes every station to `Thrum radio.m3u8` in a folder
 you choose.
 
 ## Plays and scrobbling
 
 Radio is not counted as library plays: no play counts, no skips, no play
-history. Omamp keeps its own record instead:
+history. Thrum keeps its own record instead:
 
 - each station's time listened and when it last played;
-- each song heard, with how long it was heard (`omamp radio heard`).
+- each song heard, with how long it was heard (`thrum radio heard`).
 
 Scrobbling radio songs is off. To turn it on, open **Settings > Scrobbling**
 and tick **Send songs heard on the radio too**. Only a song heard from its
@@ -143,22 +143,22 @@ Every command takes `--json` and `--db <file>`.
 
 | Command | What it does |
 |---|---|
-| `omamp radio list [--group g]` | Lists the stations. Groups: `nightride`, `rekt`, `favourites`, `mine`, `recent`, `all` |
-| `omamp radio play <station>` | Tunes the running Omamp in over MPRIS, or starts Omamp with the station |
-| `omamp radio search <words> [--limit n]` | Searches radio-browser.info |
-| `omamp radio add <url> [--name n]` | Keeps a stream address under My stations |
-| `omamp radio remove <station>` | Removes one of your stations |
-| `omamp radio favourite <station>` | Marks a favourite (`unfavourite` unmarks it) |
-| `omamp radio import <file>` | Reads a `.pls` or `.m3u` station list |
-| `omamp radio export <file> [--group g]` | Writes the stations as `.pls` (by extension) or M3U |
-| `omamp radio heard [--limit n]` | Lists the songs heard on the radio, newest first |
+| `thrum radio list [--group g]` | Lists the stations. Groups: `nightride`, `rekt`, `favourites`, `mine`, `recent`, `all` |
+| `thrum radio play <station>` | Tunes the running Thrum in over MPRIS, or starts Thrum with the station |
+| `thrum radio search <words> [--limit n]` | Searches radio-browser.info |
+| `thrum radio add <url> [--name n]` | Keeps a stream address under My stations |
+| `thrum radio remove <station>` | Removes one of your stations |
+| `thrum radio favourite <station>` | Marks a favourite (`unfavourite` unmarks it) |
+| `thrum radio import <file>` | Reads a `.pls` or `.m3u` station list |
+| `thrum radio export <file> [--group g]` | Writes the stations as `.pls` (by extension) or M3U |
+| `thrum radio heard [--limit n]` | Lists the songs heard on the radio, newest first |
 
 A station can be named by its name (`Darksynth`), its full name
 (`Nightride FM: Darksynth`), its Nightride id (`darksynth`) or its key
 (`nightride/darksynth`). Part of a name works when only one station matches.
 
 `playerctl open radio://nightride/darksynth` tunes in too, and so does
-`omamp radio://nightride/darksynth`.
+`thrum radio://nightride/darksynth`.
 
 ## Keys
 
@@ -173,10 +173,10 @@ A station can be named by its name (`Darksynth`), its full name
 
 ## Where things live
 
-Stations are in the library database (`~/.local/share/omamp/library.db`,
+Stations are in the library database (`~/.local/share/thrum/library.db`,
 tables `radio_stations` and `radio_heard`, schema step 10). Using the radio
 creates the database if you have no library yet. Tiles and icons are in
-`~/.cache/omamp/radio`.
+`~/.cache/thrum/radio`.
 
-For tests, `OMAMP_NIGHTRIDE_URL`, `OMAMP_NIGHTRIDE_STREAM_URL` and
-`OMAMP_RADIOBROWSER_URL` point Omamp at other servers.
+For tests, `THRUM_NIGHTRIDE_URL`, `THRUM_NIGHTRIDE_STREAM_URL` and
+`THRUM_RADIOBROWSER_URL` point Thrum at other servers.

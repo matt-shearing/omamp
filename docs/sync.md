@@ -1,6 +1,6 @@
 # Device sync and reports
 
-Omamp copies music to a phone, a USB drive or a Syncthing folder, converting
+Thrum copies music to a phone, a USB drive or a Syncthing folder, converting
 the formats you choose with `ffmpeg`. It can also save any list of tracks as
 a spreadsheet (CSV) or a web page (HTML).
 
@@ -28,13 +28,13 @@ the target as buttons, so you rarely type a path.
 
 ### Targets
 
-| Target | Omamp checks first |
+| Target | Thrum checks first |
 |---|---|
 | A folder | Nothing. The folder is made if it doesn't exist. |
 | A USB drive | The folder is on a mounted drive, not on the system disk. A drive that isn't plugged in is refused, and its folder is never made on the system disk by mistake. |
 | A Syncthing folder | The folder holds `.stfolder`, the marker Syncthing writes. Add the folder in Syncthing first. |
 
-Omamp refuses a target inside a library folder, or one that holds a library
+Thrum refuses a target inside a library folder, or one that holds a library
 folder, because the next scan would add the copies as new tracks.
 
 ### Format rules
@@ -49,7 +49,7 @@ The first rule that fits a file wins. A file no rule fits is copied as it is.
 | `wma->skip` | Leave WMA files off the device |
 | `*->copy` | Copy everything else unchanged |
 
-Omamp converts to `opus`, `mp3`, `aac`, `vorbis` (`.ogg`) and `flac`. Without
+Thrum converts to `opus`, `mp3`, `aac`, `vorbis` (`.ogg`) and `flac`. Without
 a bitrate, Opus gets 128 kbit/s, MP3 and AAC 256, and Vorbis 192. A rule that
 would convert a file to its own lossy format (MP3 to MP3) copies it instead.
 Tags travel with the music. MP3, AAC and FLAC copies try to keep the
@@ -81,30 +81,30 @@ four conversions run at once. Files are written under a hidden temporary
 name and renamed into place, so a cancelled or failed sync never leaves half
 a file under a real name.
 
-### What Omamp remembers on the device
+### What Thrum remembers on the device
 
-The device folder holds `.omamp-sync.json`: each file Omamp wrote, the
+The device folder holds `.thrum-sync.json`: each file Thrum wrote, the
 library file it came from (its size and modification time), and the rule
 used. A file whose source and rule haven't changed is kept, so syncing the
 same list again copies nothing. Change a rule or a mask and the affected
 files are made again, and the old ones are removed.
 
-Omamp never touches hidden files and folders (`.stfolder`, `.stignore`,
-`.Trashes` and the like). Files Omamp didn't put there stay unless the
+Thrum never touches hidden files and folders (`.stfolder`, `.stignore`,
+`.Trashes` and the like). Files Thrum didn't put there stay unless the
 profile says **Delete other files**.
 
 ## From the command line
 
 ```sh
-omamp sync devices                                  # USB drives and Syncthing folders found now
-omamp sync create Phone --to /run/media/$USER/PHONE/Music --kind usb \
+thrum sync devices                                  # USB drives and Syncthing folders found now
+thrum sync create Phone --to /run/media/$USER/PHONE/Music --kind usb \
     --source 'playlist:Road trip' --source 'collection:Audiobooks' \
     --rule 'lossless->opus:128' --rule 'wma->skip'
-omamp sync run Phone --dry-run                      # what would happen; writes nothing
-omamp sync run Phone                                # do it
-omamp sync set Phone --delete-others --clear-rules --rule '*->mp3:192'
-omamp sync list --json
-omamp sync remove Phone                             # the profile only; the device is untouched
+thrum sync run Phone --dry-run                      # what would happen; writes nothing
+thrum sync run Phone                                # do it
+thrum sync set Phone --delete-others --clear-rules --rule '*->mp3:192'
+thrum sync list --json
+thrum sync remove Phone                             # the profile only; the device is untouched
 ```
 
 `--source` takes `playlist:<name>` (static or auto), `collection:<name>`,
@@ -119,7 +119,7 @@ everything else.
 
 Any list in the window can be saved as a report: the tree's menu has **Save
 the list as CSV…** and **Save the list as a web page…**, and the palette has
-the same. Omamp asks for a folder and names the file after the list
+the same. Thrum asks for a folder and names the file after the list
 ("Road trip.csv"). A playlist's report keeps the playlist's order.
 
 ![A report as a web page](report.png)
@@ -133,9 +133,9 @@ the same. Omamp asks for a folder and names the file after the list
 From the command line:
 
 ```sh
-omamp report 'rating:5' --out five-stars.csv
-omamp report --playlist 'Road trip' --format html --out road-trip.html
-omamp report --collection Music --columns artist,album,year,length --format csv > music.csv
+thrum report 'rating:5' --out five-stars.csv
+thrum report --playlist 'Road trip' --format html --out road-trip.html
+thrum report --collection Music --columns artist,album,year,length --format csv > music.csv
 ```
 
 Columns: `title`, `artist`, `albumartist`, `album`, `disc`, `track`, `year`,

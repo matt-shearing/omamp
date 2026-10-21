@@ -408,9 +408,9 @@ void ColumnBrowser::update(int from, bool reloadList) {
         // (two letters) scans the library once instead of five times.
         if (from == 0 || !m_baseReady) {
             QSqlQuery q(m_db);
-            q.exec("CREATE TEMP TABLE IF NOT EXISTS omamp_browse_base (id INTEGER PRIMARY KEY)");
-            q.exec("DELETE FROM temp.omamp_browse_base");
-            q.prepare("INSERT INTO temp.omamp_browse_base SELECT t.id FROM tracks t WHERE " + where);
+            q.exec("CREATE TEMP TABLE IF NOT EXISTS thrum_browse_base (id INTEGER PRIMARY KEY)");
+            q.exec("DELETE FROM temp.thrum_browse_base");
+            q.prepare("INSERT INTO temp.thrum_browse_base SELECT t.id FROM tracks t WHERE " + where);
             for (const QVariant &p : params)
                 q.addBindValue(p);
             m_baseReady = q.exec();
@@ -418,7 +418,7 @@ void ColumnBrowser::update(int from, bool reloadList) {
                 qWarning("Column browser: %s", qPrintable(q.lastError().text()));
         }
         if (m_baseReady) {
-            where = QStringLiteral("t.id IN (SELECT id FROM temp.omamp_browse_base)");
+            where = QStringLiteral("t.id IN (SELECT id FROM temp.thrum_browse_base)");
             params.clear();
             m_tracks->setBaseOverride(where);
         }

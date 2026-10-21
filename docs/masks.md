@@ -1,6 +1,6 @@
 # Masks
 
-A mask describes a file's place from its tags. Omamp uses masks to organise
+A mask describes a file's place from its tags. Thrum uses masks to organise
 files into folders, to set a tag from other tags, and, read backwards, to fill
 tags from file names. The syntax is MediaMonkey's Auto-Organize mask, with a
 few functions borrowed from foobar2000.
@@ -16,12 +16,12 @@ few functions borrowed from foobar2000.
     Various Artists/Summer Mix/Sunset Riders - Heatwave.mp3
 ```
 
-Omamp adds the file's own extension, so a mask never names one.
+Thrum adds the file's own extension, so a mask never names one.
 
 Try a mask without moving anything:
 
 ```sh
-omamp organise 'album:"night drive"' --mask '<Album Artist>/<Album>/<Track#:2> <Title>' --dry-run
+thrum organise 'album:"night drive"' --mask '<Album Artist>/<Album>/<Track#:2> <Title>' --dry-run
 ```
 
 ## Fields
@@ -62,7 +62,7 @@ mask.
 | `<Artist@1>` | the artist's first letter, accents removed; `#` for a digit or symbol | `B` |
 | `<Artist@3>` | the letter's group of three | `ABC`, `DEF`, … `YZ` |
 
-MediaMonkey pads text with spaces for `:n`. Omamp cuts it instead, since
+MediaMonkey pads text with spaces for `:n`. Thrum cuts it instead, since
 trailing spaces make poor file names.
 
 ## Folders
@@ -136,11 +136,11 @@ A mask with a mistake is refused before anything happens, with the position
 of the mistake:
 
 ```text
-$ omamp organise 'path:inbox' --mask '<Artist>/<Titel>' --dry-run
-omamp: Unknown field <Titel> (at character 10 of the mask)
+$ thrum organise 'path:inbox' --mask '<Artist>/<Titel>' --dry-run
+thrum: Unknown field <Titel> (at character 10 of the mask)
 ```
 
-Omamp reports unknown fields and functions, a `<` without its `>`, a function
+Thrum reports unknown fields and functions, a `<` without its `>`, a function
 without its `)`, a quote without its partner, and the wrong number of
 arguments.
 
@@ -160,15 +160,15 @@ tolerant of missing tags:
 From the command line:
 
 ```sh
-omamp organise <query> --mask '<mask>' --dry-run      # show where each file would go
-omamp organise <query> --mask '<mask>' --apply        # move them
-omamp undo                                            # move them back
+thrum organise <query> --mask '<mask>' --dry-run      # show where each file would go
+thrum organise <query> --mask '<mask>' --apply        # move them
+thrum undo                                            # move them back
 ```
 
 - Files go under their own library folder, or under `--to <folder>`, which
   must be on a volume the library knows.
 - A name that is taken, by another file in the batch or by a file already on
-  disk, gets " (2)", " (3)" and so on. Omamp never overwrites a file.
+  disk, gets " (2)", " (3)" and so on. Thrum never overwrites a file.
 - A track's `.lrc` lyrics file moves with it. When every audio file in a
   folder moves to the same new folder, its pictures, cue sheets, logs and
   playlists go too.
@@ -184,9 +184,9 @@ omamp undo                                            # move them back
 `--set-mask` sets a tag from other tags, track by track:
 
 ```sh
-omamp tag 'path:"live at home"' --set-mask 'album=<Folder:1>'
-omamp tag 'artist:"the cure"' --set-mask 'artist=$MovePrefix(<Artist>)'
-omamp tag 'album:"night drive"' --set-mask 'comment=Disc <Disc#> of <Disc Total>'
+thrum tag 'path:"live at home"' --set-mask 'album=<Folder:1>'
+thrum tag 'artist:"the cure"' --set-mask 'artist=$MovePrefix(<Artist>)'
+thrum tag 'album:"night drive"' --set-mask 'comment=Disc <Disc#> of <Disc Total>'
 ```
 
 Here a slash is plain text, and names are not made safe.
@@ -197,7 +197,7 @@ A pattern reads tags back out of file names. It is a mask with fields and
 text only, no functions:
 
 ```sh
-omamp tag-from-filename 'artist:none' --pattern '<Track#> - <Artist> - <Title>' --dry-run
+thrum tag-from-filename 'artist:none' --pattern '<Track#> - <Artist> - <Title>' --dry-run
 ```
 
 | Pattern | File | Tags |
@@ -215,4 +215,4 @@ omamp tag-from-filename 'artist:none' --pattern '<Track#> - <Artist> - <Title>' 
 - Files that don't match are listed and left alone.
 
 Every tag change, from any of these commands, can be undone with
-`omamp undo`.
+`thrum undo`.

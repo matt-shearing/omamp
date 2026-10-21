@@ -14,14 +14,14 @@ import QtQuick.Layouts
 // all, Esc clears. The buttons and the row menu act on the chosen rows.
 // Enter or a double-click plays a track (the list from it, as the library
 // does) or opens a playlist, album or artist; Backspace goes back; Left
-// returns to the tree. Chosen tracks can be dragged onto an Omamp playlist
+// returns to the tree. Chosen tracks can be dragged onto a Thrum playlist
 // in the tree.
 FocusScope {
     id: view
     objectName: "spotifyView"
     signal leave()
     signal openSettings()
-    // A command run by the window (spotify-new-omamp-playlist:view…).
+    // A command run by the window (spotify-new-thrum-playlist:view…).
     signal action(string id)
     // Chosen tracks dragged out of the list: where the pointer is in the
     // window, and where they were let go.
@@ -250,7 +250,7 @@ FocusScope {
                     font.pixelSize: 16
                     Accessible.name: qsTr("Refresh")
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Read this list from Spotify again. Omamp keeps lists for ten minutes, so it asks Spotify less often.")
+                    ToolTip.text: qsTr("Read this list from Spotify again. Thrum keeps lists for ten minutes, so it asks Spotify less often.")
                     onClicked: spotify.reload()
                 }
                 Button {
@@ -583,7 +583,7 @@ FocusScope {
                             if (mods === 0 && row.rowSelected && view.rows.selectedCount > 1) deferred = true
                             else view.rows.select(row.index, mods)
                         }
-                        // Dragging tracks onto an Omamp playlist in the tree.
+                        // Dragging tracks onto a Thrum playlist in the tree.
                         onPositionChanged: (mouse) => {
                             if (!pressed || !(pressedButtons & Qt.LeftButton)) return
                             if (!dragProxy.active) {

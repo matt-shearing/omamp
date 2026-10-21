@@ -12,7 +12,7 @@
 class QDBusServiceWatcher;
 
 // Follows a Spotify backend through its MPRIS service on the session bus,
-// so Omamp knows what plays, whether it is playing and where it is without
+// so Thrum knows what plays, whether it is playing and where it is without
 // asking Spotify's Web API at all. spotify_player publishes
 // org.mpris.MediaPlayer2.spotify_player when enable_media_control is on
 // (the default on Linux) and Spotifast publishes
@@ -31,8 +31,8 @@ public:
     explicit MprisWatch(QObject *parent = nullptr);
     ~MprisWatch() override;
 
-    // The bus name to follow; empty stops following. OMAMP_SPOTIFY_MPRIS_NAME
-    // replaces it (tests), and OMAMP_SPOTIFY_MPRIS_BUS names a private bus
+    // The bus name to follow; empty stops following. THRUM_SPOTIFY_MPRIS_NAME
+    // replaces it (tests), and THRUM_SPOTIFY_MPRIS_BUS names a private bus
     // to use instead of the session bus (tests).
     void setService(const QString &busName);
     // Sets the player's MPRIS Volume (0..1). A local D-Bus call: it costs

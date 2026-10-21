@@ -5,11 +5,11 @@
 
 // Album and track pictures for QML, from the artwork cache:
 //
-//   engine.addImageProvider("omamp-art", new ArtImageProvider);
+//   engine.addImageProvider("thrum-art", new ArtImageProvider);
 //
-//   Image { source: "image://omamp-art/album/" + albumId + "/256" }
-//   Image { source: "image://omamp-art/track/" + trackId }   // size from sourceSize, else 256
-//   Image { source: "image://omamp-art/entry/" + Qt.btoa(path) + "/96" }   // any queue entry
+//   Image { source: "image://thrum-art/album/" + albumId + "/256" }
+//   Image { source: "image://thrum-art/track/" + trackId }   // size from sourceSize, else 256
+//   Image { source: "image://thrum-art/entry/" + Qt.btoa(path) + "/96" }   // any queue entry
 //
 // "entry" takes a Now Playing entry's path, base64 (URL-safe or not): a
 // file in or out of the library, a Subsonic track, a radio station (its
@@ -29,7 +29,7 @@
 // connection, so scrolling a wall of covers never blocks the window.
 class ArtImageProvider : public QQuickAsyncImageProvider {
 public:
-    static constexpr const char *name = "omamp-art";
+    static constexpr const char *name = "thrum-art";
 
     // Empty paths mean the default library and cache.
     explicit ArtImageProvider(const QString &dbPath = {}, const QString &cacheDir = {});

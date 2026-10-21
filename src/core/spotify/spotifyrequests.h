@@ -13,7 +13,7 @@
 
 #include "spotify.h"
 
-// One queue for every command Omamp sends to the Spotify backend.
+// One queue for every command Thrum sends to the Spotify backend.
 //
 // Each spotify_player command is a Spotify Web API request, and the Web API
 // answers a burst with "429 Too Many Requests". So commands never run in a
@@ -21,7 +21,7 @@
 // control lane carries play, pause, seek and the playback state, so a
 // button press never waits behind a long list. The data lane carries lists
 // and searches, spaced a little apart, and can be held back while Spotify
-// asks Omamp to wait. A request with the same key as one already queued or
+// asks Thrum to wait. A request with the same key as one already queued or
 // running joins it instead of running again.
 namespace Spotify {
 

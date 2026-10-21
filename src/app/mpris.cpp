@@ -60,7 +60,7 @@ bool MprisPlayer::canPlay() const { return m_player->playlist()->count() > 0; }
 bool MprisPlayer::canSeek() const { return canPlay() && !m_player->live(); }
 
 QDBusObjectPath MprisPlayer::trackId() const {
-    return QDBusObjectPath(QString("/org/omamp/track/%1").arg(qMax(0, m_player->currentIndex())));
+    return QDBusObjectPath(QString("/org/thrum/track/%1").arg(qMax(0, m_player->currentIndex())));
 }
 
 QVariantMap MprisPlayer::metadata() const {
@@ -117,9 +117,9 @@ bool registerMpris(QObject *host, Player *player, NowPlaying *art) {
         return false;
     adaptor->setAnnouncing(true);
     // A second copy gets its own name, as MPRIS allows, so both stay controllable.
-    if (bus.registerService("org.mpris.MediaPlayer2.omamp"))
+    if (bus.registerService("org.mpris.MediaPlayer2.thrum"))
         return true;
-    return bus.registerService(QString("org.mpris.MediaPlayer2.omamp.instance%1").arg(QCoreApplication::applicationPid()));
+    return bus.registerService(QString("org.mpris.MediaPlayer2.thrum.instance%1").arg(QCoreApplication::applicationPid()));
 }
 
 void setMprisUriHandler(QObject *host, std::function<bool(const QString &)> handler) {

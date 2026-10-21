@@ -1,4 +1,4 @@
-pkgname=omamp
+pkgname=thrum
 pkgver=0.3.3
 pkgrel=1
 pkgdesc='A Winamp-style music player that wears the Omarchy theme'
@@ -18,9 +18,9 @@ build() {
 
 package() {
   cd "$startdir/.."
-  install -Dm755 build/omamp "$pkgdir/usr/bin/omamp"
-  install -Dm755 build/omamp-spotify-session "$pkgdir/usr/bin/omamp-spotify-session"
+  install -Dm755 build/thrum "$pkgdir/usr/bin/thrum"
+  install -Dm755 build/thrum-spotify-session "$pkgdir/usr/bin/thrum-spotify-session"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 "$startdir/omamp.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/omamp.svg"
-  install -Dm644 "$startdir/omamp.desktop" "$pkgdir/usr/share/applications/omamp.desktop"
+  install -Dm644 "$startdir/thrum.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/thrum.svg"
+  install -Dm644 "$startdir/thrum.desktop" "$pkgdir/usr/share/applications/thrum.desktop"
 }

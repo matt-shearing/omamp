@@ -1,4 +1,4 @@
-// `omamp volume`, `omamp nas` and `omamp remote`: network volumes, mount
+// `thrum volume`, `thrum nas` and `thrum remote`: network volumes, mount
 // guides and Subsonic sources, from the command line. Kept apart from
 // cli.cpp so the NAS work doesn't collide with other commands.
 #include "cli.h"
@@ -42,7 +42,7 @@ struct NasOptions {
 QString toJson(const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Indented)); }
 
 int fail(const NasOptions &o, QTextStream &out, QTextStream &err, const QString &message) {
-    err << "omamp: " << message << Qt::endl;
+    err << "thrum: " << message << Qt::endl;
     if (o.json)
         out << toJson({{"ok", false}, {"error", message}}) << Qt::flush;
     return 1;
@@ -60,7 +60,7 @@ QString when(qint64 secs) {
     return secs ? QDateTime::fromSecsSinceEpoch(secs).toString("yyyy-MM-dd HH:mm") : QString("never");
 }
 
-// --- omamp nas mount-guide ----------------------------------------------
+// --- thrum nas mount-guide ----------------------------------------------
 
 // systemd-escape --path: the unit name for a mount point.
 QString unitName(const QString &path, const QString &suffix) {
@@ -114,7 +114,7 @@ int mountGuide(const NasOptions &o, QTextStream &out, QTextStream &err) {
         // from the last decade speaks it. noserverino: use client-made
         // inode numbers, because some servers (and anything that crosses
         // filesystems inside the share) hand out unstable or colliding
-        // ones, which confuses tools that track files by inode. Omamp
+        // ones, which confuses tools that track files by inode. Thrum
         // itself keys tracks by path, so it is a safety setting, not a need.
         // actimeo=30: cache attributes for 30 s, which keeps a rescan's
         // stats cheap; a change made on the NAS shows within 30 s.
@@ -126,7 +126,7 @@ int mountGuide(const NasOptions &o, QTextStream &out, QTextStream &err) {
     } else {
         // NFSv4.1: one TCP port (2049), no rpcbind or lockd, sessions. hard
         // (the default) retries forever rather than failing a write half
-        // way, which is what you want for tag writing; Omamp never waits on
+        // way, which is what you want for tag writing; Thrum never waits on
         // a hung share itself (it probes with a timeout). noatime saves a
         // write per file read.
         options = "_netdev,nofail,vers=4.1,hard,noatime,timeo=150,retrans=3";
@@ -162,7 +162,7 @@ int mountGuide(const NasOptions &o, QTextStream &out, QTextStream &err) {
                               .arg(what, where, fsType, options)
                               .arg(o.idle);
 
-    const QString unitDir = o.writeTo.isEmpty() ? QString("~/omamp-mount-units") : o.writeTo;
+    const QString unitDir = o.writeTo.isEmpty() ? QString("~/thrum-mount-units") : o.writeTo;
     QStringList commands;
     commands << QString("sudo pacman -S --needed %1").arg(smb ? "cifs-utils" : "nfs-utils");
     if (smb) {
@@ -175,7 +175,7 @@ int mountGuide(const NasOptions &o, QTextStream &out, QTextStream &err) {
              << QString("sudo install -m 0644 %1/%2 %1/%3 /etc/systemd/system/").arg(unitDir, mountUnit, automountUnit)
              << "sudo systemctl daemon-reload"
              << QString("sudo systemctl enable --now %1").arg(automountUnit)
-             << QString("ls %1    # the first look mounts it; then: omamp scan %1").arg(where);
+             << QString("ls %1    # the first look mounts it; then: thrum scan %1").arg(where);
 
     if (!o.writeTo.isEmpty()) {
         // Only into a folder Matt names, never /etc: the sudo lines copy them.
@@ -202,7 +202,7 @@ int mountGuide(const NasOptions &o, QTextStream &out, QTextStream &err) {
 
     out << "# Mounting " << what << " at " << where << " with systemd automount\n"
         << "#\n"
-        << "# Omamp never runs sudo or mounts anything. "
+        << "# Thrum never runs sudo or mounts anything. "
         << (o.writeTo.isEmpty() ? QString("Save the two units below in %1 (or rerun with\n"
                                           "# --write-to %1 to have them written there), then run the commands at the end.\n")
                                       .arg(unitDir)
@@ -232,7 +232,7 @@ int mountGuide(const NasOptions &o, QTextStream &out, QTextStream &err) {
     return 0;
 }
 
-// --- omamp volume ------------------------------------------------------
+// --- thrum volume ------------------------------------------------------
 
 int volumeCommand(Library &library, const NasOptions &o, const VolumeResolver &resolver, QTextStream &out,
                   QTextStream &err) {
@@ -255,7 +255,7 @@ int volumeCommand(Library &library, const NasOptions &o, const VolumeResolver &r
             return 0;
         }
         if (rows.isEmpty()) {
-            out << "No volumes yet. Add a folder with: omamp scan <folder>" << Qt::endl;
+            out << "No volumes yet. Add a folder with: thrum scan <folder>" << Qt::endl;
             return 0;
         }
         for (const VolumeRow &r : rows) {
@@ -276,7 +276,7 @@ int volumeCommand(Library &library, const NasOptions &o, const VolumeResolver &r
 
     if (sub == "show" || sub == "reassign" || sub == "forget" || sub == "workers") {
         if (o.rest.size() < 2)
-            return fail(o, out, err, QString("volume %1 needs a volume (an id from: omamp volume list)").arg(sub));
+            return fail(o, out, err, QString("volume %1 needs a volume (an id from: thrum volume list)").arg(sub));
         QString why;
         const VolumeRow row = Volumes::find(library, o.rest[1], &why);
         if (!row.id)
@@ -306,7 +306,7 @@ int volumeCommand(Library &library, const NasOptions &o, const VolumeResolver &r
 
         if (sub == "reassign") {
             if (o.rest.size() < 3)
-                return fail(o, out, err, "volume reassign needs the new root: omamp volume reassign <volume> <folder>");
+                return fail(o, out, err, "volume reassign needs the new root: thrum volume reassign <volume> <folder>");
             QJsonObject report;
             if (!Volumes::reassign(library, resolver, row.id, o.rest[2], &why, &report))
                 return fail(o, out, err, why);
@@ -351,7 +351,7 @@ int volumeCommand(Library &library, const NasOptions &o, const VolumeResolver &r
     return fail(o, out, err, "volume takes list, show, reassign, forget or workers");
 }
 
-// --- omamp remote ------------------------------------------------------
+// --- thrum remote ------------------------------------------------------
 
 int remoteCommand(Library &library, const NasOptions &o, QTextStream &out, QTextStream &err) {
     const QString sub = o.rest.value(0, "list");
@@ -359,7 +359,7 @@ int remoteCommand(Library &library, const NasOptions &o, QTextStream &out, QText
 
     if (sub == "add") {
         if (o.rest.value(1) != "subsonic" || o.rest.size() < 3)
-            return fail(o, out, err, "Usage: omamp remote add subsonic <url> --user <name> --password-stdin | --api-key-stdin");
+            return fail(o, out, err, "Usage: thrum remote add subsonic <url> --user <name> --password-stdin | --api-key-stdin");
         if (o.passwordStdin == o.apiKeyStdin)
             return fail(o, out, err, "Give one of --password-stdin or --api-key-stdin (the secret is read from stdin, "
                                      "never from the command line)");
@@ -379,7 +379,7 @@ int remoteCommand(Library &library, const NasOptions &o, QTextStream &out, QText
                 << "The " << (o.apiKeyStdin ? "API key" : "password") << " is kept in "
                 << (added.secretStore == "libsecret" ? QString("the desktop keyring (secret-tool)")
                                                      : Secrets::filePath() + " (mode 0600)")
-                << ".\nNow run: omamp remote sync " << id << Qt::endl;
+                << ".\nNow run: thrum remote sync " << id << Qt::endl;
         }
         return 0;
     }
@@ -394,7 +394,7 @@ int remoteCommand(Library &library, const NasOptions &o, QTextStream &out, QText
             return 0;
         }
         if (sources.isEmpty()) {
-            out << "No remote sources. Add one with: omamp remote add subsonic <url> --user <name> --password-stdin"
+            out << "No remote sources. Add one with: thrum remote add subsonic <url> --user <name> --password-stdin"
                 << Qt::endl;
             return 0;
         }
@@ -418,7 +418,7 @@ int remoteCommand(Library &library, const NasOptions &o, QTextStream &out, QText
                 return fail(o, out, err, "No remote sources to sync");
         } else {
             if (o.rest.size() < 2)
-                return fail(o, out, err, QString("remote %1 needs a source (an id or name from: omamp remote list)").arg(sub));
+                return fail(o, out, err, QString("remote %1 needs a source (an id or name from: thrum remote list)").arg(sub));
             const RemoteSource s = RemoteSources::find(library, o.rest[1], &why);
             if (!s.id)
                 return fail(o, out, err, why);
@@ -462,7 +462,7 @@ int remoteCommand(Library &library, const NasOptions &o, QTextStream &out, QText
             results.append(j);
             if (!o.json) {
                 if (!r.ok) {
-                    err << "omamp: " << s.name << ": " << r.error << Qt::endl;
+                    err << "thrum: " << s.name << ": " << r.error << Qt::endl;
                     continue;
                 }
                 out << s.name << ": " << r.albums << " albums (" << r.albumsFetched << " fetched, " << r.albumsUnchanged
@@ -470,7 +470,7 @@ int remoteCommand(Library &library, const NasOptions &o, QTextStream &out, QText
                     << r.tracksUpdated << " updated, " << r.tracksMissing << " missing; " << r.requests
                     << " requests in " << r.elapsedMs << " ms" << Qt::endl;
                 if (!r.error.isEmpty())
-                    err << "omamp: " << s.name << ": " << r.error << Qt::endl;
+                    err << "thrum: " << s.name << ": " << r.error << Qt::endl;
             }
         }
         if (o.json)
@@ -563,7 +563,7 @@ int runNas(const QStringList &arguments, QTextStream &out, QTextStream &err, con
 
     if (command == "nas") {
         if (o.rest.value(0) != "mount-guide")
-            return fail(o, out, err, "Usage: omamp nas mount-guide --smb //nas/music --at /mnt/music "
+            return fail(o, out, err, "Usage: thrum nas mount-guide --smb //nas/music --at /mnt/music "
                                      "(or --nfs nas:/export/music)");
         return mountGuide(o, out, err);
     }

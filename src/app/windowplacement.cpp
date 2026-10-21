@@ -103,7 +103,7 @@ QJsonObject WindowPlacement::clientIn(const QByteArray &clientsJson, qint64 pid,
         const QJsonObject c = v.toObject();
         if (c.value("pid").toInteger() != pid)
             continue;
-        // Omamp has one toplevel window (its menus and sheets are drawn
+        // Thrum has one toplevel window (its menus and sheets are drawn
         // inside it), so the first client with our pid is the window; one
         // with the title asked for wins.
         if (!title.isEmpty() && c.value("title").toString() == title)

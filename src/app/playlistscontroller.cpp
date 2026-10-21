@@ -84,11 +84,11 @@ void PlaylistsController::setSpotify(SpotifyController *spotify) {
         disconnect(m_spotify, nullptr, this, nullptr);
     m_spotify = spotify;
     if (spotify)
-        connect(spotify, &SpotifyController::omampEntriesReady, this,
+        connect(spotify, &SpotifyController::thrumEntriesReady, this,
                 [this](qint64 id, const QVariantList &entries) { addSpotifyTracks(id, entries); });
 }
 
-// A Spotify entry's track as Omamp's Spotify side knows tracks, so the
+// A Spotify entry's track as Thrum's Spotify side knows tracks, so the
 // handover has its name, length and album (for the cover) without asking.
 static Spotify::Item spotifyItemOf(const Playlists::Item &it) {
     Spotify::Item t;
@@ -134,7 +134,7 @@ QList<Playlist::Track> PlaylistsController::playable(const QList<Playlists::Item
         if (rows)
             rows->append(i);
     }
-    // Only what Omamp hasn't seen in a Spotify list already: a list's copy
+    // Only what Thrum hasn't seen in a Spotify list already: a list's copy
     // is fresher.
     if (m_spotify) {
         QList<Spotify::Item> unseen;

@@ -67,17 +67,17 @@ private slots:
     void initTestCase() {
         m_oldCache = qgetenv("XDG_CACHE_HOME");
         m_oldConfig = qgetenv("XDG_CONFIG_HOME");
-        m_oldStore = qgetenv("OMAMP_SECRET_STORE");
+        m_oldStore = qgetenv("THRUM_SECRET_STORE");
         qputenv("XDG_CACHE_HOME", QFile::encodeName(m_xdg.filePath("cache")));
         qputenv("XDG_CONFIG_HOME", QFile::encodeName(m_xdg.filePath("config")));
-        qputenv("OMAMP_SECRET_STORE", "file");
+        qputenv("THRUM_SECRET_STORE", "file");
         // The mock server is on 127.0.0.1; a proxy from the environment must not get in the way.
         QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
     }
 
     void cleanupTestCase() {
         for (const auto &[name, old] : {std::pair{"XDG_CACHE_HOME", m_oldCache}, std::pair{"XDG_CONFIG_HOME", m_oldConfig},
-                                        std::pair{"OMAMP_SECRET_STORE", m_oldStore}}) {
+                                        std::pair{"THRUM_SECRET_STORE", m_oldStore}}) {
             if (old.isEmpty())
                 qunsetenv(name);
             else
@@ -108,7 +108,7 @@ private slots:
         for (const QUrlQuery &q : std::as_const(server.queries)) {
             QVERIFY(!q.hasQueryItem("p"));
             QVERIFY(!q.toString().contains("sesame"));
-            QCOMPARE(q.queryItemValue("c"), QString("omamp"));
+            QCOMPARE(q.queryItemValue("c"), QString("thrum"));
         }
 
         SubsonicClient wrong(server.url(), "listener", "nope", SubsonicClient::Auth::Token);

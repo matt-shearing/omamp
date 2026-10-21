@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Settings > Appearance: whether Omamp shares its visualiser with the
+// Settings > Appearance: whether Thrum shares its visualiser with the
 // Omarchy bar plugin (levelsfeed.h). Its own file, so the Appearance page
 // needs one line for it.
 ColumnLayout {
@@ -23,6 +23,6 @@ ColumnLayout {
         wrapMode: Text.Wrap
         font.pixelSize: 12
         color: theme.c.muted
-        text: qsTr("The Omamp widget in the Omarchy bar can draw a small, faint copy of this visualiser behind the track's name. Nothing is sent unless the bar asks and music is playing.")
+        text: qsTr("The Thrum widget in the Omarchy bar can draw a small, faint copy of this visualiser behind the track's name. Nothing is sent unless the bar asks and music is playing.")
     }
 }

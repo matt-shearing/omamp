@@ -29,7 +29,7 @@ struct ProbeResult {
     ProbeState state = ProbeState::Absent;
     int error = 0;        // errno, when there was one
     bool isDir = false;
-    QString marker;       // the .omamp-volume-id inside, when asked for and present
+    QString marker;       // the .thrum-volume-id inside, when asked for and present
     qint64 elapsedMs = 0;
     bool online() const { return state == ProbeState::Online; }
     // "online", "absent", "stale", "io-error", "denied", "timed-out", "still-hung".

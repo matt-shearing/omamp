@@ -6,7 +6,7 @@
 // tests/fixtures/web; the Subsonic server is MockSubsonic. Nothing here
 // reaches the internet, a sound card, the desktop keyring or a real mount:
 // shares are a fake mount table and a stat() hook, secrets go to a file
-// under a temporary XDG_CONFIG_HOME (main() sets OMAMP_SECRET_STORE=file).
+// under a temporary XDG_CONFIG_HOME (main() sets THRUM_SECRET_STORE=file).
 
 #include <QBuffer>
 #include <QDir>
@@ -149,7 +149,7 @@ struct StatTrap {
     }
 };
 
-// A player that never reaches a device (main() sets OMAMP_NO_AUDIO_DEVICE).
+// A player that never reaches a device (main() sets THRUM_NO_AUDIO_DEVICE).
 Player *quietPlayer(const QString &statePath) { return new Player(statePath); }
 
 // Main.qml over a library, with everything in temporary folders.
@@ -244,7 +244,7 @@ class P45WindowTests : public QObject {
         qputenv(name, value);
     }
     QByteArray fixture(const QString &name) const {
-        QByteArray b = readAll(QString(OMAMP_TESTS_DIR) + "/fixtures/web/" + name);
+        QByteArray b = readAll(QString(THRUM_TESTS_DIR) + "/fixtures/web/" + name);
         b.replace("{{BASE}}", (m_server->url() + "/caa").toUtf8());
         return b;
     }
@@ -328,14 +328,14 @@ private slots:
         setEnv("XDG_DATA_HOME", (m_tmp.path() + "/xdg-data").toUtf8());
         setEnv("XDG_CONFIG_HOME", (m_tmp.path() + "/xdg-config").toUtf8());
         const QByteArray base = m_server->url().toUtf8();
-        setEnv("OMAMP_MUSICBRAINZ_URL", base + "/ws/2");
-        setEnv("OMAMP_ACOUSTID_URL", base + "/v2");
-        setEnv("OMAMP_COVERART_URL", base + "/caa");
-        setEnv("OMAMP_LRCLIB_URL", base + "/api");
-        setEnv("OMAMP_LISTENBRAINZ_URL", base + "/1");
-        setEnv("OMAMP_LASTFM_URL", base + "/2.0");
-        for (const char *name : {"OMAMP_ACOUSTID_KEY", "OMAMP_LISTENBRAINZ_TOKEN", "OMAMP_LASTFM_API_KEY",
-                                 "OMAMP_LASTFM_API_SECRET", "OMAMP_OFFLINE"})
+        setEnv("THRUM_MUSICBRAINZ_URL", base + "/ws/2");
+        setEnv("THRUM_ACOUSTID_URL", base + "/v2");
+        setEnv("THRUM_COVERART_URL", base + "/caa");
+        setEnv("THRUM_LRCLIB_URL", base + "/api");
+        setEnv("THRUM_LISTENBRAINZ_URL", base + "/1");
+        setEnv("THRUM_LASTFM_URL", base + "/2.0");
+        for (const char *name : {"THRUM_ACOUSTID_KEY", "THRUM_LISTENBRAINZ_TOKEN", "THRUM_LASTFM_API_KEY",
+                                 "THRUM_LASTFM_API_SECRET", "THRUM_OFFLINE"})
             setEnv(name, "");
         fastNet();
         m_trap.install();
@@ -496,7 +496,7 @@ private slots:
         c.setWriteSandbox(root);
         QVERIFY(c.activate());
         // A port nobody listens on: refused, so offline at once.
-        qputenv("OMAMP_MUSICBRAINZ_URL", "http://127.0.0.1:9/ws/2");
+        qputenv("THRUM_MUSICBRAINZ_URL", "http://127.0.0.1:9/ws/2");
         fastNet();
         QVariantList ids;
         QSqlQuery q(c.library()->db());
@@ -510,7 +510,7 @@ private slots:
         QVERIFY(cluster.value("candidates").toList().isEmpty());
         QVERIFY2(cluster.value("error").toString().contains("Offline"), qPrintable(cluster.value("error").toString()));
         QVERIFY(!c.web()->applyIdentify({}));
-        qputenv("OMAMP_MUSICBRAINZ_URL", (m_server->url() + "/ws/2").toUtf8());
+        qputenv("THRUM_MUSICBRAINZ_URL", (m_server->url() + "/ws/2").toUtf8());
         fastNet();
     }
 
@@ -705,7 +705,7 @@ private slots:
         const QStringList commands = smb.value("commands").toStringList();
         QVERIFY(commands.join('\n').contains("sudoedit /etc/samba/credentials/nas-music"));
         QVERIFY(smb.value("fstab").toString().contains("x-systemd.automount"));
-        QVERIFY(smb.value("text").toString().contains("Omamp never runs sudo"));
+        QVERIFY(smb.value("text").toString().contains("Thrum never runs sudo"));
         const QVariantMap nfs = nas->mountGuide("nfs", "nas:/volume1/music", "/mnt/music");
         QVERIFY(nfs.value("ok").toBool());
         QVERIFY(nfs.value("units").toList()[0].toMap().value("text").toString().contains("vers=4.1"));

@@ -7,7 +7,7 @@ library itself, tags and files, and settings. The keys are in
 
 ## Getting around
 
-Everything Omamp does is in the **menu bar** across the top of the window:
+Everything Thrum does is in the **menu bar** across the top of the window:
 File, Edit, View, Play, Library, Radio, Spotify and Help. Each entry shows
 its key, so the menus also teach the shortcuts. An entry is greyed out when
 it can't run yet, for example Edit tags before you have chosen any tracks,
@@ -18,7 +18,7 @@ or anything party mode has locked.
   <img alt="The deck with the menu bar, the Library and Now Playing buttons, and the first-run hint" src="menu-deck-light.png">
 </picture>
 
-Omamp has three views, and **View** switches between them:
+Thrum has three views, and **View** switches between them:
 
 - **Player** is the Winamp-style deck.
 - **Library** is the MediaMonkey-style library manager.
@@ -49,7 +49,7 @@ moment, and the same View entry turns it back on.
 Press `Tab` to switch between the deck and the library. In the library the
 deck folds into a strip across the top, and the library fills the rest of the
 window: a tree on the left, the tracks on the right, a search box above them,
-and a status line below. Omamp remembers which mode you left it in and the
+and a status line below. Thrum remembers which mode you left it in and the
 window size for each.
 
 <picture>
@@ -69,7 +69,7 @@ window size for each.
   search. Click a column header to sort, again to reverse, and a third time
   for the library order. Drag a header's edge to resize a column. Right-click
   a header, or press **Columns**, to choose the columns.
-- **Search** uses the same query language as `omamp query`: plain words,
+- **Search** uses the same query language as `thrum query`: plain words,
   `artist:"neon coast"`, `year:1990..1999`, `rating:4..`, `-genre:christmas`.
   A query with a mistake in it says what is wrong and leaves the list as it was.
 - Double-click a track or press `Enter` to play the list from that track.
@@ -90,7 +90,7 @@ window size for each.
 - **The command palette** (`Ctrl+K`) finds actions, artists, albums and
   tracks as you type. `Enter` runs the action or goes to the artist, album or
   track. Start with `>` for actions only.
-- **Folders keep themselves up to date.** Omamp watches the library folders
+- **Folders keep themselves up to date.** Thrum watches the library folders
   on local disks and rescans only the folders that change; the list keeps
   your selection and your place. Shares on the network are checked every 15
   minutes. The status line says what is watched.
@@ -107,7 +107,7 @@ Spotify track shows its Spotify cover and a radio station shows its tile.
 Covers load in the background, one per album, so the list scrolls at full
 speed while they arrive.
 
-Drag any column's header sideways to move the column; Omamp remembers the
+Drag any column's header sideways to move the column; Thrum remembers the
 order. Right-click a header, or press **Columns**, to hide the Art column.
 **View → Row height** offers Compact, Comfortable and Large rows; taller
 rows show bigger covers.
@@ -150,22 +150,22 @@ its current song) and Navidrome tracks.
   <img alt="The sidebar showing a made-up album's cover, the track, about the artist and the album's own notes" src="sidebar-light.png">
 </picture>
 
-**Notes packaged with the album.** Omamp reads text files in the album's
+**Notes packaged with the album.** Thrum reads text files in the album's
 folder (and, for a `CD1` folder, the folder above): `album.txt`,
 `about.txt`, `liner notes.*`, `notes.md`, `info.txt`, `credits.txt`,
 `README*` and `.nfo` files, then the file's comment tag. Nothing leaves your
 computer for these.
 
-**Where the online summaries come from.** Omamp asks MusicBrainz for the
+**Where the online summaries come from.** Thrum asks MusicBrainz for the
 artist (by the MusicBrainz ID in the tags, or by an exact name match) and the
 album's release group. It follows their links to Wikidata, then to the
 Wikipedia article in your Omarchy language, or in English when there is
 none. It shows Wikipedia's summary of the article, with its picture, under
 Wikipedia's CC BY-SA licence. Each service gets its own polite pace and
-Omamp's User-Agent, and the answers are kept for 30 days in
-`~/.cache/omamp/http`. When a look-up fails or finds nothing, the section says
+Thrum's User-Agent, and the answers are kept for 30 days in
+`~/.cache/thrum/http`. When a look-up fails or finds nothing, the section says
 **No info found** with a **Retry** button. Turn the look-ups off in
-**Settings → Appearance → Layout**; `net.offline` or `OMAMP_OFFLINE=1` stops
+**Settings → Appearance → Layout**; `net.offline` or `THRUM_OFFLINE=1` stops
 them too.
 
 ### The large now playing bar
@@ -187,7 +187,7 @@ edge or beside the cover
 
 ### First-run setup
 
-The first time Omamp opens, a small panel at the bottom of the window walks
+The first time Thrum opens, a small panel at the bottom of the window walks
 through five steps. Each choice shows in the window behind it at once:
 
 1. **Start**: the player (the Winamp-style deck) or the library.
@@ -209,12 +209,12 @@ through five steps. Each choice shows in the window behind it at once:
 everything back as it was when the setup opened. **Help → Run setup again…**
 or **Run setup again…** in the command palette opens it at any time.
 
-If you used Omamp before the setup existed, it doesn't open by itself. A
+If you used Thrum before the setup existed, it doesn't open by itself. A
 small banner offers it once instead, and its ✕ hides it for good. Your
 settings stay as they are unless you run the setup and change them. The
 sidebar is switched on once for everyone, because it is now on by default;
 after that it stays as you leave it. The setup keeps its own state under
-`[setup]` in `~/.config/omamp/window.conf`.
+`[setup]` in `~/.config/thrum/window.conf`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="setup-look-dark.png">
@@ -232,7 +232,7 @@ after that it stays as you leave it. The setup keeps its own state under
 the row height, the sidebar, what it follows, its sections and the online
 look-ups, and the bar's size and place. **Reset layout** puts the columns,
 the sidebar and the bar back as they start, with the sidebar on. Everything is kept in
-`~/.config/omamp/window.conf`, under `[layout]` and `[window]`.
+`~/.config/thrum/window.conf`, under `[layout]` and `[window]`.
 
 It stays quick with big libraries. With 200,000 tracks, the library opens
 in about a third of a second. A search, a sort, a choice in the column

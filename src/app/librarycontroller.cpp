@@ -386,7 +386,7 @@ bool LibraryController::runJob(const QString &kind, const QString &text, JobWork
             json = work(library, job);
         QMetaObject::invokeMethod(this, [this, json] { finishJob(json); }, Qt::QueuedConnection);
     });
-    m_scanThread->setObjectName("omamp-" + kind);
+    m_scanThread->setObjectName("thrum-" + kind);
     m_scanThread->start(QThread::LowPriority);
     holdWatcher();
     emit jobChanged();

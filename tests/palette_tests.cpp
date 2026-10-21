@@ -1,5 +1,5 @@
 // The command palette: its ranking, its actions, and the QML popup driven
-// offscreen from the keyboard, with a window that has Omamp's own one-key
+// offscreen from the keyboard, with a window that has Thrum's own one-key
 // shortcuts to prove the popup keeps them from firing while typing.
 
 #include <QQmlComponent>
@@ -283,7 +283,7 @@ private slots:
         engine.rootContext()->setContextProperty("theme", theme);
         engine.rootContext()->setContextProperty("paletteModel", &model);
 
-        // A window with Omamp's one-key shortcuts, as Main.qml has them.
+        // A window with Thrum's one-key shortcuts, as Main.qml has them.
         const QByteArray qml = R"(
             import QtQuick
             import QtQuick.Controls
@@ -298,12 +298,12 @@ private slots:
                 Shortcut { sequences: ["Up", "Down", "Return", "Space", "Q", "Z", "Escape"]
                            context: Qt.ApplicationShortcut; onActivated: windowKeys++ }
                 Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; onActivated: palette.toggle() }
-                Text { x: 24; y: 24; text: "Omamp"; color: theme.c.muted; font.pixelSize: 28 }
+                Text { x: 24; y: 24; text: "Thrum"; color: theme.c.muted; font.pixelSize: 28 }
                 CommandPalette { id: palette; model: paletteModel }
             }
         )";
         QQmlComponent component(&engine);
-        component.setData(qml, QUrl::fromLocalFile(QString(OMAMP_APP_DIR) + "/PaletteHarness.qml"));
+        component.setData(qml, QUrl::fromLocalFile(QString(THRUM_APP_DIR) + "/PaletteHarness.qml"));
         QScopedPointer<QObject> object(component.create());
         QVERIFY2(object, qPrintable(component.errorString()));
         auto *window = qobject_cast<QQuickWindow *>(object.data());
@@ -366,8 +366,8 @@ private slots:
         QTest::keyClick(window, Qt::Key_Escape);
         QTRY_VERIFY(!popup->property("opened").toBool());
 
-        // Screenshots for the docs: OMAMP_SCREENSHOTS=<folder>.
-        const QString shots = qEnvironmentVariable("OMAMP_SCREENSHOTS");
+        // Screenshots for the docs: THRUM_SCREENSHOTS=<folder>.
+        const QString shots = qEnvironmentVariable("THRUM_SCREENSHOTS");
         if (!shots.isEmpty()) {
             QTest::keyClick(window, Qt::Key_K, Qt::ControlModifier);
             QTRY_VERIFY(popup->property("opened").toBool());

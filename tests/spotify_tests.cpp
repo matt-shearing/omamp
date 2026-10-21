@@ -2,11 +2,11 @@
 // PATH answers from recorded JSON shaped exactly as spotify_player 0.25.1
 // prints it (tests/fixtures/spotify, made by make-fixtures.py from the
 // structs in its source). Nothing here contacts Spotify, starts the real
-// spotify_player, Spotifast or Spotify, or plays a sound: Omamp's own
+// spotify_player, Spotifast or Spotify, or plays a sound: Thrum's own
 // engine is a fake that only keeps state.
 //
 // It covers the JSON shapes, the backends' guards and commands, the
-// settings, `omamp spotify`, the palette and search blending, the handover
+// settings, `thrum spotify`, the palette and search blending, the handover
 // local → Spotify → local, following the backend's state, a Free account,
 // and the pictures.
 
@@ -55,7 +55,7 @@ QJsonValue readCli(const QString &file) {
 
 // A D-Bus of the tests' own, so a fake MPRIS player never appears on the
 // desktop's session bus (where the Omarchy bar and media keys would see it)
-// and Omamp never sees the real spotify_player there.
+// and Thrum never sees the real spotify_player there.
 struct PrivateBus {
     QTemporaryDir dir;
     QProcess daemon;
@@ -269,7 +269,7 @@ private slots:
         FakeSpotify fake(false);
         Spotify::SpotifyPlayerBackend b;
         QVERIFY(b.installed());
-        QVERIFY(b.program().startsWith(OMAMP_TESTS_DIR));
+        QVERIFY(b.program().startsWith(THRUM_TESTS_DIR));
         QVERIFY(!b.signedIn());
         QString error;
         QVERIFY(b.library("playlists", &error).isEmpty());
@@ -675,7 +675,7 @@ private slots:
         fake.setPlayback(id, 120000, true);
         QTRY_VERIFY_WITH_TIMEOUT(player.position() >= 120000 && player.position() < 125000, 5000);
 
-        // Paused in Omamp → paused in Spotify.
+        // Paused in Thrum → paused in Spotify.
         fake.clearCalls();
         player.pause();
         QCOMPARE(player.state(), QString("paused"));
@@ -690,7 +690,7 @@ private slots:
         player.seek(150000);
         QTRY_VERIFY_WITH_TIMEOUT(!fake.calls().filter("playback seek -- ").isEmpty(), 5000);
 
-        // Spotify reaches the end: the next local file plays in Omamp.
+        // Spotify reaches the end: the next local file plays in Thrum.
         fake.setPlayback(id, 219000, false);
         QTRY_COMPARE_WITH_TIMEOUT(player.currentIndex(), 2, 5000);
         QCOMPARE(engine->source(), dir.filePath("b.flac"));
@@ -720,7 +720,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!player.buffering() && player.state() == "playing", 5000);
         QCOMPARE(engine->state(), AudioEngine::Stopped);
 
-        // Paused on the phone: Omamp shows paused and stays on the track.
+        // Paused on the phone: Thrum shows paused and stays on the track.
         fake.setPlayback(one, 90000, false);
         QTRY_COMPARE_WITH_TIMEOUT(player.state(), QString("paused"), 5000);
         QCOMPARE(player.position(), qint64(90000));
@@ -737,7 +737,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 5000);
         QCOMPARE(player.title(), QString("Harbor Lights"));
 
-        // Someone starts something else in Spotify: Omamp pauses its queue.
+        // Someone starts something else in Spotify: Thrum pauses its queue.
         fake.setPlayback(one, 3000, true);
         QTRY_COMPARE_WITH_TIMEOUT(player.state(), QString("paused"), 5000);
         QCOMPARE(player.currentIndex(), 1);
@@ -813,7 +813,7 @@ private slots:
             return reply;
         });
         FakeSpotify fake(true, http.url());
-        fake.set("OMAMP_SPOTIFY_OEMBED", http.url() + "/oembed");
+        fake.set("THRUM_SPOTIFY_OEMBED", http.url() + "/oembed");
         QTemporaryDir dir;
         auto *engine = new FakeEngine;
         SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
@@ -1088,7 +1088,7 @@ private slots:
         t.start();
         c.setEnabled(true);
         QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 10000);
-        // Omamp started spotify_player, then left it alone while it read
+        // Thrum started spotify_player, then left it alone while it read
         // the library itself, then asked twice: devices and playlists.
         QVERIFY2(t.elapsed() >= 1400, qPrintable(QString::number(t.elapsed())));
         const QStringList calls = fake.calls();
@@ -1134,7 +1134,7 @@ private slots:
         QVERIFY(error.contains("isn't a Spotify client ID"));
         const QString id = "0123456789ABCDEF0123456789abcdef";
         QVERIFY2(B::writeClientId(folder, id, &backup, &error), qPrintable(error));
-        QVERIFY(backup.startsWith(folder + "/app.toml.omamp-backup-"));
+        QVERIFY(backup.startsWith(folder + "/app.toml.thrum-backup-"));
         QFile b(backup);
         QVERIFY(b.open(QIODevice::ReadOnly));
         QCOMPARE(b.readAll(), original);
@@ -1194,7 +1194,7 @@ private slots:
         QCOMPARE(c.clientIdKind(), QString("own"));
         QCOMPARE(c.clientId(), id);
         QCOMPARE(Spotify::SpotifyPlayerBackend::configuredClientId(), id);
-        QVERIFY(!QDir(fake.config()).entryList({"app.toml.omamp-backup-*"}, QDir::Files).isEmpty());
+        QVERIFY(!QDir(fake.config()).entryList({"app.toml.thrum-backup-*"}, QDir::Files).isEmpty());
         // Stopped, and not started again: the new ID needs a sign-in first.
         QTRY_VERIFY_WITH_TIMEOUT(!c.checking(), 8000);
         QVERIFY(!Spotify::SpotifyPlayerBackend().running());
@@ -1212,8 +1212,8 @@ private slots:
         if (!bus.ok())
             QSKIP("dbus-daemon isn't available");
         FakeSpotify fake;
-        fake.set("OMAMP_SPOTIFY_MPRIS_BUS", bus.address);
-        fake.set("OMAMP_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.spotify_player");
+        fake.set("THRUM_SPOTIFY_MPRIS_BUS", bus.address);
+        fake.set("THRUM_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.spotify_player");
         FakeMpris mpris(bus.address, "org.mpris.MediaPlayer2.spotify_player");
         QVERIFY2(mpris.registered(), qPrintable(mpris.why() + " at " + bus.address));
         QTemporaryDir dir;
@@ -1244,7 +1244,7 @@ private slots:
         QCOMPARE(player.state(), QString("playing"));
         QCOMPARE(c.nowPlaying().value("title").toString(), QString("Tail Lights"));
 
-        // Omamp's volume slider reaches Spotify's player, on the slider's
+        // Thrum's volume slider reaches Spotify's player, on the slider's
         // own scale (librespot applies its own curve).
         player.setVolume(50);
         QTRY_VERIFY_WITH_TIMEOUT(qAbs(mpris.volume() - 0.5) < 0.02, 3000);
@@ -1288,7 +1288,7 @@ private slots:
         QTest::qWait(6000);
         QVERIFY2(stateReads(fake.calls()) <= 2, qPrintable(fake.calls().join(" | ")));
         player.stop();
-        // Nothing playing in Omamp: no reads at all.
+        // Nothing playing in Thrum: no reads at all.
         c.waitForIdle();
         fake.clearCalls();
         QTest::qWait(1500);
@@ -1456,7 +1456,7 @@ private slots:
         QVERIFY2(fake.calls().filter(QRegularExpression(" artist$")).filter("get item").isEmpty(),
                  qPrintable(fake.calls().join(" | ")));
 
-        // A link to an artist Omamp knows by name opens the same page.
+        // A link to an artist Thrum knows by name opens the same page.
         c.activateUri("https://open.spotify.com/artist/" + fake.id("artist:Lunar Drive"));
         QTRY_VERIFY_WITH_TIMEOUT(!c.loading() && c.viewTitle() == "Lunar Drive", 5000);
         QVERIFY(c.items()->count() > 0);
@@ -1558,7 +1558,7 @@ private slots:
             t.start();
             c.openRow(4);
             QVERIFY(c.loading());
-            // spotify_player's log says your ID was refused: Omamp stops
+            // spotify_player's log says your ID was refused: Thrum stops
             // waiting on the shared ID and says why, long before the answer.
             QTRY_VERIFY_WITH_TIMEOUT(c.viewRestricted(), 3500);
             QVERIFY2(t.elapsed() < 3500, qPrintable(QString::number(t.elapsed())));
@@ -1588,8 +1588,8 @@ private slots:
         if (!bus.ok())
             QSKIP("dbus-daemon isn't available");
         FakeSpotify fake;
-        fake.set("OMAMP_SPOTIFY_MPRIS_BUS", bus.address);
-        fake.set("OMAMP_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.spotify_player");
+        fake.set("THRUM_SPOTIFY_MPRIS_BUS", bus.address);
+        fake.set("THRUM_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.spotify_player");
         FakeMpris mpris(bus.address, "org.mpris.MediaPlayer2.spotify_player");
         QVERIFY2(mpris.registered(), qPrintable(mpris.why()));
         QTemporaryDir dir;
@@ -1674,7 +1674,7 @@ private slots:
 
     void theSessionReaderReadsWhatTheWebApiCant() {
         FakeSpotify fake;
-        fake.set("OMAMP_SPOTIFY_SESSION", QString(OMAMP_TESTS_DIR) + "/fake-spotify/omamp-spotify-session");
+        fake.set("THRUM_SPOTIFY_SESSION", QString(THRUM_TESTS_DIR) + "/fake-spotify/thrum-spotify-session");
         QTemporaryDir dir;
         const QString synth = fake.id("playlist:Synthwave Essentials");
         // The Web API would refuse it and answer late.
@@ -1756,7 +1756,7 @@ private slots:
 
     void aReaderThatCantSignInFallsBack() {
         FakeSpotify fake;
-        fake.set("OMAMP_SPOTIFY_SESSION", QString(OMAMP_TESTS_DIR) + "/fake-spotify/omamp-spotify-session");
+        fake.set("THRUM_SPOTIFY_SESSION", QString(THRUM_TESTS_DIR) + "/fake-spotify/thrum-spotify-session");
         fake.touch(fake.state() + "/session-signin", "the sign-in has expired");
         QTemporaryDir dir;
         SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));

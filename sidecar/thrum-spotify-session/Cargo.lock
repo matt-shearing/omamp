@@ -1292,7 +1292,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "omamp-spotify-session"
+name = "thrum-spotify-session"
 version = "0.1.0"
 dependencies = [
  "http",

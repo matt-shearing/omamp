@@ -908,7 +908,7 @@ using namespace native;
 
 NativeEngine::NativeEngine(PcmSink *sink, QObject *parent) : AudioEngine(parent) {
     if (!sink) {
-        if (qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE")) {
+        if (qEnvironmentVariableIsSet("THRUM_NO_AUDIO_DEVICE")) {
             auto *buffer = new BufferSink(48000, false);
             buffer->setAutoPull(1.0);
             sink = buffer;

@@ -17,7 +17,7 @@ class QSocketNotifier;
 class QThread;
 class QTimer;
 
-// Keeps the library in step with the disk while Omamp runs.
+// Keeps the library in step with the disk while Thrum runs.
 //
 // - Library roots on local filesystems are watched with inotify, one watch
 //   per folder. Changes are collected for a moment (the debounce), then just
@@ -60,7 +60,7 @@ public:
     // fs.inotify.max_user_watches, leaving the rest for other programs.
     void setMaxWatches(int count) { m_maxWatches = count; }
     // false: report changes (foldersChanged) without rescanning. For tests
-    // and `omamp watch --dry-run`.
+    // and `thrum watch --dry-run`.
     void setAutoRescan(bool on) { m_autoRescan = on; }
     void setWorkers(int count) { m_workers = count; }
 
@@ -95,7 +95,7 @@ public:
     // runs again then. The window's jobs never wait for the watcher.
     void setHeld(bool held);
     bool isHeld() const { return m_held; }
-    // Rescans started so far, and inotify events left alone because Omamp
+    // Rescans started so far, and inotify events left alone because Thrum
     // made the change itself (see OwnWrites). For tests and diagnostics.
     int rescansStarted() const { return m_rescansStarted; }
     int ownEventsIgnored() const { return m_ownEvents; }

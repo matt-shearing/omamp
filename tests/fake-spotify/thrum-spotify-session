@@ -1,5 +1,5 @@
 #!/bin/sh
-# A stand-in for omamp-spotify-session in the tests: it signs in to nothing
+# A stand-in for thrum-spotify-session in the tests: it signs in to nothing
 # and answers its line protocol from the recorded JSON in $FAKE_SPOTIFY_DIR,
 # the same fixtures the fake spotify_player uses. Every request is logged to
 # calls.log as "session <cmd> <id>".

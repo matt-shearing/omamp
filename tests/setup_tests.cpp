@@ -1,5 +1,5 @@
 // The first-run setup, the existing-user banner and the sidebar now on by
-// default (OMAMP_TESTS=setup).
+// default (THRUM_TESTS=setup).
 //
 // Offscreen, in software, with no audio device, each window with a
 // window.conf in its own temporary folder. Nothing here reaches the user's
@@ -189,7 +189,7 @@ private slots:
     // A new install: the setup is due and the sidebar comes on, once.
     void newInstallNeedsSetup() {
         QTemporaryDir dir;
-        const QString conf = dir.filePath("omamp/window.conf");
+        const QString conf = dir.filePath("thrum/window.conf");
         {
             FirstRun run(conf);
             QCOMPARE(run.origin(), QString("new"));

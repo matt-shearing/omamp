@@ -10,13 +10,13 @@ Rectangle {
     id: thumb
     property var trackId: 0
     property string path: ""
-    // A ready address (image://omamp-art/…), instead of trackId and path.
+    // A ready address (image://thrum-art/…), instead of trackId and path.
     property string art: ""
     property int size: 20
     readonly property int px: Math.round(size * Screen.devicePixelRatio)
     readonly property string base: art !== "" ? art
-        : trackId > 0 ? "image://omamp-art/track/" + trackId + "/96"
-        : path !== "" ? "image://omamp-art/entry/" + base64url(path) + "/96" : ""
+        : trackId > 0 ? "image://thrum-art/track/" + trackId + "/96"
+        : path !== "" ? "image://thrum-art/entry/" + base64url(path) + "/96" : ""
     // The path as URL-safe base64 of its UTF-8, which the provider decodes.
     function base64url(text) {
         const utf8 = unescape(encodeURIComponent(text))

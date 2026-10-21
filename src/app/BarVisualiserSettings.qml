@@ -4,7 +4,7 @@ import QtQuick.Layouts
 
 // Settings > Appearance, under Visualiser: the large now playing bar's
 // visualiser (where it sits and its style), what the visualisers do while
-// no sound reaches Omamp, and Reduce motion. Everything applies as it is
+// no sound reaches Thrum, and Reduce motion. Everything applies as it is
 // chosen and is kept in window.conf under [appearance].
 ColumnLayout {
     id: page
@@ -60,7 +60,7 @@ ColumnLayout {
     }
 
     Sub { text: qsTr("Sensitivity") }
-    Note { text: qsTr("How readily every visualiser fills. Omamp follows the music's loudness, so loud and quiet recordings both move; High makes the bars taller, Low calmer.") }
+    Note { text: qsTr("How readily every visualiser fills. Thrum follows the music's loudness, so loud and quiet recordings both move; High makes the bars taller, Low calmer.") }
     Flow {
         Layout.fillWidth: true
         spacing: 4
@@ -77,8 +77,8 @@ ColumnLayout {
         }
     }
 
-    Sub { text: qsTr("While nothing plays through Omamp") }
-    Note { text: qsTr("Paused, stopped, or playing on Spotify, whose sound never reaches Omamp's analyser.") }
+    Sub { text: qsTr("While nothing plays through Thrum") }
+    Note { text: qsTr("Paused, stopped, or playing on Spotify, whose sound never reaches Thrum's analyser.") }
     RadioButton {
         objectName: "idleVisualiserCalm"
         text: qsTr("Keep a slow, calm animation")

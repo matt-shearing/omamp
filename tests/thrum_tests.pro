@@ -1,6 +1,6 @@
 QT += core gui qml quick quickcontrols2 testlib dbus
 CONFIG += c++17 testcase
-TARGET = omamp_tests
+TARGET = thrum_tests
 TEMPLATE = app
 
 include(../src/core/core.pri)
@@ -9,9 +9,9 @@ include(../src/cli/cli.pri)
 INCLUDEPATH += ../src/app
 
 # Where make-fixtures lives, so the tests can build their audio files.
-DEFINES += OMAMP_TESTS_DIR=\\\"$$PWD\\\"
+DEFINES += THRUM_TESTS_DIR=\\\"$$PWD\\\"
 # Where the QML lives, so the palette test can load CommandPalette.qml.
-DEFINES += OMAMP_APP_DIR=\\\"$$PWD/../src/app\\\"
+DEFINES += THRUM_APP_DIR=\\\"$$PWD/../src/app\\\"
 
 HEADERS += mockhttp.h fake_hyprctl.h audiohttp.h spotify_fakes.h ../src/app/artprovider.h ../src/app/portal.h ../src/app/theme.h ../src/app/translator.h fixture_library.h \
            ../src/app/librarycontroller.h ../src/app/librarytree.h ../src/app/tracklistmodel.h \
@@ -21,7 +21,7 @@ HEADERS += mockhttp.h fake_hyprctl.h audiohttp.h spotify_fakes.h ../src/app/artp
            ../src/app/webcontroller.h ../src/app/nascontroller.h ../src/app/devicescontroller.h mocksubsonic.h ../src/app/streamresolver.h \
            ../src/app/appearance.h ../src/app/nowplaying.h ../src/app/visualiser.h ../src/app/mpris.h nowplaying_context.h ../src/app/spotifycontroller.h ../src/app/radiocontroller.h radiohttp.h ../src/app/windowplacement.h \
            ../src/app/layoutprefs.h ../src/app/aboutcontroller.h ../src/app/firstrun.h ../src/app/levelsfeed.h
-SOURCES += main.cpp omamp_tests.cpp library_tests.cpp query_tests.cpp palette_tests.cpp watcher_tests.cpp \
+SOURCES += main.cpp thrum_tests.cpp library_tests.cpp query_tests.cpp palette_tests.cpp watcher_tests.cpp \
            librarywindow_tests.cpp mask_tests.cpp tidy_tests.cpp playlist_tests.cpp engine_tests.cpp web_tests.cpp tidywindow_tests.cpp \
            nas_tests.cpp subsonic_tests.cpp p3window_tests.cpp p45window_tests.cpp streaming_tests.cpp sync_tests.cpp nowplaying_tests.cpp radio_tests.cpp \
            ../src/app/artprovider.cpp \

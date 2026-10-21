@@ -202,7 +202,7 @@ bool Watcher::start(QString *error) {
 
     if (!m_thread) {
         m_thread = new QThread(this);
-        m_thread->setObjectName("omamp-rescan");
+        m_thread->setObjectName("thrum-rescan");
         auto *worker = new RescanWorker(m_dbPath, m_resolver, m_workers);
         worker->moveToThread(m_thread);
         m_worker = worker;
@@ -362,7 +362,7 @@ void Watcher::readEvents() {
             if (name.isEmpty() || isHidden(name))
                 continue;
             const QString path = dir + '/' + name;
-            // Omamp's own writes (tags saved, files organised or trashed)
+            // Thrum's own writes (tags saved, files organised or trashed)
             // update the library themselves: they are no reason to rescan.
             // A folder we made is still watched, so later changes in it count.
             const bool own = OwnWrites::isOwn(path);

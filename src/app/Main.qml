@@ -17,7 +17,7 @@ ApplicationWindow {
     visible: true
     title: modes.compact !== "" ? modes.title
            : backend.currentIndex >= 0 && backend.title
-           ? (backend.artist ? backend.artist + " - " : "") + backend.title + " — Omamp" : "Omamp"
+           ? (backend.artist ? backend.artist + " - " : "") + backend.title + " — Thrum" : "Thrum"
     color: advanced && modes.compact === "" ? theme.c.background : appearance.deck.window
 
     Material.theme: theme.light ? Material.Light : Material.Dark
@@ -50,7 +50,7 @@ ApplicationWindow {
     }
 
     // The mode, each mode's window size, and the library's layout, kept
-    // between runs in ~/.config/omamp/window.conf.
+    // between runs in ~/.config/thrum/window.conf.
     Settings {
         id: prefs
         location: settingsUrl
@@ -359,8 +359,8 @@ ApplicationWindow {
         p.addAction("seek-back", qsTr("Back 5 seconds"), ["seek", "rewind"], "←")
         p.addAction("seek-forward", qsTr("Forward 5 seconds"), ["seek", "fast forward"], "→")
         p.addAction("toggle-menu-bar", qsTr("Show or hide the menu bar"), ["menu", "menubar", "file", "view"], "F10")
-        p.addAction("about", qsTr("About Omamp"), ["version", "licence", "license", "help"], "")
-        p.addAction("open-website", qsTr("Omamp on GitHub"), ["help", "documentation", "docs", "website", "issues"], "")
+        p.addAction("about", qsTr("About Thrum"), ["version", "licence", "license", "help"], "")
+        p.addAction("open-website", qsTr("Thrum on GitHub"), ["help", "documentation", "docs", "website", "issues"], "")
         p.addAction("open-mediamonkey-guide", qsTr("Importing from MediaMonkey (guide)"), ["mediamonkey", "mm.db", "import", "help"], "")
         p.addAction("shortcuts", qsTr("Show keyboard shortcuts"), ["help", "keys"], "?")
         p.addAction("quit", qsTr("Quit"), ["exit", "close"], "Q")
@@ -630,9 +630,9 @@ ApplicationWindow {
         case "toggle-menu-bar": prefs.menuBar = !prefs.menuBar; menuPeek = false; break
         case "palette": palette.toggle(); break
         case "about": aboutDialog.open(); break
-        case "open-website": Qt.openUrlExternally("https://github.com/matt-shearing/omamp"); break
+        case "open-website": Qt.openUrlExternally("https://github.com/matt-shearing/thrum"); break
         case "open-mediamonkey-guide":
-            Qt.openUrlExternally("https://github.com/matt-shearing/omamp/blob/main/docs/mediamonkey-import.md")
+            Qt.openUrlExternally("https://github.com/matt-shearing/thrum/blob/main/docs/mediamonkey-import.md")
             break
         case "search": setAdvanced(true); if (advancedLoader.item) advancedLoader.item.focusSearch(); break
         case "browser": toggleBrowser(); break
@@ -1049,21 +1049,21 @@ ApplicationWindow {
         // palette and the View menu through appearance.choosePicker().
         VisualiserPicker { id: visPicker; onOpenSettings: win.runAction("settings-appearance"); onClosed: win.backToList() }
 
-        // Help → About Omamp.
+        // Help → About Thrum.
         Dialog {
             id: aboutDialog
             objectName: "aboutDialog"
             parent: Overlay.overlay
             anchors.centerIn: parent
             modal: true
-            title: qsTr("About Omamp")
+            title: qsTr("About Thrum")
             standardButtons: Dialog.Close
             Material.roundedScale: theme.radius
             onClosed: win.backToList()
             ColumnLayout {
                 spacing: 8
                 Text {
-                    text: Qt.application.version !== "" ? qsTr("Omamp %1").arg(Qt.application.version) : "Omamp"
+                    text: Qt.application.version !== "" ? qsTr("Thrum %1").arg(Qt.application.version) : "Thrum"
                     font.pixelSize: 18; font.bold: true
                     color: theme.c.bright_foreground
                 }
@@ -1080,7 +1080,7 @@ ApplicationWindow {
                     color: theme.c.light_foreground
                 }
                 Text {
-                    text: "<a href=\"https://github.com/matt-shearing/omamp\">github.com/matt-shearing/omamp</a>"
+                    text: "<a href=\"https://github.com/matt-shearing/thrum\">github.com/matt-shearing/thrum</a>"
                     textFormat: Text.StyledText
                     linkColor: theme.accent
                     font.pixelSize: 12

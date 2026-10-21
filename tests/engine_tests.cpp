@@ -1,7 +1,7 @@
 // The playback engines, measured without a sound card. The native engine
 // runs into a BufferSink that pulls PCM into memory as fast as it is
 // decoded; the Qt engine runs without an audio output. Every test asserts
-// the sink is the in-memory one, and main() sets OMAMP_NO_AUDIO_DEVICE so
+// the sink is the in-memory one, and main() sets THRUM_NO_AUDIO_DEVICE so
 // the device sink would abort rather than play.
 #include <QElapsedTimer>
 #include <QProcess>
@@ -182,9 +182,9 @@ class EngineTests : public QObject {
 
 private slots:
     void initTestCase() {
-        QVERIFY(qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"));
+        QVERIFY(qEnvironmentVariableIsSet("THRUM_NO_AUDIO_DEVICE"));
         QProcess make;
-        make.start(QStringLiteral(OMAMP_TESTS_DIR "/make-engine-fixtures"), {m_dir.path()});
+        make.start(QStringLiteral(THRUM_TESTS_DIR "/make-engine-fixtures"), {m_dir.path()});
         QVERIFY(make.waitForFinished(120000));
         QVERIFY2(make.exitCode() == 0, make.readAllStandardError().constData());
     }
@@ -192,7 +192,7 @@ private slots:
     void neverUsesTheSoundCard() {
         Rig rig;
         QCOMPARE(rig.engine->sink()->kind(), QString("buffer"));
-        // Without a sink and with OMAMP_NO_AUDIO_DEVICE set, the engine
+        // Without a sink and with THRUM_NO_AUDIO_DEVICE set, the engine
         // picks a silent buffer too.
         NativeEngine fallback;
         QCOMPARE(fallback.sink()->kind(), QString("buffer"));
@@ -628,22 +628,22 @@ private slots:
             Player player(state);
             QCOMPARE(player.engineName(), QString("qt"));
         }
-        QSettings(dir.filePath("omamp.conf"), QSettings::IniFormat).setValue("playback/engine", "native");
+        QSettings(dir.filePath("thrum.conf"), QSettings::IniFormat).setValue("playback/engine", "native");
         {
             Player player(state);
             QCOMPARE(player.engineName(), QString("native"));
             QCOMPARE(static_cast<NativeEngine *>(player.engine())->sink()->kind(), QString("buffer"));
         }
-        qputenv("OMAMP_ENGINE", "qt");
+        qputenv("THRUM_ENGINE", "qt");
         {
             Player player(state);
             QCOMPARE(player.engineName(), QString("qt"));
         }
-        qunsetenv("OMAMP_ENGINE");
+        qunsetenv("THRUM_ENGINE");
     }
 
     // CPU for three minutes of FLAC, decoded, levelled, equalised and
-    // resampled as fast as possible. Off unless OMAMP_ENGINE_BENCH=1 (it
+    // resampled as fast as possible. Off unless THRUM_ENGINE_BENCH=1 (it
     // takes a few seconds); the numbers go in docs/plan/progress.md.
     void benchmarkCpu_data() {
         QTest::addColumn<int>("sinkRate");
@@ -654,8 +654,8 @@ private slots:
     }
 
     void benchmarkCpu() {
-        if (!qEnvironmentVariableIsSet("OMAMP_ENGINE_BENCH"))
-            QSKIP("set OMAMP_ENGINE_BENCH=1 to measure");
+        if (!qEnvironmentVariableIsSet("THRUM_ENGINE_BENCH"))
+            QSKIP("set THRUM_ENGINE_BENCH=1 to measure");
         QFETCH(int, sinkRate);
         QFETCH(bool, eq);
         const QString music = m_dir.filePath("bench.flac");
@@ -699,8 +699,8 @@ private slots:
     // Ten seconds in real time, pulled every 10 ms like a device, with the
     // engine's timers and threads waking as they would while playing.
     void benchmarkRealtimeCpu() {
-        if (!qEnvironmentVariableIsSet("OMAMP_ENGINE_BENCH"))
-            QSKIP("set OMAMP_ENGINE_BENCH=1 to measure");
+        if (!qEnvironmentVariableIsSet("THRUM_ENGINE_BENCH"))
+            QSKIP("set THRUM_ENGINE_BENCH=1 to measure");
         const QString music = m_dir.filePath("bench.flac");
         QVERIFY(QFile::exists(music)); // made by benchmarkCpu
         auto *sink = new BufferSink(48000, false);

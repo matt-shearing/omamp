@@ -1,10 +1,10 @@
 import QtQuick
 import "Model.js" as Model
 
-// A small, faint copy of Omamp's visualiser, drawn behind words. It fades
+// A small, faint copy of Thrum's visualiser, drawn behind words. It fades
 // out towards its left and right ends and towards the bottom, and hides
 // when nothing plays. It draws only when a frame arrives (up to 20 a
-// second from Omamp), so it costs nothing while idle. Visual only: the
+// second from Thrum), so it costs nothing while idle. Visual only: the
 // levels come from Service.qml.
 Item {
   id: viz
@@ -14,7 +14,7 @@ Item {
   // One of Model.miniStyle()'s: bars, skyline, led, synthwave, line,
   // ribbon, pulse, stars.
   property string style: "bars"
-  // Something plays through Omamp; otherwise it fades away.
+  // Something plays through Thrum; otherwise it fades away.
   property bool active: false
   // Calmer: eased levels, no drift, no fades.
   property bool reduceMotion: false

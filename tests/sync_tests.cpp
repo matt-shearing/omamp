@@ -2,7 +2,7 @@
 //
 // SyncTests: the core (profiles, rules, the dry run, copying and converting
 // with the real ffmpeg command, the manifest, deletes, targets that aren't
-// there) and `omamp sync` / `omamp report`. SyncWindowTests: the Devices
+// there) and `thrum sync` / `thrum report`. SyncWindowTests: the Devices
 // page, the Devices node in the tree, and saving a list as a report.
 //
 // Everything lives in temporary folders, the target "devices" too; nothing
@@ -182,7 +182,7 @@ private slots:
     void cleanup() {
         DeviceSync::setFfmpegProgram({});
         DeviceSync::setMountCheck({});
-        qunsetenv("OMAMP_SYNC_FREE_BYTES");
+        qunsetenv("THRUM_SYNC_FREE_BYTES");
     }
 
     void rulesAndSourcesReadAndWrite() {
@@ -317,7 +317,7 @@ private slots:
         QCOMPARE(r.converted, 1);
         QCOMPARE(r.skipped, 1);
         QCOMPARE(job.done(), 3);
-        QCOMPARE(filesUnder(target), QStringList({".omamp-sync.json", "Neon Coast/Night Drive/01 Midnight Highway.opus",
+        QCOMPARE(filesUnder(target), QStringList({".thrum-sync.json", "Neon Coast/Night Drive/01 Midnight Highway.opus",
                                                   "Neon Coast/Night Drive/02 Coastline.mp3",
                                                   "Neon Coast/Night Drive/03 Afterglow.m4a", "Road trip.m3u8"}));
         // Converted for real, with its tags; copies are byte for byte.
@@ -332,7 +332,7 @@ private slots:
                          "Neon Coast/Night Drive/03 Afterglow.m4a\n"));
         // No temporary files left.
         for (const QString &f : filesUnder(target))
-            QVERIFY2(!f.contains(".omamp-sync-"), qPrintable(f));
+            QVERIFY2(!f.contains(".thrum-sync-"), qPrintable(f));
 
         const DeviceSync::Plan again = DeviceSync::plan(library, p);
         QCOMPARE(again.kept, 3);
@@ -397,7 +397,7 @@ private slots:
         QCOMPARE(plan.conversions + plan.copies, 2);
         QCOMPARE(plan.deletions, 2);
         QVERIFY(DeviceSync::apply(library, plan).ok);
-        QCOMPARE(filesUnder(target), QStringList({".omamp-sync.json", ".stfolder/marker", "Neon Coast - Coastline.mp3",
+        QCOMPARE(filesUnder(target), QStringList({".stfolder/marker", ".thrum-sync.json", "Neon Coast - Coastline.mp3",
                                                   "Neon Coast - Midnight Highway.opus", "Notes/readme.txt",
                                                   "Road trip.m3u8"}));
         QVERIFY(!QFileInfo::exists(target + "/Neon Coast"));
@@ -408,7 +408,7 @@ private slots:
         QCOMPARE(plan.deletions, 1);
         QCOMPARE(plan.actions.last().reason, QString("not from this sync"));
         QVERIFY(DeviceSync::apply(library, plan).ok);
-        QCOMPARE(filesUnder(target), QStringList({".omamp-sync.json", ".stfolder/marker", "Neon Coast - Coastline.mp3",
+        QCOMPARE(filesUnder(target), QStringList({".stfolder/marker", ".thrum-sync.json", "Neon Coast - Coastline.mp3",
                                                   "Neon Coast - Midnight Highway.opus", "Road trip.m3u8"}));
     }
 
@@ -457,7 +457,7 @@ private slots:
         QCOMPARE(DeviceSync::checkTarget(library, inside).state, QString("inside-library"));
 
         // Too little room: the dry run says so and the sync refuses.
-        qputenv("OMAMP_SYNC_FREE_BYTES", "1000");
+        qputenv("THRUM_SYNC_FREE_BYTES", "1000");
         plan = DeviceSync::plan(library, phoneProfile(root + "/small"));
         QVERIFY(plan.ok());
         QVERIFY(!plan.fits);
@@ -465,7 +465,7 @@ private slots:
         const DeviceSync::Result r = DeviceSync::apply(library, plan);
         QVERIFY(!r.ok);
         QVERIFY(!QFileInfo::exists(root + "/small"));
-        qunsetenv("OMAMP_SYNC_FREE_BYTES");
+        qunsetenv("THRUM_SYNC_FREE_BYTES");
 
         // No ffmpeg: converting is refused before anything is written; a
         // profile that only copies still works.
@@ -573,7 +573,7 @@ private slots:
         QCOMPARE(page.count("<tr>"), 3);
     }
 
-    // `omamp sync` and `omamp report`, in-process, with --json.
+    // `thrum sync` and `thrum report`, in-process, with --json.
     void commandLine() {
         if (!haveFfmpeg())
             QSKIP("needs ffmpeg");

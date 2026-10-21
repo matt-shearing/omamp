@@ -12,7 +12,7 @@ Rectangle {
     id: strip
     objectName: "spotifyBlendStrip"
     color: theme.c.dark_background
-    // A command run by the window (spotify-new-omamp-playlist:blend…).
+    // A command run by the window (spotify-new-thrum-playlist:blend…).
     signal action(string id)
     readonly property string query: library.tracks.filter
     readonly property var rows: spotify.blendResults

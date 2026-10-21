@@ -145,8 +145,8 @@ QString TrackListModel::artUrl(const Row &r) {
     if (r.id <= 0 || r.artMissing)
         return QString();
     if (r.albumId > 0)
-        return QString("image://omamp-art/album/%1/96?v=%2").arg(r.albumId).arg(r.artworkId);
-    return QString("image://omamp-art/track/%1/96?v=%2").arg(r.id).arg(r.artworkId);
+        return QString("image://thrum-art/album/%1/96?v=%2").arg(r.albumId).arg(r.artworkId);
+    return QString("image://thrum-art/track/%1/96?v=%2").arg(r.id).arg(r.artworkId);
 }
 
 const TrackListModel::Row *TrackListModel::rowAt(int row) const {

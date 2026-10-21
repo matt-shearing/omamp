@@ -110,7 +110,7 @@ QMap<QString, QByteArray> tree(const QString &root) {
 QStringList temporaries(const QString &root) {
     QStringList out;
     for (const QString &rel : tree(root).keys())
-        if (QFileInfo(rel).fileName().startsWith(".omamp-"))
+        if (QFileInfo(rel).fileName().startsWith(".thrum-"))
             out << rel;
     return out;
 }
@@ -658,11 +658,11 @@ private slots:
         QCOMPARE(bad.errorPosition, 8);
         // Outside the sandbox nothing is planned.
         options.mask = "<Title>";
-        options.destination = "/tmp/omamp-should-never-exist";
+        options.destination = "/tmp/thrum-should-never-exist";
         const OrganisePlan outside = organiser.plan({s.id("ALPHA.flac")}, options);
         QCOMPARE(outside.items[0].status, QString("error"));
         QVERIFY(!organiser.apply(outside, options).items.isEmpty());
-        QVERIFY(!QFileInfo::exists("/tmp/omamp-should-never-exist"));
+        QVERIFY(!QFileInfo::exists("/tmp/thrum-should-never-exist"));
         // Without a library folder above it, a track has nowhere to go but
         // the root of its disk, which is refused.
         QSqlQuery q(s.library->db());

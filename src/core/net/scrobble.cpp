@@ -112,7 +112,7 @@ Listen Listen::fromTrack(Library &library, qint64 trackId) {
               "mb_artist_id FROM tracks WHERE id = ?");
     q.addBindValue(trackId);
     if (q.exec() && q.next()) {
-        // Omamp keeps several artists as "A; B"; the services want one credit.
+        // Thrum keeps several artists as "A; B"; the services want one credit.
         l.artist = q.value(0).toString().replace("; ", ", ");
         l.title = q.value(1).toString();
         l.album = q.value(2).toString();
@@ -165,8 +165,8 @@ Listen Listen::fromJson(const QJsonObject &o) {
 }
 
 QJsonObject Listen::listenBrainzMetadata() const {
-    QJsonObject info{{"media_player", "Omamp"},
-                     {"submission_client", "Omamp"},
+    QJsonObject info{{"media_player", "Thrum"},
+                     {"submission_client", "Thrum"},
                      {"submission_client_version", Net::version()}};
     if (durationMs)
         info["duration_ms"] = durationMs;
@@ -207,7 +207,7 @@ QJsonObject FlushResult::toJson() const {
 
 namespace ListenBrainz {
 
-QString token(const Library &library) { return envOrSetting(library, "OMAMP_LISTENBRAINZ_TOKEN", "listenbrainz.token"); }
+QString token(const Library &library) { return envOrSetting(library, "THRUM_LISTENBRAINZ_TOKEN", "listenbrainz.token"); }
 
 bool validateToken(Net::HttpClient &http, const QString &token, QString *user, QString *error) {
     Net::Request r;
@@ -253,9 +253,9 @@ Net::Response submit(Net::HttpClient &http, const QString &token, const QList<Li
 
 namespace LastFm {
 
-QString apiKey(const Library &library) { return envOrSetting(library, "OMAMP_LASTFM_API_KEY", "lastfm.api_key"); }
+QString apiKey(const Library &library) { return envOrSetting(library, "THRUM_LASTFM_API_KEY", "lastfm.api_key"); }
 QString apiSecret(const Library &library) {
-    return envOrSetting(library, "OMAMP_LASTFM_API_SECRET", "lastfm.api_secret");
+    return envOrSetting(library, "THRUM_LASTFM_API_SECRET", "lastfm.api_secret");
 }
 QString sessionKey(const Library &library) { return library.setting("lastfm.session_key").toString().trimmed(); }
 
@@ -454,7 +454,7 @@ FlushResult Scrobbler::flush(int maxListens) {
     }
     for (const QString &s : {QString("listenbrainz"), QString("lastfm")})
         total.remaining += pendingCount(m_library, s);
-    // Sent rows are kept a while for `omamp scrobble status`, then dropped.
+    // Sent rows are kept a while for `thrum scrobble status`, then dropped.
     QSqlQuery prune(m_library.db());
     prune.prepare("DELETE FROM scrobble_queue WHERE state = 'sent' AND sent < ?");
     prune.addBindValue(QDateTime::currentSecsSinceEpoch() - qint64(keepSentDays) * 86400);
@@ -504,7 +504,7 @@ FlushResult Scrobbler::flushListenBrainz(int maxListens) {
         result.failed += permanent ? rows.size() : 0;
         result.offline = response.offline;
         result.errors << (response.status == 401 ? QString("ListenBrainz refused the token; log in again with "
-                                                           "`omamp scrobble login listenbrainz --token <token>`")
+                                                           "`thrum scrobble login listenbrainz --token <token>`")
                                                  : error);
         if (!permanent)
             break; // offline, busy or unauthorised: try again later
@@ -559,7 +559,7 @@ FlushResult Scrobbler::flushLastFm(int maxListens) {
         result.failed += temporary ? 0 : rows.size();
         result.offline = response.offline;
         result.errors << (code == 9 ? QString("Last.fm refused the session; log in again with "
-                                              "`omamp scrobble login lastfm`")
+                                              "`thrum scrobble login lastfm`")
                                     : error);
         if (temporary)
             break;

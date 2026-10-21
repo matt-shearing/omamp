@@ -86,14 +86,14 @@ private:
 
 // The fake's world: a copy of the fixtures it answers from and changes,
 // spotify_player's cache (signed in or not) and config, and the
-// environment that points Omamp at them. Restored on destruction.
+// environment that points Thrum at them. Restored on destruction.
 struct FakeSpotify {
     QTemporaryDir root;
     QHash<QByteArray, QByteArray> saved;
     QHash<QString, QString> ids;
 
     explicit FakeSpotify(bool signedIn = true, const QString &artBase = "http://127.0.0.1:9") {
-        const QString fixtures = QString(OMAMP_TESTS_DIR) + "/fixtures/spotify";
+        const QString fixtures = QString(THRUM_TESTS_DIR) + "/fixtures/spotify";
         QDirIterator it(fixtures, QDir::Files, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             const QString from = it.next();
@@ -118,23 +118,23 @@ struct FakeSpotify {
         QDir().mkpath(config());
         if (signedIn)
             signIn();
-        set("PATH", QString(OMAMP_TESTS_DIR) + "/fake-spotify:" + qEnvironmentVariable("PATH"));
+        set("PATH", QString(THRUM_TESTS_DIR) + "/fake-spotify:" + qEnvironmentVariable("PATH"));
         set("FAKE_SPOTIFY_DIR", state());
-        set("OMAMP_SPOTIFY_PLAYER_CACHE", cache());
-        set("OMAMP_SPOTIFY_PLAYER_CONFIG", config());
-        set("OMAMP_SPOTIFY_PLAYER", "");
-        set("OMAMP_SPOTIFAST", "");
-        set("OMAMP_SPOTIFY_OEMBED", "off");
+        set("THRUM_SPOTIFY_PLAYER_CACHE", cache());
+        set("THRUM_SPOTIFY_PLAYER_CONFIG", config());
+        set("THRUM_SPOTIFY_PLAYER", "");
+        set("THRUM_SPOTIFAST", "");
+        set("THRUM_SPOTIFY_OEMBED", "off");
         // No session reader unless a test brings the fake one.
-        set("OMAMP_SPOTIFY_SESSION", "off");
-        set("OMAMP_SPOTIFY_TIMEOUT_MS", "5000");
-        set("OMAMP_SPOTIFY_LONG_TIMEOUT_MS", "8000");
+        set("THRUM_SPOTIFY_SESSION", "off");
+        set("THRUM_SPOTIFY_TIMEOUT_MS", "5000");
+        set("THRUM_SPOTIFY_LONG_TIMEOUT_MS", "8000");
         // Never Matt's real players: no MPRIS by default (a test that wants
         // one starts its own on a private bus), and no waiting.
-        set("OMAMP_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.omamp_test_absent");
-        set("OMAMP_SPOTIFY_MPRIS_BUS", "");
-        set("OMAMP_SPOTIFY_GAP_MS", "0");
-        set("OMAMP_SPOTIFY_WARMUP_MS", "0");
+        set("THRUM_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.thrum_test_absent");
+        set("THRUM_SPOTIFY_MPRIS_BUS", "");
+        set("THRUM_SPOTIFY_GAP_MS", "0");
+        set("THRUM_SPOTIFY_WARMUP_MS", "0");
         set("XDG_CONFIG_HOME", root.filePath("xdg-config"));
         set("XDG_CACHE_HOME", root.filePath("xdg-cache"));
     }

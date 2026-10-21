@@ -341,7 +341,7 @@ QVariantMap NasController::mountGuide(const QString &protocol, const QString &wh
     if (!o.value("ok").toBool()) {
         QString why = o.value("error").toString();
         if (why.isEmpty())
-            why = errText.trimmed().remove(QRegularExpression("^omamp: "));
+            why = errText.trimmed().remove(QRegularExpression("^thrum: "));
         // The command's own words name its flags; the window has fields.
         if (why.startsWith("--smb looks like"))
             why = tr("The share looks like //nas/music: two slashes, the NAS's name, then the share's.");

@@ -48,8 +48,8 @@ class Player : public QObject {
     // reaches the analyser: the visualisers show their idle animation.
     Q_PROPERTY(bool playsElsewhere READ playsElsewhere NOTIFY trackChanged)
     // Which engine plays ("qt" or "native") and whether it joins tracks
-    // without a gap. Chosen at start: OMAMP_ENGINE, else playback/engine in
-    // omamp.conf beside the state file, else "qt".
+    // without a gap. Chosen at start: THRUM_ENGINE, else playback/engine in
+    // thrum.conf beside the state file, else "qt".
     Q_PROPERTY(QString engineName READ engineName CONSTANT)
     Q_PROPERTY(bool gapless READ gapless CONSTANT)
     // Playback settings. The native engine acts on them; the Qt engine
@@ -85,8 +85,8 @@ public:
     Player(AudioEngine *engine, const QString &statePath, Resolver resolver, QObject *parent = nullptr);
     ~Player() override;
 
-    // The engine the settings choose (OMAMP_ENGINE, else playback/engine in
-    // omamp.conf beside the state file), for a caller that wraps it in a
+    // The engine the settings choose (THRUM_ENGINE, else playback/engine in
+    // thrum.conf beside the state file), for a caller that wraps it in a
     // HandoffEngine before passing it in.
     static AudioEngine *createEngine(const QString &statePath);
 

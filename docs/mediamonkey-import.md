@@ -1,6 +1,6 @@
 # Importing a MediaMonkey library
 
-`omamp import mediamonkey` brings across what MediaMonkey knows and your music
+`thrum import mediamonkey` brings across what MediaMonkey knows and your music
 files don't: ratings, play counts, skip counts, when each song was last
 played and added, the custom fields, the play history, playlists and
 AutoPlaylists. It never changes MediaMonkey's database or your music files,
@@ -8,8 +8,8 @@ and you can undo the whole import with one command.
 
 ## Before you start
 
-1. Scan your music into Omamp first (`omamp scan /mnt/nas/music`). The import
-   only fills in songs Omamp already has.
+1. Scan your music into Thrum first (`thrum scan /mnt/nas/music`). The import
+   only fills in songs Thrum already has.
 2. Copy MediaMonkey's database to this computer. MediaMonkey 4 keeps it as
    `MM.DB` and MediaMonkey 5 as `MM5.DB`, usually in
    `C:\Users\<you>\AppData\Roaming\MediaMonkey\` (MediaMonkey 5:
@@ -21,12 +21,12 @@ and you can undo the whole import with one command.
 ## Look first
 
 ```sh
-omamp import mediamonkey ~/MM.DB --map 'D:\Music=/mnt/nas/music' --dry-run
+thrum import mediamonkey ~/MM.DB --map 'D:\Music=/mnt/nas/music' --dry-run
 ```
 
 A dry run is the default; it changes nothing. It reports:
 
-- how many MediaMonkey songs it found, and how each was matched to an Omamp
+- how many MediaMonkey songs it found, and how each was matched to a Thrum
   track: by path, by folder and file name, or by artist, title and length;
 - the songs it couldn't match, with a sample of their paths;
 - each change it would make, counted by field;
@@ -42,7 +42,7 @@ MediaMonkey stored Windows paths. Each `--map` swaps a Windows prefix for a
 Linux folder. Repeat it for each drive or share:
 
 ```sh
-omamp import mediamonkey ~/MM.DB \
+thrum import mediamonkey ~/MM.DB \
     --map 'D:\Music=/mnt/nas/music' \
     --map '\\nas\audiobooks=/mnt/nas/audiobooks' \
     --dry-run
@@ -51,14 +51,14 @@ omamp import mediamonkey ~/MM.DB \
 Case and slash direction don't matter, and the longest matching prefix wins,
 so `D:\Music\Classical=/mnt/classical` can sit beside `D:\Music=...`. A song
 that no map fits is still matched by its last two or three folders and file
-name, when only one Omamp track has them, and failing that by artist, title
+name, when only one Thrum track has them, and failing that by artist, title
 and a length within three seconds. Good maps make the import faster and
 surer, so add the ones the dry run suggests.
 
 ## Import
 
 ```sh
-omamp import mediamonkey ~/MM.DB --map 'D:\Music=/mnt/nas/music' --apply
+thrum import mediamonkey ~/MM.DB --map 'D:\Music=/mnt/nas/music' --apply
 ```
 
 Everything is written in one transaction and recorded as one batch, whose id
@@ -68,12 +68,12 @@ the command prints (`mmimport-20261020-231500-a1b2`).
 
 | What | Rule |
 |---|---|
-| Rating | Filled in where Omamp has none. MediaMonkey's "unknown" (-1) is skipped. |
+| Rating | Filled in where Thrum has none. MediaMonkey's "unknown" (-1) is skipped. |
 | Play count, skip count | The larger of the two. |
 | Last played | The later of the two. |
 | Date added | The earlier of the two. |
-| Custom 1 to 5 | Filled in where Omamp's is empty. |
-| Play history | One row per MediaMonkey play, unless Omamp already has a play of that song at that second. |
+| Custom 1 to 5 | Filled in where Thrum's is empty. |
+| Play history | One row per MediaMonkey play, unless Thrum already has a play of that song at that second. |
 | Playlists | Under a new folder called MediaMonkey, with MediaMonkey's folders kept. |
 
 `--overwrite` takes MediaMonkey's value for every field it has, instead of
@@ -89,21 +89,21 @@ A static playlist keeps its order and its duplicates. An entry whose song
 didn't match keeps its mapped path, title and artist, so nothing is lost and
 the playlist still exports.
 
-An AutoPlaylist becomes an Omamp auto-playlist when its criteria translate to
+An AutoPlaylist becomes a Thrum auto-playlist when its criteria translate to
 the [query language](query-language.md). Ratings become stars (80 is four
 stars), lengths become seconds, `Date() - 30` becomes "in the last 30 days",
 and `ORDER BY` and `LIMIT` become `sort:` and `limit:`. When something
-doesn't translate, such as a field Omamp lacks, the AutoPlaylist is imported
+doesn't translate, such as a field Thrum lacks, the AutoPlaylist is imported
 as a plain playlist of the songs MediaMonkey listed for it (often none), and
 its note records MediaMonkey's criteria and the reason. The report lists
-each one, so you can rebuild it by hand with `omamp autoplaylist set`.
+each one, so you can rebuild it by hand with `thrum autoplaylist set`.
 
 ## Undo
 
 ```sh
-omamp import undo                   # the newest import
-omamp import undo mmimport-20261020-231500-a1b2
-omamp undo mmimport-20261020-231500-a1b2   # the same
+thrum import undo                   # the newest import
+thrum import undo mmimport-20261020-231500-a1b2
+thrum undo mmimport-20261020-231500-a1b2   # the same
 ```
 
 Undo puts back every value the import changed, deletes the playlists it made
@@ -111,9 +111,9 @@ and removes the history rows it added. Plays you made since the import are
 kept: a play count goes back down only by what the import added. A rating or
 date you changed yourself since the import stays as you set it.
 
-## What Omamp assumes about MediaMonkey's database
+## What Thrum assumes about MediaMonkey's database
 
-Omamp has not yet been tested on a real MediaMonkey database. The importer
+Thrum has not yet been tested on a real MediaMonkey database. The importer
 follows MediaMonkey 4's published schema ("Database Structure (MM4)" on the
 MediaMonkey wiki) and reads only the columns that exist, so a missing column
 is reported, not fatal. The tests build a small database in that shape.
@@ -122,7 +122,7 @@ The importer copies the database to a temporary folder and reads the copy
 with the SQLite C library. MediaMonkey declares its text columns with two
 custom collations, `IUNICODE` (case- and accent-insensitive) and
 `NUMERICSTRING` (numbers in text sorted as numbers). SQLite refuses to sort
-or search those columns without them, so Omamp registers stand-ins on the
+or search those columns without them, so Thrum registers stand-ins on the
 copy; any other unknown collation gets a case-insensitive stand-in.
 
 | Table and column | Used for | Confidence |
@@ -173,4 +173,4 @@ When you run the import on your real database, check the dry run's
 | `--apply` | write the changes |
 | `--overwrite` | take MediaMonkey's value wherever it has one, instead of merging |
 | `--json` | the full report as JSON |
-| `--db <path>` | another Omamp library |
+| `--db <path>` | another Thrum library |

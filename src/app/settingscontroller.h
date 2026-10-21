@@ -13,7 +13,7 @@ class LibraryController;
 // The Settings page's library side: the library's own settings table
 // (folders, watching, ratings in files, scrobbling, web services), read and
 // written through Library::setting(). Playback settings belong to the Player
-// and its omamp.conf. QML sees it as `library.appSettings`.
+// and its thrum.conf. QML sees it as `library.appSettings`.
 class SettingsController : public QObject {
     Q_OBJECT
     // Goes up after every change, so bindings that call value() read again.
@@ -63,7 +63,7 @@ public:
     // answers with flushed().
     Q_INVOKABLE void flushScrobbles();
     // Last.fm's desktop log-in: begin asks for a token and opens the page
-    // where you allow Omamp; finish, once you have, asks for the session
+    // where you allow Thrum; finish, once you have, asks for the session
     // and saves it with the user name. Each answers with lastFmResult().
     Q_INVOKABLE void beginLastFm();
     Q_INVOKABLE void finishLastFm();

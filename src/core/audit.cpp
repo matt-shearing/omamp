@@ -25,7 +25,7 @@ const QList<Audit> &audits() {
         {"unknown-year", "Unknown year", "Unknown", "Tracks with no year.", "year:none", {}},
         {"missing-artwork", "Missing artwork", "Artwork",
          "Tracks with no embedded picture whose album has no picture either. Albums the artwork cache has not "
-         "looked at yet count as missing; omamp art all looks at every album.",
+         "looked at yet count as missing; thrum art all looks at every album.",
          {},
          "t.has_embedded_art = 0 AND NOT EXISTS (SELECT 1 FROM albums a WHERE a.id = t.album_id AND "
          "a.artwork_id IS NOT NULL)"},

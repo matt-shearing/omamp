@@ -3,7 +3,7 @@
 // real server. A local HTTP server (audiohttp.h) serves the engine test
 // fixtures with and without byte ranges, slowly, in chunks, late, or
 // breaking off part-way. Every engine runs into an in-memory sink;
-// main() sets OMAMP_NO_AUDIO_DEVICE so a device sink would abort.
+// main() sets THRUM_NO_AUDIO_DEVICE so a device sink would abort.
 #include <QElapsedTimer>
 #include <QFile>
 #include <QProcess>
@@ -22,7 +22,7 @@
 #include "streaming.h"
 
 namespace {
-const QString kToken = QStringLiteral("u=fixture&t=5ecr3770ken&s=sa1t&v=1.16.1&c=omamp");
+const QString kToken = QStringLiteral("u=fixture&t=5ecr3770ken&s=sa1t&v=1.16.1&c=thrum");
 
 QVector<float> decodeAll(Decoder &d) {
     QVector<float> out;
@@ -127,9 +127,9 @@ class StreamingTests : public QObject {
 
 private slots:
     void initTestCase() {
-        QVERIFY(qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"));
+        QVERIFY(qEnvironmentVariableIsSet("THRUM_NO_AUDIO_DEVICE"));
         QProcess make;
-        make.start(QStringLiteral(OMAMP_TESTS_DIR "/make-engine-fixtures"), {m_dir.path()});
+        make.start(QStringLiteral(THRUM_TESTS_DIR "/make-engine-fixtures"), {m_dir.path()});
         QVERIFY(make.waitForFinished(120000));
         QVERIFY2(make.exitCode() == 0, make.readAllStandardError().constData());
         QVERIFY(QFile::copy(fx("a.flac"), fx("a3.flac")));
@@ -166,7 +166,7 @@ private slots:
         QVERIFY(Playlist::isReference("https://example.com/a.mp3"));
         QVERIFY(!Playlist::isReference("/music/a.flac"));
         QVERIFY(!Playlist::isReference("file:///music/a.flac"));
-        QVERIFY(Streaming::userAgent().startsWith("Omamp/"));
+        QVERIFY(Streaming::userAgent().startsWith("Thrum/"));
     }
 
     void decoderOpensAStream() {
@@ -181,7 +181,7 @@ private slots:
         QCOMPARE(maxDiff(decodeAll(d), decodeFile(fx("part1.flac"))), 0.0);
         const auto requests = m_http->requests();
         QVERIFY(!requests.isEmpty());
-        QVERIFY2(requests.first().headers.value("user-agent").startsWith("Omamp/"),
+        QVERIFY2(requests.first().headers.value("user-agent").startsWith("Thrum/"),
                  requests.first().headers.value("user-agent").constData());
         QVERIFY(requests.first().query.contains("t=5ecr3770ken"));
     }

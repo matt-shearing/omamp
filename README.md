@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="pkgbuild/omamp.svg" width="96" alt="">
+<img src="pkgbuild/thrum.svg" width="96" alt="">
 
-# Omamp
+# Thrum
 
 **A Winamp-style music player and MediaMonkey-style library manager for Omarchy and Hyprland.**
 
@@ -11,17 +11,17 @@
 [![Arch Linux and Omarchy](https://img.shields.io/badge/Arch%20Linux%20%C2%B7%20Omarchy-1793D1?logo=archlinux&logoColor=white)](https://github.com/basecamp/omarchy)
 [![Qt 6 and C++](https://img.shields.io/badge/Qt%206%20%C2%B7%20C%2B%2B-41CD52?logo=qt&logoColor=white)](https://www.qt.io)
 
-[Why Omamp](#why-omamp) · [Tour](#a-tour) · [Install](#install) · [Quick start](#quick-start) · [Keys](#keys) · [Guides](#guides) · [Status](#status-and-honest-limits)
+[Why Thrum](#why-thrum) · [Tour](#a-tour) · [Install](#install) · [Quick start](#quick-start) · [Keys](#keys) · [Guides](#guides) · [Status](#status-and-honest-limits)
 
 </div>
 
-<img alt="The Omamp library: the menu bar, the playing track with its cover and analyser, the column browser, an album grid of covers and the info panel" src="docs/hero-dark.png">
+<img alt="The Thrum library: the menu bar, the playing track with its cover and analyser, the column browser, an album grid of covers and the info panel" src="docs/hero-dark.png">
 
-<p align="center"><sub>Every picture here is the real app, drawn offscreen with a made-up library. They follow GitHub's light or dark mode, as Omamp follows the Omarchy theme.</sub></p>
+<p align="center"><sub>Every picture here is the real app, drawn offscreen with a made-up library. They follow GitHub's light or dark mode, as Thrum follows the Omarchy theme.</sub></p>
 
-## Why Omamp
+## Why Thrum
 
-Omamp is built for Omarchy first. Every colour comes from the current Omarchy
+Thrum is built for Omarchy first. Every colour comes from the current Omarchy
 theme and changes the moment the theme does, window corners match Hyprland's,
 and the media keys, `playerctl` and the Omarchy bar all control it. It is
 driven from the keyboard, installs as an Arch package, and runs on any Linux
@@ -92,7 +92,7 @@ switch it off. See
 
 `N` opens the big view: the cover, the rating, what's next, timed lyrics and a
 visualiser, with `F11` for fullscreen. `Ctrl+M` and `Ctrl+Shift+M` shrink
-Omamp to a mini player or to Winamp's windowshade.
+Thrum to a mini player or to Winamp's windowshade.
 
 <img alt="The big Now Playing view with the cover, timed lyrics and the analyser" src="docs/now-playing-big-light.png">
 
@@ -124,7 +124,7 @@ beside your own files; they play on Spotify when their turn comes.
 
 Your Spotify playlists, Liked Songs, saved albums, followed artists and search
 sit in the library tree. Choose several tracks and play them, queue them, or
-add them to an Omamp or a Spotify playlist. Omamp never sees your Spotify
+add them to a Thrum or a Spotify playlist. Thrum never sees your Spotify
 password: it drives [spotify_player](https://github.com/aome510/spotify-player),
 which keeps its own sign-in. Playing needs Spotify Premium.
 
@@ -144,7 +144,7 @@ A bar plugin shows a small cover, the play state and the track. Click it for a
 panel led by a large cover, with seek, transport, shuffle, repeat and volume.
 
 <p align="center">
-  <img alt="The Omamp bar widget and its panel" src="docs/omarchy-plugin-dark.png" width="380">
+  <img alt="The Thrum bar widget and its panel" src="docs/omarchy-plugin-dark.png" width="380">
 </p>
 
 There is more in the guides: [device sync](docs/sync.md) to a phone, a USB
@@ -154,7 +154,7 @@ page, [NAS and Navidrome](docs/nas.md) libraries, and the
 
 ## Install
 
-Omamp is not in the AUR yet; the package files are ready in [aur/](aur/).
+Thrum is not in the AUR yet; the package files are ready in [aur/](aur/).
 For now, build it from source on Arch or Omarchy.
 
 1. Install what it builds against:
@@ -167,20 +167,20 @@ For now, build it from source on Arch or Omarchy.
 2. Clone it and install it, either as a package or into your home folder:
 
    ```sh
-   git clone https://github.com/matt-shearing/omamp.git
-   cd omamp
+   git clone https://github.com/matt-shearing/thrum.git
+   cd thrum
    bin/install          # builds an Arch package and installs it (asks for sudo)
    bin/install-user     # or: installs into ~/.local, no sudo
    ```
 
-   Omamp then appears in the app launcher (`Super + Space`).
+   Thrum then appears in the app launcher (`Super + Space`).
 
 3. Optional extras:
 
    - **The bar plugin:** `omarchy-plugin/install`, then `omarchy-restart-shell`.
      See [its README](omarchy-plugin/README.md).
    - **Spotify:** `omarchy-pkg-add spotify-player`. The build also makes a small
-     helper, `omamp-spotify-session`, when Rust's `cargo` is installed; it reads
+     helper, `thrum-spotify-session`, when Rust's `cargo` is installed; it reads
      the playlists Spotify makes and artists' top tracks.
    - `chromaprint` finds duplicates by sound, `libsecret` keeps NAS and
      Navidrome passwords in the keyring, and `xdg-desktop-portal` gives the
@@ -188,10 +188,10 @@ For now, build it from source on Arch or Omarchy.
 
 ## Quick start
 
-1. **Open Omamp.** The first time, a short setup walks you through where
-   Omamp starts, the player's look and visualiser, the library's layout and
+1. **Open Thrum.** The first time, a short setup walks you through where
+   Thrum starts, the player's look and visualiser, the library's layout and
    your music. Each choice shows in the window as you pick it, and **Help →
-   Run setup again…** brings it back later. Omamp also adds `~/Music` to the
+   Run setup again…** brings it back later. Thrum also adds `~/Music` to the
    deck. Drop files or folders on the window, or press `O` to add a folder.
 2. **Open the library** with `Tab`, **View → Library**, or the **Library**
    button on the deck. Choose **Add folder…** to add your music folders. The
@@ -200,14 +200,14 @@ For now, build it from source on Arch or Omarchy.
 3. **Find things** with the search box (`/`), the column browser (`Ctrl+B`),
    the album grid (`G`) or the command palette (`Ctrl+K`).
 4. **Spotify:** open **Settings → Spotify**, switch on **Show Spotify in
-   Omamp**, and press **Sign in…**. Spotify limits how often a shared app may
+   Thrum**, and press **Sign in…**. Spotify limits how often a shared app may
    ask, so lists can be slow; [your own Spotify client ID](docs/spotify.md#rate-limits-and-your-own-client-id)
    takes five minutes to set up and fixes most of it.
 5. **Radio:** press `Shift+R` and pick a Nightride FM channel.
 
 ## Keys
 
-Omamp keeps Winamp's keys and adds its own. These are the ones to learn
+Thrum keeps Winamp's keys and adds its own. These are the ones to learn
 first; [docs/keys.md](docs/keys.md) has them all, and `?` shows them in the
 window.
 
@@ -232,14 +232,14 @@ The library also works from a terminal, sharing one library with the window.
 Every command takes `--json` for scripts.
 
 ```sh
-omamp scan ~/Music                       # add a folder and scan it
-omamp query 'artist:"neon coast" rating:4..'
-omamp radio play darksynth               # tune the running Omamp in
-omamp sync run Phone --dry-run           # what a sync would copy, convert and delete
+thrum scan ~/Music                       # add a folder and scan it
+thrum query 'artist:"neon coast" rating:4..'
+thrum radio play darksynth               # tune the running Thrum in
+thrum sync run Phone --dry-run           # what a sync would copy, convert and delete
 ```
 
 [docs/command-line.md](docs/command-line.md) lists the commands, and
-`omamp help` prints them all.
+`thrum help` prints them all.
 
 ## Guides
 
@@ -247,7 +247,7 @@ omamp sync run Phone --dry-run           # what a sync would copy, convert and d
 | --- | --- |
 | [The library](docs/library.md) | Getting around, the library window, tags, organising, Files to Edit and duplicates |
 | [Keys](docs/keys.md) | Every key, in the deck and the library |
-| [Command line](docs/command-line.md) | The `omamp` commands, for people and scripts |
+| [Command line](docs/command-line.md) | The `thrum` commands, for people and scripts |
 | [Now playing](docs/now-playing.md) | Covers, the big view, the mini players, visualisers and deck styles |
 | [Query language](docs/query-language.md) | Searches and auto-playlists |
 | [Masks](docs/masks.md) | File names and folders for organising, and tags from file names |
@@ -265,7 +265,7 @@ plan and the detailed progress log are in [docs/plan/](docs/plan/).
 
 ## Status and honest limits
 
-Omamp is young (0.3.3) and changes quickly. It has a large automated test
+Thrum is young (0.3.3) and changes quickly. It has a large automated test
 suite (`bin/test`), but the tests run against made-up music, pretend web
 services and simulated network shares. Some things have not been tried for
 real yet:
@@ -284,19 +284,19 @@ real yet:
 - **The native engine** (gapless playback, crossfade, ReplayGain and the
   equaliser) is still marked experimental; Qt Multimedia plays by default.
 - **English only** for now, though every string is ready for translation.
-- **Last.fm** needs your own API key; Omamp doesn't ship one.
+- **Last.fm** needs your own API key; Thrum doesn't ship one.
 
-If something breaks, please [open an issue](https://github.com/matt-shearing/omamp/issues).
+If something breaks, please [open an issue](https://github.com/matt-shearing/thrum/issues).
 
 ## Credits and licence
 
-Omamp is MIT-licensed. Theme following and the project layout come from
+Thrum is MIT-licensed. Theme following and the project layout come from
 Omacut and Monologue by David Heinemeier Hansson, also MIT.
 
 Spotify works through [spotify_player](https://github.com/aome510/spotify-player),
 and the session helper is built on [librespot](https://github.com/librespot-org/librespot).
 The radio channels are [Nightride FM](https://nightride.fm)'s and the Rekt
-Network's; Omamp plays their public streams.
+Network's; Thrum plays their public streams.
 
-Omamp is inspired by Winamp and MediaMonkey, and is not affiliated with
+Thrum is inspired by Winamp and MediaMonkey, and is not affiliated with
 either, nor with Spotify or Nightride FM.

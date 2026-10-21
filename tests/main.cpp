@@ -1,7 +1,7 @@
 // Runs every test class in one binary, offscreen. Each class prints its own
 // Totals line; the exit code is non-zero if any of them failed.
 //
-// OMAMP_TESTS=query,palette runs only the named classes (player, library,
+// THRUM_TESTS=query,palette runs only the named classes (player, library,
 // query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, nas, subsonic, p3window, p45window, streaming, sync, syncwindow, nowplaying, spotify, radio, menu, mixed, layout, visualiser, setup, levelsfeed), for a quick loop or a machine that must stay silent.
 #include <QGuiApplication>
 #include <QQmlEngine>
@@ -44,14 +44,14 @@ int main(int argc, char **argv) {
     qputenv("QT_QUICK_BACKEND", "software");
     // Never out of the speakers: the native engine's device sink aborts and
     // the Qt engine leaves out its audio output.
-    qputenv("OMAMP_NO_AUDIO_DEVICE", "1");
+    qputenv("THRUM_NO_AUDIO_DEVICE", "1");
     // Never in the desktop keyring: remote source secrets go to a file under
     // the temporary XDG_CONFIG_HOME the remote tests set.
-    qputenv("OMAMP_SECRET_STORE", "file");
+    qputenv("THRUM_SECRET_STORE", "file");
     QGuiApplication app(argc, argv);
     // The visualiser, as main() registers it for the app.
-    qmlRegisterType<Visualiser>("Omamp", 1, 0, "Visualiser");
-    const QStringList only = qEnvironmentVariable("OMAMP_TESTS").split(',', Qt::SkipEmptyParts);
+    qmlRegisterType<Visualiser>("Thrum", 1, 0, "Visualiser");
+    const QStringList only = qEnvironmentVariable("THRUM_TESTS").split(',', Qt::SkipEmptyParts);
     auto wanted = [&](const char *name) { return only.isEmpty() || only.contains(QLatin1String(name)); };
     int failures = 0;
     if (wanted("player"))

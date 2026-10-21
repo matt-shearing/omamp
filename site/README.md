@@ -1,6 +1,6 @@
-# The Omamp website
+# The Thrum website
 
-A one-page website for Omamp. It is plain HTML and CSS with a few lines of
+A one-page website for Thrum. It is plain HTML and CSS with a few lines of
 JavaScript for the Copy buttons, and it needs no build step: serve this
 folder as it is.
 
@@ -12,7 +12,7 @@ folder as it is.
 | `img/` | The screenshots from `docs/`, as AVIF and WebP with a PNG for old browsers |
 | `fonts/` | Latin subsets of Manrope and JetBrains Mono, served from here so no font service is involved |
 | `og.jpg` | The picture shown when the link is shared |
-| `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` | Icons made from `pkgbuild/omamp.svg` |
+| `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` | Icons made from `pkgbuild/thrum.svg` |
 | `tools/` | The asset builder and the screenshot script; not published |
 
 The page has no analytics, no trackers and no third-party requests.
@@ -55,6 +55,6 @@ existing one when adding another.
 `.github/workflows/pages.yml` publishes this folder to GitHub Pages. It runs
 only when started by hand, and only after Pages is switched on for the
 repository, so merging it changes nothing in public. The planned address is
-`https://omamp.tetelestai.dev/`, which is also written into the page's
+`https://matt-shearing.github.io/thrum/`, which is also written into the page's
 canonical link and social tags; change those three places in `index.html` if
 the site moves.

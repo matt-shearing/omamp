@@ -9,7 +9,7 @@ class Library;
 
 // Reports: a list of tracks written out as CSV (for a spreadsheet) or as a
 // self-contained HTML page (to read, print or send). MediaMonkey's "Export
-// to CSV/HTML" reports, for any list Omamp can show: a query, a playlist, an
+// to CSV/HTML" reports, for any list Thrum can show: a query, a playlist, an
 // auto-playlist, a collection or whatever the window is showing.
 namespace Report {
 

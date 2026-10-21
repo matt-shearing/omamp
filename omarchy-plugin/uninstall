@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Take the Omamp widget off the bar and remove the plugin link. Omamp itself
+# Take the Thrum widget off the bar and remove the plugin link. Thrum itself
 # is untouched.
 
 set -euo pipefail
 
-PLUGIN_ID="contra.omamp"
+PLUGIN_ID="contra.thrum"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 SHELL_JSON="$HOME/.config/omarchy/shell.json"
 

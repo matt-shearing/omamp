@@ -111,7 +111,7 @@ ScrollView {
 
         Heading { text: qsTr("Mini player") }
         Note {
-            text: qsTr("Ctrl+M switches to the mini player and back; Ctrl+Shift+M to the micro player. Wayland lets no window place itself or stay on top, so a Hyprland rule for the titles “Omamp mini” and “Omamp micro” floats and pins them. docs/now-playing.md has the rule.")
+            text: qsTr("Ctrl+M switches to the mini player and back; Ctrl+Shift+M to the micro player. Wayland lets no window place itself or stay on top, so a Hyprland rule for the titles “Thrum mini” and “Thrum micro” floats and pins them. docs/now-playing.md has the rule.")
         }
 
         // The library window's layout: the Art column, the sidebar, the bar.

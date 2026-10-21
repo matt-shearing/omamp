@@ -201,7 +201,7 @@ bool checkDatabaseIsLocal(const QString &dbPath, const VolumeResolver &resolver,
         return true;
     if (error)
         *error = QString("The library file %1 is on a network share (%2, %3). SQLite can corrupt a database "
-                         "there; keep the library on a local disk (the default is ~/.local/share/omamp) and add "
+                         "there; keep the library on a local disk (the default is ~/.local/share/thrum) and add "
                          "the share's music folder to it instead.")
                      .arg(dbPath, mount.fsType, mount.source);
     return false;

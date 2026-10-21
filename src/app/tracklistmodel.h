@@ -46,7 +46,7 @@ public:
         NumericRole,                   // the column holds a number: right-aligned
         RemoteRole,                    // mirrored from a Navidrome / Subsonic server
         OfflineNoteRole,               // why the track can't play ("On nas, which isn't connected"), or ""
-        ArtRole,                       // "image://omamp-art/album/<id>/96?v=<n>", or "" when it has no picture
+        ArtRole,                       // "image://thrum-art/album/<id>/96?v=<n>", or "" when it has no picture
     };
 
     // One track as the list shows it.

@@ -24,7 +24,7 @@ QString PeaksKey::id() const {
 }
 
 PeaksCache::PeaksCache(const QString &dir)
-    : m_dir(dir.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/omamp/peaks"
+    : m_dir(dir.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/thrum/peaks"
                           : dir) {}
 
 PeaksKey PeaksCache::keyFor(const Library &library, qint64 trackId, QString *error) {

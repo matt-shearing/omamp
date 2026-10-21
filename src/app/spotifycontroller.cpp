@@ -70,11 +70,11 @@ bool defaultLaunch(const QStringList &command) {
 SpotifyArt::SpotifyArt(const QString &cacheDir, QObject *parent)
     : QObject(parent),
       m_dir(cacheDir.isEmpty()
-                ? QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/omamp/spotify"
+                ? QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/thrum/spotify"
                 : cacheDir) {}
 
 QString SpotifyArt::oembedBase() {
-    const QString env = qEnvironmentVariable("OMAMP_SPOTIFY_OEMBED");
+    const QString env = qEnvironmentVariable("THRUM_SPOTIFY_OEMBED");
     return env.isEmpty() ? QString("https://open.spotify.com/oembed") : env;
 }
 
@@ -168,7 +168,7 @@ void SpotifyArt::lookUp(const QString &key, const QString &webUrl) {
     q.addQueryItem("url", webUrl);
     url.setQuery(q);
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, "Omamp/" + QCoreApplication::applicationVersion());
+    request.setHeader(QNetworkRequest::UserAgentHeader, "Thrum/" + QCoreApplication::applicationVersion());
     request.setTransferTimeout(15000);
     QNetworkReply *reply = m_net.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, key] {
@@ -195,7 +195,7 @@ void SpotifyArt::lookUpTitle(const QString &webUrl, std::function<void(const QSt
     q.addQueryItem("url", webUrl);
     url.setQuery(q);
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, "Omamp/" + QCoreApplication::applicationVersion());
+    request.setHeader(QNetworkRequest::UserAgentHeader, "Thrum/" + QCoreApplication::applicationVersion());
     request.setTransferTimeout(15000);
     QNetworkReply *reply = m_net.get(request);
     connect(reply, &QNetworkReply::finished, this, [reply, done] {
@@ -208,7 +208,7 @@ void SpotifyArt::lookUpTitle(const QString &webUrl, std::function<void(const QSt
 
 void SpotifyArt::download(const QString &key, const QUrl &url) {
     QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, "Omamp/" + QCoreApplication::applicationVersion());
+    request.setHeader(QNetworkRequest::UserAgentHeader, "Thrum/" + QCoreApplication::applicationVersion());
     request.setTransferTimeout(15000);
     QNetworkReply *reply = m_net.get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply, key] {
@@ -582,7 +582,7 @@ void SpotifyPlayback::startFollowing() {
         if (m_state == AudioEngine::Playing)
             m_position.start();
         onMpris();
-        // spotify_player's MPRIS has no id; a track whose name Omamp
+        // spotify_player's MPRIS has no id; a track whose name Thrum
         // doesn't know yet is confirmed by one read of the state.
         if (m_starting && m_track.name.isEmpty() && !m_askedOnce) {
             m_askedOnce = true;
@@ -743,7 +743,7 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
             m_confirmed = true;
             emit bufferingChanged();
             // The playback state has the album and its picture; MPRIS has
-            // no ids, so what Omamp knew stays.
+            // no ids, so what Thrum knew stays.
             const qint64 oldDuration = m_track.durationMs;
             if (m_context) {
                 m_track = p.track;
@@ -794,7 +794,7 @@ void SpotifyPlayback::onPolled(const Spotify::Playback &p, const QString &error)
             m_pausedByUs = true;
             setState(AudioEngine::Paused);
             if (p.valid)
-                m_c->setMessage(tr("Spotify is playing something else now, so Omamp paused its queue."));
+                m_c->setMessage(tr("Spotify is playing something else now, so Thrum paused its queue."));
         }
         return;
     }
@@ -871,9 +871,9 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
         const int v = qEnvironmentVariableIntValue(name, &ok);
         return ok && v >= 0 ? v : fallback;
     };
-    m_requests.setGapMs(envMs("OMAMP_SPOTIFY_GAP_MS", 300));
-    m_warmupMs = envMs("OMAMP_SPOTIFY_WARMUP_MS", 6000);
-    m_slowMs = envMs("OMAMP_SPOTIFY_SLOW_MS", 4000);
+    m_requests.setGapMs(envMs("THRUM_SPOTIFY_GAP_MS", 300));
+    m_warmupMs = envMs("THRUM_SPOTIFY_WARMUP_MS", 6000);
+    m_slowMs = envMs("THRUM_SPOTIFY_SLOW_MS", 4000);
     makeBackend();
     // What Spotify refused today, per client ID, beside the pictures.
     m_refusals.setFile(m_art.dir() + "/refused.json");
@@ -1121,7 +1121,7 @@ void SpotifyController::setRateLimited(bool on, const QDateTime &until) {
 
 // Whether Spotify is rate-limiting spotify_player: its error says so, or
 // its log does. While it is, the data lane waits until Spotify said to try
-// again, so Omamp doesn't add to the pile.
+// again, so Thrum doesn't add to the pile.
 void SpotifyController::checkRateLimit(bool failed, const QString &error) {
     const QDateTime now = QDateTime::currentDateTimeUtc();
     Spotify::LogNews news;
@@ -1146,7 +1146,7 @@ void SpotifyController::checkRateLimit(bool failed, const QString &error) {
     }
 }
 
-// Remembers what Spotify refused your client ID, so Omamp doesn't ask for
+// Remembers what Spotify refused your client ID, so Thrum doesn't ask for
 // it again today. A playlist that is loading now and turns out refused
 // stops waiting: spotify_player is asking ncspot's shared, rate-limited ID
 // instead, which can take a minute. Its answer still fills the cache if it
@@ -1195,7 +1195,7 @@ QString SpotifyController::viewNote() const {
     if (m_view.showTracks)
         return why + ' ' + tr("Listing them goes through a shared connection that Spotify keeps busy, so it can take a "
                               "minute.");
-    return why + ' ' + tr("Omamp can still play it: Spotify plays the whole playlist, and the deck follows each track.");
+    return why + ' ' + tr("Thrum can still play it: Spotify plays the whole playlist, and the deck follows each track.");
 }
 
 // --- Status ---------------------------------------------------------------------------
@@ -1210,12 +1210,12 @@ QString SpotifyController::statusText() const {
     if (m_settings.backend == "spotifast") {
         if (!m_status.running)
             return tr("Spotifast isn't open. Open it, sign in there, then check again.");
-        return tr("Spotifast is open. Omamp can play Spotify links in Now Playing, pause and seek them, but can't search or "
+        return tr("Spotifast is open. Thrum can play Spotify links in Now Playing, pause and seek them, but can't search or "
                   "read your library through Spotifast.");
     }
     if (!m_status.signedIn)
         return tr("Not signed in. Sign in opens spotify_player's own sign-in in a terminal; your browser asks Spotify "
-                  "for permission. Omamp never sees your password.");
+                  "for permission. Thrum never sees your password.");
     if (!m_status.running)
         return m_status.error.isEmpty() ? tr("Signed in, but spotify_player isn't running.") : m_status.error;
     QString text = m_status.account.isEmpty() ? tr("Connected.") : tr("Connected as %1.").arg(m_status.account);
@@ -1306,7 +1306,7 @@ void SpotifyController::refreshStatus() {
                 return;
             }
             // spotify_player reads the whole library from Spotify as it
-            // starts; Omamp waits before it asks for more.
+            // starts; Thrum waits before it asks for more.
             if (r.extra.value("started").toBool())
                 m_requests.holdData(m_warmupMs);
             emit statusChanged();
@@ -1382,7 +1382,7 @@ bool SpotifyController::signIn() {
     }
     m_signInChecks = 0;
     m_signInWait.start();
-    setMessage(tr("Finish signing in in the terminal and your browser. Omamp notices when you're done."));
+    setMessage(tr("Finish signing in in the terminal and your browser. Thrum notices when you're done."));
     emit statusChanged();
     return true;
 }
@@ -1486,7 +1486,7 @@ bool SpotifyController::useOwnClientId(const QString &id) {
             else if (r.extra.contains("stopError"))
                 text += ' ' + r.extra.value("stopError").toString();
             text += ' ' + tr("Now sign in again with the new ID: press Sign in…, or run “spotify_player authenticate” in "
-                             "a terminal. Omamp starts spotify_player once you're signed in.");
+                             "a terminal. Thrum starts spotify_player once you're signed in.");
             say(text);
             refreshStatus();
         });
@@ -1839,7 +1839,7 @@ void SpotifyController::setViewVisible(bool visible) {
     if (m_viewStale)
         load(m_view);
     // What plays now: MPRIS says it for free. Without it, one read when
-    // the view is shown (at most every 15 s), never a timer: while Omamp
+    // the view is shown (at most every 15 s), never a timer: while Thrum
     // plays a Spotify track its own following keeps this fresh.
     if (m_mpris.available()) {
         noteMpris();
@@ -1864,7 +1864,7 @@ void SpotifyController::noteMpris() {
 void SpotifyController::noteNowPlaying(const Spotify::Playback &given) {
     Spotify::Playback p = given;
     // MPRIS from spotify_player names no id: find the track among those
-    // Omamp has seen, so its cover and Liked state are known.
+    // Thrum has seen, so its cover and Liked state are known.
     if (p.valid && p.track.id.isEmpty() && !p.track.name.isEmpty()) {
         Spotify::Item match;
         if (m_playback.isOurs(p))
@@ -2043,7 +2043,7 @@ QString SpotifyController::activateUri(const QString &text) {
             if (p.id == id)
                 container = p;
         if (!m_backend->caps().library) {
-            setMessage(tr("%1 can only play single tracks from Omamp.").arg(m_backend->name()));
+            setMessage(tr("%1 can only play single tracks from Thrum.").arg(m_backend->name()));
             return {};
         }
         openContainer(container, false);
@@ -2243,7 +2243,7 @@ void SpotifyController::addChosenToNewSpotifyPlaylist(SpotifyItemsModel *model, 
         });
 }
 
-bool SpotifyController::addChosenToOmampPlaylist(SpotifyItemsModel *model, qint64 playlistId) {
+bool SpotifyController::addChosenToThrumPlaylist(SpotifyItemsModel *model, qint64 playlistId) {
     if (!model || playlistId <= 0)
         return false;
     const QList<int> rows = model->chosenRows();
@@ -2251,7 +2251,7 @@ bool SpotifyController::addChosenToOmampPlaylist(SpotifyItemsModel *model, qint6
         // One album or playlist: its tracks, read first.
         const Spotify::Item item = model->at(rows.first());
         if (item.kind == "artist" || isRestricted(item)) {
-            setMessage(tr("Open it and choose its tracks to put them in an Omamp playlist"));
+            setMessage(tr("Open it and choose its tracks to put them in a Thrum playlist"));
             return false;
         }
         View v;
@@ -2269,7 +2269,7 @@ bool SpotifyController::addChosenToOmampPlaylist(SpotifyItemsModel *model, qint6
             for (const Spotify::Item &t : r.items)
                 if (t.kind == "track")
                     entries << entryFor(t);
-            emit omampEntriesReady(playlistId, entries);
+            emit thrumEntriesReady(playlistId, entries);
         });
         return true;
     }
@@ -2280,7 +2280,7 @@ bool SpotifyController::addChosenToOmampPlaylist(SpotifyItemsModel *model, qint6
     QVariantList entries;
     for (const Spotify::Item &t : tracks)
         entries << entryFor(t);
-    emit omampEntriesReady(playlistId, entries);
+    emit thrumEntriesReady(playlistId, entries);
     return true;
 }
 
@@ -2418,7 +2418,7 @@ void SpotifyController::runPaletteSearch() {
     });
 }
 
-// Omamp's volume slider sets the Spotify player's volume too, over its MPRIS
+// Thrum's volume slider sets the Spotify player's volume too, over its MPRIS
 // service. Without MPRIS (Spotifast's own volume, or no service) it is left.
 //
 // The engines take a linear gain, made from the slider's perceptual scale.

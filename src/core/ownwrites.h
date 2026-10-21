@@ -5,7 +5,7 @@
 // The files and folders this process is changing itself: the tag writer's
 // replacements, the organiser's moves and the folders it makes and removes,
 // and files sent to the trash. The folder watcher asks here before it treats
-// an inotify event as a change from outside, so Omamp's own writes never
+// an inotify event as a change from outside, so Thrum's own writes never
 // start a rescan of their own (the writers update the library rows
 // themselves).
 //
@@ -29,8 +29,8 @@ int lifetime();
 // Forgets every note. For tests.
 void clear();
 
-// The temporary files Omamp writes beside a target start with this; both
+// The temporary files Thrum writes beside a target start with this; both
 // the watcher and the scanner skip them, as they skip every hidden name.
-inline constexpr char temporaryPrefix[] = ".omamp-";
+inline constexpr char temporaryPrefix[] = ".thrum-";
 
 } // namespace OwnWrites

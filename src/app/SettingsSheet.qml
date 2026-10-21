@@ -6,7 +6,7 @@ import QtQuick.Layouts
 // Settings, on five pages: Playback (engine, crossfade, ReplayGain, the
 // equaliser), Library (folders, watching, ratings in files), Scrobbling,
 // Web, and Appearance (AppearancePage.qml: deck style, visualiser, big view). Everything applies as it is changed; playback settings go to
-// the player's omamp.conf, the rest to the library.
+// the player's thrum.conf, the rest to the library.
 ToolSheet {
     id: sheet
     objectName: "settingsSheet"
@@ -125,7 +125,7 @@ ToolSheet {
                     }
                     Note {
                         text: backend.preferredEngine !== backend.engineName
-                              ? qsTr("Takes effect the next time Omamp starts. Playing now: %1.").arg(backend.engineName === "native" ? qsTr("native") : qsTr("Qt Multimedia"))
+                              ? qsTr("Takes effect the next time Thrum starts. Playing now: %1.").arg(backend.engineName === "native" ? qsTr("native") : qsTr("Qt Multimedia"))
                               : backend.engineName === "native" ? qsTr("Playing through the native engine.")
                               : qsTr("The settings below are kept, and apply once the native engine plays.")
                     }
@@ -318,7 +318,7 @@ ToolSheet {
                         }
                         FieldLabel { text: qsTr("minutes (0: never)") }
                     }
-                    Note { text: qsTr("Local disks are watched as they change. Shares on a NAS can't tell Omamp about changes made by other machines, so they are checked on this schedule, by file size and date only.") }
+                    Note { text: qsTr("Local disks are watched as they change. Shares on a NAS can't tell Thrum about changes made by other machines, so they are checked on this schedule, by file size and date only.") }
 
                     Heading { text: qsTr("Ratings and play counts") }
                     CheckBox {
@@ -327,7 +327,7 @@ ToolSheet {
                         checked: sheet.on("tags.write_ratings", false)
                         onClicked: sheet.s.setFlag("tags.write_ratings", checked)
                     }
-                    Note { text: qsTr("Off: ratings and play counts stay in Omamp's library, so playing music never rewrites files on a NAS.") }
+                    Note { text: qsTr("Off: ratings and play counts stay in Thrum's library, so playing music never rewrites files on a NAS.") }
                     Item { height: 12; width: 1 }
                 }
             }
@@ -522,7 +522,7 @@ ToolSheet {
                             color: theme.c.foreground
                         }
                     }
-                    Note { text: qsTr("Omamp sends the queue after each counted play and when it starts; this sends it now.") }
+                    Note { text: qsTr("Thrum sends the queue after each counted play and when it starts; this sends it now.") }
                     Item { height: 12; width: 1 }
                 }
             }

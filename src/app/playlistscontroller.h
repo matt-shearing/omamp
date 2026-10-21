@@ -31,7 +31,7 @@ public:
     // After the library opens.
     void attach();
     // Spotify, for mixed playlists: whether its tracks can play now, what
-    // it knows of them, and the tracks its views add to Omamp playlists.
+    // it knows of them, and the tracks its views add to Thrum playlists.
     void setSpotify(SpotifyController *spotify);
 
     // Each returns the new id, or 0 with a message in a toast.

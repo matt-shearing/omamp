@@ -18,7 +18,7 @@ struct VolumeCheck {
     QStringList libraryRoots;  // the library folders on it, as absolute paths (when online)
 };
 
-// Counts for `omamp stats` and, later, the status line of the library window.
+// Counts for `thrum stats` and, later, the status line of the library window.
 struct LibraryStats {
     qint64 tracks = 0, online = 0, offline = 0, missing = 0;
     qint64 volumes = 0, volumesOnline = 0, folders = 0;
@@ -34,7 +34,7 @@ struct LibraryStats {
 // the same file; WAL lets readers carry on while one writer commits.
 class Library {
 public:
-    // An empty path means the default, ~/.local/share/omamp/library.db
+    // An empty path means the default, ~/.local/share/thrum/library.db
     // (following XDG_DATA_HOME). Tests always pass a temporary path.
     explicit Library(const QString &path = {});
     ~Library();

@@ -429,6 +429,6 @@ void LibraryController::countAudits() {
             },
             Qt::QueuedConnection);
     });
-    m_auditThread->setObjectName("omamp-audits");
+    m_auditThread->setObjectName("thrum-audits");
     m_auditThread->start(QThread::LowPriority);
 }

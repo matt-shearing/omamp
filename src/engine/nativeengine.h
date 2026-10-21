@@ -13,7 +13,7 @@ class Reader;
 class Worker;
 } // namespace native
 
-// Omamp's own engine. A worker thread decodes with FFmpeg, joins tracks
+// Thrum's own engine. A worker thread decodes with FFmpeg, joins tracks
 // sample for sample (or crossfades them), applies ReplayGain and the
 // equaliser, and writes float stereo at the sink's rate into a ring buffer;
 // the sink pulls from it, with volume and pause ramps applied on the way.
@@ -26,7 +26,7 @@ class NativeEngine : public AudioEngine {
 
 public:
     // Takes the sink. Without one: the sound card, or a silent BufferSink
-    // when OMAMP_NO_AUDIO_DEVICE is set.
+    // when THRUM_NO_AUDIO_DEVICE is set.
     explicit NativeEngine(PcmSink *sink = nullptr, QObject *parent = nullptr);
     ~NativeEngine() override;
 

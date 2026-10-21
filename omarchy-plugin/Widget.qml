@@ -6,11 +6,11 @@ import qs.Commons
 import qs.Commons as Commons
 import "Model.js" as Model
 
-// Omamp in the bar: the cover, the state glyph and "Artist – Title" while
-// Omamp is running, and a panel led by a large cover, with the track, seek,
+// Thrum in the bar: the cover, the state glyph and "Artist – Title" while
+// Thrum is running, and a panel led by a large cover, with the track, seek,
 // transport, shuffle, repeat and volume.
 //
-//   left click    open the panel (opens Omamp when it is not running)
+//   left click    open the panel (opens Thrum when it is not running)
 //   right click   play or pause
 //   middle click  next track
 //   scroll        previous / next track (setting: volume, or nothing)
@@ -19,13 +19,13 @@ import "Model.js" as Model
 // file is built once per monitor and must not own side effects.
 Panel {
   id: root
-  moduleName: "contra.omamp"
-  ipcTarget: "contra.omamp"
-  // Service.qml owns the "contra.omamp" IPC target. Summon the panel with
-  // `omarchy-shell shell toggle contra.omamp`.
+  moduleName: "contra.thrum"
+  ipcTarget: "contra.thrum"
+  // Service.qml owns the "contra.thrum" IPC target. Summon the panel with
+  // `omarchy-shell shell toggle contra.thrum`.
   manageIpc: false
 
-  readonly property var service: bar?.shell?.serviceFor("contra.omamp")
+  readonly property var service: bar?.shell?.serviceFor("contra.thrum")
 
   // ---------------------------------------------------------------- settings
   readonly property int maxLabelWidth: Math.max(Style.space(60), Style.space(Number(setting("maxLabelWidth", 220))))
@@ -35,9 +35,9 @@ Panel {
   readonly property bool showThumbnail: setting("showThumbnail", true) !== false
   readonly property string coverMode: Model.coverMode(setting("coverSize", "Large"))
   readonly property bool showLcd: setting("showLcd", false) === true
-  // A faint copy of Omamp's visualiser behind the track (MiniVisualiser.qml).
+  // A faint copy of Thrum's visualiser behind the track (MiniVisualiser.qml).
   readonly property bool showVisualiser: setting("showVisualiser", true) !== false
-  readonly property string vizChoice: Model.vizChoice(setting("visualiserStyle", "Same as Omamp"))
+  readonly property string vizChoice: Model.vizChoice(setting("visualiserStyle", "Same as Thrum"))
   readonly property string vizStrength: String(setting("visualiserStrength", "Subtle"))
 
   // ------------------------------------------------------------------- state
@@ -60,13 +60,13 @@ Panel {
   readonly property bool vertical: bar ? bar.vertical : false
   readonly property int barSize: bar ? bar.barSize : Style.bar.sizeHorizontal
 
-  // Shared by the panel's clock: elapsed, or time left, like Omamp's own.
+  // Shared by the panel's clock: elapsed, or time left, like Thrum's own.
   property bool showRemaining: false
 
   readonly property bool shown: running || showWhenClosed
 
   // ------------------------------------------------------------ visualiser
-  // Asks the service for Omamp's levels while this copy shows a track; the
+  // Asks the service for Thrum's levels while this copy shows a track; the
   // service opens the socket only while some copy asks.
   readonly property bool vizWanted: showVisualiser && running && !vertical && visible
   readonly property string vizStyle: Model.miniStyle(service ? service.vizStyle : "", vizChoice)
@@ -195,7 +195,7 @@ Panel {
       }
     }
 
-    // Optional elapsed time in the theme green, Omamp's clock in miniature.
+    // Optional elapsed time in the theme green, Thrum's clock in miniature.
     Text {
       id: barClock
       visible: root.showClock && !root.vertical && root.running && root.line !== ""
@@ -287,7 +287,7 @@ Panel {
 
   Timer { id: skipCooldown; interval: 350 }
 
-  // A closed Omamp closes its panel too.
+  // A closed Thrum closes its panel too.
   onRunningChanged: if (!running && opened) close()
 
   // ------------------------------------------------------------------- panel
@@ -308,7 +308,7 @@ Panel {
       spacing: Style.space(12)
 
       // The cover is the centrepiece: a square the width of the panel, from
-      // the picture Omamp sends over MPRIS (mpris:artUrl). Local files,
+      // the picture Thrum sends over MPRIS (mpris:artUrl). Local files,
       // Spotify, radio station tiles and Navidrome covers all arrive that way.
       CoverArt {
         id: bigCover
@@ -405,7 +405,7 @@ Panel {
         }
       }
 
-      // Omamp's LCD: state, the green clock and the title strip. Off by
+      // Thrum's LCD: state, the green clock and the title strip. Off by
       // default so it does not compete with the cover (setting: showLcd).
       Rectangle {
         id: lcd
@@ -471,7 +471,7 @@ Panel {
             clip: true
 
             readonly property string text: !root.service || !root.service.hasTrack
-              ? "Omamp — drop some music in"
+              ? "Thrum — drop some music in"
               : root.line + (root.length > 0 ? " (" + Model.clock(root.length) + ")" : "")
             readonly property bool scrolls: stripMetrics.width > width - Style.space(12)
 
@@ -516,7 +516,7 @@ Panel {
       Text {
         width: parent.width
         visible: root.service && !root.hasTrack
-        text: "The playlist is empty. Drop files on Omamp, or press O in it to add a folder."
+        text: "The playlist is empty. Drop files on Thrum, or press O in it to add a folder."
         color: root.dim
         wrapMode: Text.WordWrap
         font.family: root.fontFamily
@@ -548,8 +548,8 @@ Panel {
           width: parent.width
           height: elapsedText.implicitHeight
 
-          // Omamp's green clock in small: time played, or time left after
-          // a click, as in Omamp.
+          // Thrum's green clock in small: time played, or time left after
+          // a click, as in Thrum.
           Text {
             id: elapsedText
             anchors.left: parent.left
@@ -668,7 +668,7 @@ Panel {
         }
       }
 
-      // Omamp's own volume, not the system's.
+      // Thrum's own volume, not the system's.
       Row {
         width: parent.width
         spacing: Style.space(8)
@@ -715,9 +715,9 @@ Panel {
 
       Button {
         width: parent.width
-        text: "Show Omamp"
+        text: "Show Thrum"
         iconText: Model.GLYPH_WINDOW
-        tooltipText: "Bring the Omamp window forward"
+        tooltipText: "Bring the Thrum window forward"
         foreground: root.foreground
         accent: root.green
         bordered: true

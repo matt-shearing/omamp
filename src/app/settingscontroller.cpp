@@ -251,8 +251,8 @@ void SettingsController::beginLastFm() {
                 emit changed();
                 const bool opened = m_openUrl && m_openUrl(QUrl(m_lastFmUrl));
                 emit lastFmResult("begin", true,
-                                  opened ? tr("Allow Omamp on the Last.fm page that opened, then press Finish logging in.")
-                                         : tr("Open this page, allow Omamp, then press Finish logging in: %1").arg(m_lastFmUrl));
+                                  opened ? tr("Allow Thrum on the Last.fm page that opened, then press Finish logging in.")
+                                         : tr("Open this page, allow Thrum, then press Finish logging in: %1").arg(m_lastFmUrl));
             },
             Qt::QueuedConnection);
     });

@@ -26,8 +26,8 @@ public:
     explicit MprisRoot(QObject *parent);
     bool yes() const { return true; }
     bool no() const { return false; }
-    QString identity() const { return "Omamp"; }
-    QString desktopEntry() const { return "omamp"; }
+    QString identity() const { return "Thrum"; }
+    QString desktopEntry() const { return "thrum"; }
     QStringList schemes() const { return {"file"}; }
     QStringList mimeTypes() const;
 
@@ -113,5 +113,5 @@ private:
 bool registerMpris(QObject *host, Player *player, NowPlaying *art = nullptr);
 
 // Gives the registered player's OpenUri a handler for radio:// and http(s)
-// addresses (the radio's), so `omamp radio play` and `playerctl open` work.
+// addresses (the radio's), so `thrum radio play` and `playerctl open` work.
 void setMprisUriHandler(QObject *host, std::function<bool(const QString &)> handler);

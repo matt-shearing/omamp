@@ -19,7 +19,7 @@ struct PeaksKey {
 
 // A local cache of waveform peaks, so drawing a waveform for a track on the
 // NAS never reads the file over the network twice. Files live in
-// ~/.cache/omamp/peaks/<2 hex>/<id>.peaks (following XDG_CACHE_HOME).
+// ~/.cache/thrum/peaks/<2 hex>/<id>.peaks (following XDG_CACHE_HOME).
 //
 // This is the storage half only. Nothing computes peaks yet: that belongs
 // with the decoder in the engine, which would call store() after decoding a

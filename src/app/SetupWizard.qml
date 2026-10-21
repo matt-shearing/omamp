@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
-import Omamp
+import Thrum
 
 // The first-run setup: five short steps over the real window, each applied
 // as it is chosen so the window behind shows the result.
@@ -30,7 +30,7 @@ Popup {
     readonly property var stepIds: ["start", "look", "layout", "music", "done"]
     property int step: 0
     readonly property string stepId: stepIds[step]
-    // Where Omamp starts: "player" or "library".
+    // Where Thrum starts: "player" or "library".
     property string startView: "player"
     // Switched on at Finish, which then opens the Spotify page to sign in.
     property bool wantSpotify: false
@@ -386,7 +386,7 @@ Popup {
                     font.pixelSize: 17
                     font.bold: true
                     color: theme.c.bright_foreground
-                    text: [qsTr("Welcome to Omamp"), qsTr("Choose a look"), qsTr("Lay out the library"),
+                    text: [qsTr("Welcome to Thrum"), qsTr("Choose a look"), qsTr("Lay out the library"),
                            qsTr("Your music"), qsTr("You're all set")][wiz.step]
                 }
                 Text {
@@ -417,7 +417,7 @@ Popup {
                         Item { Layout.preferredHeight: 0 }
                         Note {
                             Layout.leftMargin: 18; Layout.rightMargin: 18
-                            text: qsTr("A few quick choices about how Omamp looks. Each one shows in the window as you pick it. Where should Omamp start?")
+                            text: qsTr("A few quick choices about how Thrum looks. Each one shows in the window as you pick it. Where should Thrum start?")
                         }
                         Flow {
                             Layout.fillWidth: true
@@ -688,7 +688,7 @@ Popup {
                                 onClicked: { library.activate(); library.addFolder() }
                             }
                             Note {
-                                text: qsTr("Optional. Omamp reads it in the background.")
+                                text: qsTr("Optional. Thrum reads it in the background.")
                                 color: theme.c.light_foreground
                             }
                         }

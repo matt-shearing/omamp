@@ -31,7 +31,7 @@
 namespace Secrets {
 
 QString preferredStore() {
-    const QString forced = qEnvironmentVariable("OMAMP_SECRET_STORE");
+    const QString forced = qEnvironmentVariable("THRUM_SECRET_STORE");
     if (forced == "file" || forced == "libsecret")
         return forced;
     if (!QStandardPaths::findExecutable("secret-tool").isEmpty() && qEnvironmentVariableIsSet("DBUS_SESSION_BUS_ADDRESS"))
@@ -40,7 +40,7 @@ QString preferredStore() {
 }
 
 QString filePath() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/credentials.json";
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/thrum/credentials.json";
 }
 
 static QJsonObject readFile() {
@@ -108,7 +108,7 @@ static bool runSecretTool(const QStringList &args, const QByteArray &input, QByt
 
 bool store(const QString &storeName, const QString &ref, const QString &secret, const QString &label, QString *error) {
     if (storeName == "libsecret")
-        return runSecretTool({"store", "--label=" + label, "application", "omamp", "remote", ref}, secret.toUtf8(),
+        return runSecretTool({"store", "--label=" + label, "application", "thrum", "remote", ref}, secret.toUtf8(),
                              nullptr, error);
     QJsonObject all = readFile();
     all[ref] = secret;
@@ -118,7 +118,7 @@ bool store(const QString &storeName, const QString &ref, const QString &secret, 
 QString lookup(const QString &storeName, const QString &ref, QString *error) {
     if (storeName == "libsecret") {
         QByteArray out;
-        if (!runSecretTool({"lookup", "application", "omamp", "remote", ref}, QByteArray(), &out, error))
+        if (!runSecretTool({"lookup", "application", "thrum", "remote", ref}, QByteArray(), &out, error))
             return {};
         if (out.isEmpty() && error)
             *error = "The keyring has no secret for this source; add it again";
@@ -135,7 +135,7 @@ QString lookup(const QString &storeName, const QString &ref, QString *error) {
 
 bool remove(const QString &storeName, const QString &ref) {
     if (storeName == "libsecret")
-        return runSecretTool({"clear", "application", "omamp", "remote", ref}, QByteArray(), nullptr, nullptr);
+        return runSecretTool({"clear", "application", "thrum", "remote", ref}, QByteArray(), nullptr, nullptr);
     QJsonObject all = readFile();
     if (!all.contains(ref))
         return true;
@@ -379,7 +379,7 @@ qint64 add(Library &library, const QUrl &url, const QString &user, const QString
     const QString store = Secrets::preferredStore();
     const QString ref = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const QString label = name.isEmpty() ? url.host() : name;
-    if (!Secrets::store(store, ref, secret, QString("Omamp: %1").arg(label), &why))
+    if (!Secrets::store(store, ref, secret, QString("Thrum: %1").arg(label), &why))
         return fail(QString("Could not store the secret (%1): %2").arg(store, why));
 
     QSqlQuery q(library.db());
@@ -429,7 +429,7 @@ RemoteSource find(Library &library, const QString &which, QString *error) {
         if ((number && s.id == id) || s.name == which)
             return s;
     if (error)
-        *error = QString("No remote source matches %1 (see: omamp remote list)").arg(which);
+        *error = QString("No remote source matches %1 (see: thrum remote list)").arg(which);
     return {};
 }
 
@@ -802,7 +802,7 @@ QString coverArt(Library &library, qint64 trackId, int size, QString *error) {
         if (!ch.isLetterOrNumber() && ch != '-' && ch != '_')
             ch = '_';
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) +
-                        QString("/omamp/subsonic/%1").arg(t.source.id);
+                        QString("/thrum/subsonic/%1").arg(t.source.id);
     const QString base = QString("%1/%2-%3").arg(dir, safe).arg(size);
     for (const char *ext : {".jpg", ".png", ".webp", ".img"})
         if (QFileInfo::exists(base + ext))

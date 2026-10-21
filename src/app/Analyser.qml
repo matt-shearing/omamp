@@ -1,5 +1,5 @@
 import QtQuick
-import Omamp
+import Thrum
 
 // The analyser on the deck, the strip and the mini player, in the style
 // chosen in Settings > Appearance (appearance.visualiser). A click moves on
@@ -21,7 +21,7 @@ Visualiser {
     waveform: backend.waveform
     // Only the ribbon reads both channels; the others skip the copy.
     stereoWaveform: style === "ribbon" ? backend.stereoWaveform : []
-    // No sound reaches Omamp: paused, stopped, or Spotify playing elsewhere.
+    // No sound reaches Thrum: paused, stopped, or Spotify playing elsewhere.
     idle: backend.state !== "playing" || backend.playsElsewhere
     reduceMotion: appearance.reduceMotion
     low: skin.visLow

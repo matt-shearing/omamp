@@ -55,8 +55,8 @@ DeviceSink::~DeviceSink() { stop(); }
 bool DeviceSink::start(PcmReader *reader) {
     if (m_sink)
         return true;
-    if (qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"))
-        qFatal("DeviceSink: refusing to open the sound card under OMAMP_NO_AUDIO_DEVICE");
+    if (qEnvironmentVariableIsSet("THRUM_NO_AUDIO_DEVICE"))
+        qFatal("DeviceSink: refusing to open the sound card under THRUM_NO_AUDIO_DEVICE");
     m_reader = reader;
     m_suspended = false;
     m_errorReopens = 0;
@@ -78,8 +78,8 @@ bool DeviceSink::openOnId(const QByteArray &id) {
 }
 
 bool DeviceSink::openOn(const QAudioDevice &device) {
-    if (qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE"))
-        qFatal("DeviceSink: refusing to open the sound card under OMAMP_NO_AUDIO_DEVICE");
+    if (qEnvironmentVariableIsSet("THRUM_NO_AUDIO_DEVICE"))
+        qFatal("DeviceSink: refusing to open the sound card under THRUM_NO_AUDIO_DEVICE");
     closeSink();
     if (device.isNull())
         return false;

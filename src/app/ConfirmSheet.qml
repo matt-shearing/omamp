@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Asks before doing something that can't be taken back from inside Omamp:
+// Asks before doing something that can't be taken back from inside Thrum:
 // a question, what will happen, and two buttons. Enter confirms, Esc
 // cancels. ask() takes the action to run.
 ToolSheet {

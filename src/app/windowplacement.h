@@ -55,7 +55,7 @@ public:
     // Floats, pins, sizes and places the window top right under the bar,
     // as the window rule in docs/now-playing.md does. The state before the
     // first compact player is kept for leaveCompact. fresh: the window has
-    // just opened as a compact player (`omamp mini`), so going back tiles it.
+    // just opened as a compact player (`thrum mini`), so going back tiles it.
     Q_INVOKABLE void enterCompact(const QString &title, int width, int height, bool fresh = false);
     // Unpins and puts back the tiled or floating state, size and place.
     Q_INVOKABLE void leaveCompact();

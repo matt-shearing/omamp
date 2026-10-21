@@ -10,7 +10,7 @@
 #include "theme.h"
 #include "translator.h"
 
-class OmampTests : public QObject {
+class ThrumTests : public QObject {
     Q_OBJECT
 
 private slots:
@@ -167,8 +167,8 @@ private:
 };
 
 int runPlayerTests(int argc, char **argv) {
-    OmampTests tests;
+    ThrumTests tests;
     return QTest::qExec(&tests, argc, argv);
 }
 
-#include "omamp_tests.moc"
+#include "thrum_tests.moc"

@@ -200,7 +200,7 @@ QVariant journalValue(const QString &s, bool isNull) {
 const QStringList trackFields = {"rating",  "play_count", "skip_count", "last_played", "added",
                                  "custom1", "custom2",    "custom3",    "custom4",     "custom5"};
 
-// The Omamp values a change is measured against, kept up to date as changes
+// The Thrum values a change is measured against, kept up to date as changes
 // are planned, so two MediaMonkey rows for one track merge rather than fight.
 struct Current {
     QVariant values[10]; // in trackFields order
@@ -283,7 +283,7 @@ QList<Token> tokenize(const QString &s, QString *why) {
 }
 
 struct FieldInfo {
-    const char *mm, *omamp;
+    const char *mm, *thrum;
     enum Type { Text, Number, Rating, Date, LengthMs, Bitrate, Year } type;
 };
 const FieldInfo knownFields[] = {
@@ -464,11 +464,11 @@ private:
         const QString name = t[p].text;
         const FieldInfo *f = fieldInfo(name);
         if (!f) {
-            why = QString("Omamp has no field for MediaMonkey's %1").arg(name);
+            why = QString("Thrum has no field for MediaMonkey's %1").arg(name);
             return {};
         }
         ++p;
-        const QString field = f->omamp;
+        const QString field = f->thrum;
         // IS [NOT] NULL
         if (isWord("IS")) {
             ++p;
@@ -744,10 +744,10 @@ QString translateCriteria(const QString &criteria, QString *why) {
         const FieldInfo *f = fieldInfo(key);
         if (!f) {
             if (why)
-                *why = QString("Omamp can't sort by MediaMonkey's %1").arg(key);
+                *why = QString("Thrum can't sort by MediaMonkey's %1").arg(key);
             return {};
         }
-        keys << (desc ? "-" : "") + QString(f->omamp);
+        keys << (desc ? "-" : "") + QString(f->thrum);
     }
     if (!keys.isEmpty())
         query += (query.isEmpty() ? "" : " ") + QString("sort:") + keys.join(',');
@@ -941,7 +941,7 @@ Report run(Library &library, const QString &mmDatabase, const Options &options, 
     if (job)
         job->setProgress("Matching tracks", 0, songs.size());
     const PlaylistFiles::Matcher matcher(library);
-    QHash<qint64, qint64> songToTrack; // MediaMonkey song id -> Omamp track id
+    QHash<qint64, qint64> songToTrack; // MediaMonkey song id -> Thrum track id
     QHash<qint64, QString> songHow;
     QHash<QString, int> mapGuesses;
     for (int i = 0; i < songs.size(); ++i) {
@@ -1001,7 +1001,7 @@ Report run(Library &library, const QString &mmDatabase, const Options &options, 
             r.suggestedMaps << QString("%1  (%2 tracks)").arg(guesses[i].second).arg(guesses[i].first);
     }
 
-    // ---- Omamp's current values for every matched track.
+    // ---- Thrum's current values for every matched track.
     QHash<qint64, Current> current;
     {
         QSqlQuery q(library.db());
@@ -1204,7 +1204,7 @@ Report run(Library &library, const QString &mmDatabase, const Options &options, 
                 QString why;
                 pr.query = translateCriteria(p.criteria, &why);
                 if (pr.query.isEmpty() && why.isEmpty())
-                    why = "the criteria select nothing Omamp can express";
+                    why = "the criteria select nothing Thrum can express";
                 if (!why.isEmpty()) {
                     pr.kind = "snapshot";
                     pr.reason = why;
@@ -1302,7 +1302,7 @@ Report run(Library &library, const QString &mmDatabase, const Options &options, 
         } else {
             r.notes << "Every playlist was imported from this database before; none were added again";
         }
-        QHash<qint64, qint64> created; // MM playlist id -> Omamp playlist id
+        QHash<qint64, qint64> created; // MM playlist id -> Thrum playlist id
         QHash<qint64, Song> songById;
         for (const Song &s : songs)
             songById.insert(s.id, s);
@@ -1325,7 +1325,7 @@ Report run(Library &library, const QString &mmDatabase, const Options &options, 
             pr.playlistId = id;
             QString note;
             if (pr.kind == "snapshot")
-                note = QString("A MediaMonkey AutoPlaylist that Omamp could not translate (%1). Its criteria: %2")
+                note = QString("A MediaMonkey AutoPlaylist that Thrum could not translate (%1). Its criteria: %2")
                            .arg(pr.reason, pr.criteria);
             else if (pr.kind == "auto")
                 note = "MediaMonkey criteria: " + pr.criteria;

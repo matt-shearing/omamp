@@ -1,9 +1,9 @@
 [package]
-name = "omamp-spotify-session"
+name = "thrum-spotify-session"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Reads Spotify playlists and artists' top tracks for Omamp over a librespot session"
+description = "Reads Spotify playlists and artists' top tracks for Thrum over a librespot session"
 license = "MIT"
 
 [dependencies]

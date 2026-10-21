@@ -2,8 +2,8 @@
 
 ## Phase 0: the core (20 October 2026)
 
-Phase 0 is built. `omamp scan` fills a library, a rescan of an unchanged
-library only checks sizes and modification times, `omamp query` searches it,
+Phase 0 is built. `thrum scan` fills a library, a rescan of an unchanged
+library only checks sizes and modification times, `thrum query` searches it,
 and the player works as before. All tests pass (11 player tests, 16 library
 tests). Nothing is pushed; the work is on a branch for review.
 
@@ -23,12 +23,12 @@ src/core/    library.{h,cpp}     the database: open, WAL, migrations, backups, s
 src/engine/  player, playlist, spectrum (QMediaPlayer), engine.pri
 src/app/     main.cpp, mpris, portal, theme, translator, the QML and resources
 src/cli/     cli.{h,cpp}, cli.pri
-tests/       omamp_tests.cpp (player), library_tests.cpp (core), main.cpp (runs both),
+tests/       thrum_tests.cpp (player), library_tests.cpp (core), main.cpp (runs both),
              make-fixtures, bench/
 bin/bench    the performance run
 ```
 
-`omamp.pro` includes `core.pri`, `engine.pri` and `cli.pri`; the tests
+`thrum.pro` includes `core.pri`, `engine.pri` and `cli.pri`; the tests
 include the same files. The core needs no GUI module, so the benchmark links
 only Qt Core and Qt SQL.
 
@@ -36,7 +36,7 @@ The player no longer includes the portal code. `Player::openFolder()` emits
 `folderRequested()`, and `main.cpp` connects that to `FolderPicker` and the
 picker's results to `Player::addPicked()`. This keeps D-Bus out of the engine.
 
-**Database.** `~/.local/share/omamp/library.db` (it follows `XDG_DATA_HOME`;
+**Database.** `~/.local/share/thrum/library.db` (it follows `XDG_DATA_HOME`;
 every command takes `--db`). WAL mode, `synchronous=NORMAL`, foreign keys on,
 a 5-second busy timeout, and the `REGEXP` function from Qt's SQLite driver.
 Tables: `volumes`, `folders`, `tracks`, `artists`, `track_artists`, `genres`,
@@ -46,9 +46,9 @@ Music, Classical, Audiobooks and Podcasts made at creation), `play_history`,
 
 **Migrations.** `PRAGMA user_version` holds the schema version. Step 1 makes
 the tables; step 2 adds the search index and its triggers and indexes any
-existing rows. Before migrating a database that already has a version, Omamp
+existing rows. Before migrating a database that already has a version, Thrum
 copies it with `VACUUM INTO` to `library.db.v<old>-<UTC time>.bak`. A
-database from a newer Omamp is refused, not opened.
+database from a newer Thrum is refused, not opened.
 
 **Volumes.** See "Decisions" below for the rules. A local filesystem's key is
 `uuid:<filesystem UUID>` (plus `:<subvolume root>` for a btrfs subvolume or a
@@ -66,11 +66,11 @@ size and `mtime_ns`) are never opened. New and changed files are read with
 TagLib on a `QThreadPool` of 4 to 8 threads and written in batches of about
 500, one transaction each. Each scan is a row in `jobs`.
 
-**Command line.** `omamp scan [folder...]` (no folder means rescan every
-library folder), `omamp query <text>`, `omamp stats`, `omamp help`,
-`omamp --version`. Each takes `--json`, prints results on stdout and errors
+**Command line.** `thrum scan [folder...]` (no folder means rescan every
+library folder), `thrum query <text>`, `thrum stats`, `thrum help`,
+`thrum --version`. Each takes `--json`, prints results on stdout and errors
 on stderr, and exits 0 or 1. Commands run under `QCoreApplication`, so they
-need no display. `omamp`, `omamp <files>` and `omamp open <files>` open the
+need no display. `thrum`, `thrum <files>` and `thrum open <files>` open the
 window as before.
 
 **Fixtures.** `tests/make-fixtures <folder>` uses `ffmpeg` to make 14 small
@@ -154,12 +154,12 @@ NAS rescan was not measured.
   looked for from the added folder up to the mount point, so adding a
   subfolder of a known share reuses that share's volume. A filesystem with no
   UUID gets a key from its mount, which is the best available.
-- **A marker is written only by `omamp scan <folder>`** on a network
+- **A marker is written only by `thrum scan <folder>`** on a network
   filesystem, and only if the folder is writable. Looking up a path never
   writes. The marker is written atomically and names itself in a comment.
 - **A marker counts at its last place only while a share is mounted there.**
   An unmounted mount point can still hold a stale copy of the folder.
-  Otherwise Omamp tries the same subfolder under every network mount, which
+  Otherwise Thrum tries the same subfolder under every network mount, which
   finds a share remounted somewhere else.
 - **A scan never crosses into another filesystem** mounted inside a root (as
   `find -xdev`). It reports how many it skipped; add them as roots of their
@@ -203,8 +203,8 @@ NAS rescan was not measured.
   getting silently wrong results.
 - **CLI errors** go to stderr, and with `--json` also to stdout as
   `{"ok": false, "error": "..."}`, so an agent reading stdout sees them.
-- **Command words win over paths.** `omamp scan` is always the command. To
-  open a file named `scan`, use `omamp ./scan` or `omamp open scan`. One
+- **Command words win over paths.** `thrum scan` is always the command. To
+  open a file named `scan`, use `thrum ./scan` or `thrum open scan`. One
   change from before: a first argument of exactly `open` is now taken as the
   word, not a file.
 - **`bin/build` and `bin/test` honour `JOBS`** (`JOBS=6 bin/build`); the
@@ -215,7 +215,7 @@ NAS rescan was not measured.
 ### Known gaps
 
 - **No folder watching yet.** inotify is not wired up. A rescan is cheap
-  (`omamp scan` with no folder rescans every library folder), so this can
+  (`thrum scan` with no folder rescans every library folder), so this can
   wait for the window, which will run it.
 - **No scan in the window.** The window does not use the library yet. Phase 1
   runs the scanner on a worker thread with its own `Library` connection.
@@ -270,7 +270,7 @@ Scanner::roots(library);               // the library folders, "" when offline
 ```
 
 `scan()` blocks the calling thread. `ScanResult::toJson()` is what
-`omamp scan --json` prints.
+`thrum scan --json` prints.
 
 **Querying.**
 
@@ -307,7 +307,7 @@ and `--files` change the sizes). Everything goes in `build/bench`.
 ## Phase 1B: the query language and the command palette (20 October 2026)
 
 The query language is complete, the command palette has a backend and a
-popup, and `omamp query` takes the whole language. Nothing is wired into
+popup, and `thrum query` takes the whole language. Nothing is wired into
 `Main.qml` (agent 1A owns it); the steps are below. The schema is unchanged.
 
 ### What was built
@@ -328,7 +328,7 @@ popup, and `omamp query` takes the whole language. Nothing is wired into
   ranks actions, artists, albums and tracks together.
 - **`src/app/CommandPalette.qml`**: the popup, keyboard-only, in the theme
   colours. Added to `resources.qrc`.
-- **CLI**: `omamp query` takes `--count`, `--offset`, `--seed` and
+- **CLI**: `thrum query` takes `--count`, `--offset`, `--seed` and
   `--explain`, prints the total length and size, and puts `duration_ms` and
   `seed` in its JSON.
 - **Docs**: [docs/query-language.md](../query-language.md), the full syntax
@@ -338,10 +338,10 @@ popup, and `omamp query` takes the whole language. Nothing is wired into
 - **Tests**: `tests/query_tests.cpp` (parse, compile and run against a
   12-track library built in SQL with a pinned clock, plus the CLI),
   `tests/palette_tests.cpp` (ranking, actions, activation, library changes,
-  and the QML popup driven by keys in an offscreen window that has Omamp's
+  and the QML popup driven by keys in an offscreen window that has Thrum's
   one-key shortcuts), and `tests/fixture_library.h`. `tests/main.cpp` now
-  takes `OMAMP_TESTS=library,query,palette` to run some classes only, and
-  `OMAMP_SCREENSHOTS=<folder>` makes the palette test save its screenshots.
+  takes `THRUM_TESTS=library,query,palette` to run some classes only, and
+  `THRUM_SCREENSHOTS=<folder>` makes the palette test save its screenshots.
 
 ### Test results
 
@@ -356,7 +356,7 @@ The player tests were not run in this phase: they open audio devices
 
 ### Benchmark
 
-`omamp_bench run` on the 200,000-track synthetic library, generated in a
+`thrum_bench run` on the 200,000-track synthetic library, generated in a
 temporary folder and deleted afterwards. Median of 7 runs, warm cache, with
 another heavy job on the machine. Each query time includes a page of 100
 rows and the total count. The Phase 0 rows were measured again and match.
@@ -612,7 +612,7 @@ the watcher saw as a change and a NAS saw as a write.
 
 **Library stats win over tags.** A file's rating fills the library's only
 while the library has none and the file's rating is new (different from the
-stored `tag_rating`), so a rating the user cleared in Omamp stays cleared.
+stored `tag_rating`), so a rating the user cleared in Thrum stays cleared.
 The play count fills only while the library's count is 0. Both file values
 are kept in `tag_rating` and `tag_play_count`.
 
@@ -632,11 +632,11 @@ are kept in `tag_rating` and `tag_play_count`.
   `old -> new` paths.
 - `quick_hash` is SHA-1 over the size and 64 KiB from the middle of the
   file, 16 hex digits. The middle avoids the tags at either end.
-- **Locate** (`Scanner::locate`, `omamp locate <folder>`) is MediaMonkey's
+- **Locate** (`Scanner::locate`, `thrum locate <folder>`) is MediaMonkey's
   "Locate Moved/Missing Files": it searches any folder, inside the library
   or not, opens only files whose size matches a missing track, and repoints
   the tracks it finds. Nothing else is added.
-- **Quick rescans** (`Scanner::Mode::ChangedFolders`, `omamp scan --quick`)
+- **Quick rescans** (`Scanner::Mode::ChangedFolders`, `thrum scan --quick`)
   skip listing a folder whose modification time matches the database.
   Subfolders are still visited (one `readdir` each, using `d_type`), so a
   quick rescan costs one stat per folder rather than per file. Folder times
@@ -675,7 +675,7 @@ moves, overflow) and reports the watch limit with `ENOSPC`.
   this machine), leaving the rest for other programs. If that, or the
   kernel, runs out, the roots not fully watched join the scheduled rescans,
   `degraded` becomes true and `watchLimitReached` fires.
-- `omamp watch` runs it in the foreground and prints each change and rescan
+- `thrum watch` runs it in the foreground and prints each change and rescan
   (`--json` prints one JSON object per line, `--dry-run` only reports,
   `--interval <s>` sets the schedule). Ctrl+C or SIGTERM stops it cleanly.
 
@@ -685,7 +685,7 @@ that order, any case, as `.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp` or `.gif`),
 also one folder up from a `CD1`/`Disc 2` folder; failing that, from the first
 track's embedded front cover. It is decoded once (JPEGs are decoded already
 scaled down), flattened onto white if it has transparency, and saved on the
-CPU at 96, 256 and 600 pixels as `~/.cache/omamp/art/<hash>-<size>.jpg`,
+CPU at 96, 256 and 600 pixels as `~/.cache/thrum/art/<hash>-<size>.jpg`,
 where the hash is of the original bytes. An album whose every track embeds
 the same cover shares one set of files. `artwork` records each picture and
 its source, `albums.artwork_id` and `tracks.artwork_id` point at it, and
@@ -693,7 +693,7 @@ its source, `albums.artwork_id` and `tracks.artwork_id` point at it, and
 searched again until the scanner changes one of its tracks. A cleared cache
 is rebuilt from the recorded source. Nothing is made until asked for;
 `ArtworkPrefetch` makes the rest on a lowest-priority thread, and
-`omamp art all` does the same in the foreground.
+`thrum art all` does the same in the foreground.
 
 ### Test results
 
@@ -724,7 +724,7 @@ provider; and the background prefetch plus the scanner clearing
 
 ### Benchmark
 
-`omamp_bench files` on the development machine with another heavy job running: 100,000
+`thrum_bench files` on the development machine with another heavy job running: 100,000
 hard links of one small tagged MP3 in 8,334 folders, on btrfs, warm cache,
 8 reader threads. Phase 0 was rebuilt from `afddb5b` and run alternately
 with Phase 1C.
@@ -751,7 +751,7 @@ scan. With a 20,000-file limit instead of 2,000 the first scan took
 ### Decisions
 
 - **Raw inotify, not QFileSystemWatcher**, for the reasons and numbers above.
-- **Watch at most half the system's inotify limit**, so Omamp can't starve
+- **Watch at most half the system's inotify limit**, so Thrum can't starve
   editors, Syncthing or file managers.
 - **Debounce 1.5 s, at most 10 s.** A long copy keeps triggering
   close-after-write per file; the cap stops a busy folder holding a rescan
@@ -764,10 +764,10 @@ scan. With a 20,000-file limit instead of 2,000 the first scan took
   100,000-track NAS library this is one slow scan; the alternative was
   leaving every Phase 0 row without ratings, art flags or IDs until edited.
 - **A file's rating fills an empty library rating only when the file's
-  rating is new.** Without that, clearing a rating in Omamp would be undone
+  rating is new.** Without that, clearing a rating in Thrum would be undone
   by the next rescan.
 - **Ambiguous moves are not guessed.** Handing one track's history to
-  another is worse than adding a new row; `omamp locate` and later a
+  another is worse than adding a new row; `thrum locate` and later a
   "Locate Moved/Missing Files" window can resolve the rest.
 - **Core now links Qt GUI** for `QImage` (CPU only). The benchmark and CLI
   still need no display.
@@ -778,7 +778,7 @@ scan. With a 20,000-file limit instead of 2,000 the first scan took
 - **A move from outside the scanned folders.** If a file's old place isn't
   rescanned in the same run as its new place (for example, the old folder is
   on a different root that the watcher didn't see change), the new file is
-  added as a new track and the old one goes missing later. `omamp locate`
+  added as a new track and the old one goes missing later. `thrum locate`
   fixes it by hand only before that rescan adds the new file; merging two
   existing rows is not built.
 - **Quick rescans miss files changed in place** on a share, because the
@@ -789,7 +789,7 @@ scan. With a 20,000-file limit instead of 2,000 the first scan took
 - **Picture files changing** (a new `cover.jpg`) don't wake the watcher, and
   the artwork cache has no eviction or orphan cleanup.
 - **Cancel:** `Watcher::stop()` cancels a running rescan; nothing else does.
-- **`omamp watch` was tested by hand only.** The `Watcher` class has tests.
+- **`thrum watch` was tested by hand only.** The `Watcher` class has tests.
 - **The image provider is not registered** in the window yet; that is 1A's
   `main.cpp` (one line, below).
 
@@ -821,13 +821,13 @@ include `foldersChanged(folders)` (a debounced batch, before its rescan) and
 
 ```cpp
 #include "artprovider.h"
-engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider);   // "omamp-art"
+engine.addImageProvider(ArtImageProvider::name, new ArtImageProvider);   // "thrum-art"
 ```
 
 ```qml
-Image { source: "image://omamp-art/album/" + albumId + "/256"; asynchronous: true }
-Image { source: "image://omamp-art/track/" + trackId + "/96" }
-Image { source: "image://omamp-art/album/" + albumId; sourceSize.width: 600 }
+Image { source: "image://thrum-art/album/" + albumId + "/256"; asynchronous: true }
+Image { source: "image://thrum-art/track/" + trackId + "/96" }
+Image { source: "image://thrum-art/album/" + albumId; sourceSize.width: 600 }
 ```
 
 Sizes snap to 96, 256 or 600. A missing picture sets `status` to
@@ -870,7 +870,7 @@ src/app/librarycontroller.{h,cpp}  `library` in QML: opens the library on first 
                                    tracks to the player
 src/app/librarytree.{h,cpp}        the tree as a flat list model, children read on expand
 src/app/tracklistmodel.{h,cpp}     the track list: ordered ids, rows read a page at a time
-src/app/devhooks.{h,cpp}           OMAMP_PROFILE, OMAMP_SCREENSHOT, OMAMP_DEMO (below)
+src/app/devhooks.{h,cpp}           THRUM_PROFILE, THRUM_SCREENSHOT, THRUM_DEMO (below)
 src/app/AdvancedView.qml           the layout: strip, actions and search, tree | list, status
 src/app/DeckStrip.qml, Analyser.qml  the deck as one strip
 src/app/LibraryTreePane.qml        the tree view and its keys
@@ -931,7 +931,7 @@ track (or the last 5,000 when it is near the end), so Now Playing stays quick
 to save in `state.json`. Play next inserts after the current track; Add to
 Now Playing appends. Show in folder runs `xdg-open` on the track's folder.
 
-**Window state.** `~/.config/omamp/window.conf` (QtCore `Settings`) keeps
+**Window state.** `~/.config/thrum/window.conf` (QtCore `Settings`) keeps
 the mode, each mode's window size, the tree width and the columns (which are
 hidden, and widths set by hand). The library opens the first time advanced
 mode shows, so the deck alone never touches the database.
@@ -965,11 +965,11 @@ and the saved settings.
 
 ### Performance
 
-The Phase 0 generator made the 200,000-track library (`omamp_bench
+The Phase 0 generator made the 200,000-track library (`thrum_bench
 generate`, 191 MB). The window ran offscreen with the software renderer, a
 throwaway `HOME`, no session bus and no audio, on the development machine while another
 heavy job ran. Times run from the change to the next frame on screen
-(`OMAMP_PROFILE=1`), over three runs.
+(`THRUM_PROFILE=1`), over three runs.
 
 | What | ms to the screen | Query alone (ms) |
 |---|---:|---:|
@@ -1004,11 +1004,11 @@ second, and indexed searches and tree nodes reach the screen in under
 To rerun it, make the database with `bin/bench`, then:
 
 ```sh
-mkdir -p /tmp/o/data/omamp /tmp/o/config/omamp
-cp build/bench/library.db /tmp/o/data/omamp/
-printf '[window]\nadvanced=true\n' > /tmp/o/config/omamp/window.conf
+mkdir -p /tmp/o/data/thrum /tmp/o/config/thrum
+cp build/bench/library.db /tmp/o/data/thrum/
+printf '[window]\nadvanced=true\n' > /tmp/o/config/thrum/window.conf
 HOME=/tmp/o XDG_DATA_HOME=/tmp/o/data XDG_CONFIG_HOME=/tmp/o/config \
-  QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software OMAMP_PROFILE=1 build/omamp
+  QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software THRUM_PROFILE=1 build/thrum
 ```
 
 The benchmark's volume (`/bench`) doesn't exist, so its tracks show as
@@ -1052,9 +1052,9 @@ volume that exists; the timings are the same either way.
 - **`Tab` belongs to the mode switch**, so it never moves focus between the
   tree, the list and the search. `/`, `Enter` and `←`, and `Esc` do that.
 - **Dropping files in advanced mode** adds them to Now Playing, as on the deck.
-- **Developer hooks in the binary**, off unless set: `OMAMP_PROFILE=1` (the
-  timings above), `OMAMP_SCREENSHOT=<png>` (grab the window and quit), and
-  `OMAMP_DEMO="expand:artists;node:genre:3;select:2;queue:0;filter:…;sort:7;help"`
+- **Developer hooks in the binary**, off unless set: `THRUM_PROFILE=1` (the
+  timings above), `THRUM_SCREENSHOT=<png>` (grab the window and quit), and
+  `THRUM_DEMO="expand:artists;node:genre:3;select:2;queue:0;filter:…;sort:7;help"`
   (steps run before the screenshot). The README screenshots come from these.
 - **`playlist.*` and `player.*` gained small additions** (insert and replace
   with known tags; play, queue next, append) rather than the library writing
@@ -1083,7 +1083,7 @@ The query language needs nothing from me: the search box sets
 palette in the window:
 
 - Add `CommandPalette.qml` to `src/app/resources.qrc`, and the palette
-  sources to `omamp.pro` and `tests/omamp_tests.pro`.
+  sources to `thrum.pro` and `tests/thrum_tests.pro`.
 - In `Main.qml`, add `Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; … }`
   beside the advanced-mode shortcuts, and place the palette after the
   `advancedLoader` Loader and before the `?` overlay, so it draws over the
@@ -1156,7 +1156,7 @@ src/app/AdvancedView.qml          tree | (browser over list or grid) | info; the
 src/app/Main.qml                  Ctrl+K, Ctrl+B, G, I; palette actions; remembered layout
 src/app/JobsBar.qml               watcher status and "Finding album covers…"
 src/app/theme.{h,cpp}             listSelection: chosen rows that read in every theme
-src/app/main.cpp                  registers the omamp-art image provider and the palette
+src/app/main.cpp                  registers the thrum-art image provider and the palette
 src/app/devhooks.cpp              new demo verbs and profile steps
 tests/make-demo-library           the made-up library behind the screenshots
 ```
@@ -1205,7 +1205,7 @@ there. While hidden, the browser runs no queries and filters nothing.
 The panes count with `GROUP BY` queries. When the node and search select
 everything, genres and artists are counted from their link tables alone.
 Otherwise the node and search are run once into a temporary table
-(`temp.omamp_browse_base`, on the window's connection, never in the library
+(`temp.thrum_browse_base`, on the window's connection, never in the library
 file) and the panes and the track list read it by id. Without that, a
 two-letter search, which can't use the search index, scanned the library
 five times with the browser open; now it scans once and the browser adds
@@ -1298,7 +1298,7 @@ shows one more track with the same selection and cursor.
 The 200,000-track library from the Phase 0 generator, upgraded to schema 5,
 in the window offscreen with the software renderer, throwaway XDG folders,
 no session bus and no audio, while other heavy jobs ran on the development machine.
-`OMAMP_PROFILE=1`, three runs; times run from the change to the next frame
+`THRUM_PROFILE=1`, three runs; times run from the change to the next frame
 on screen, and the query columns are the work alone.
 
 | What | ms to the screen | Query (ms) |
@@ -1340,9 +1340,9 @@ generation number so a late answer is dropped. Speeding up short words in
 the query language is the better fix.
 
 To rerun: make the database with `bin/bench`, copy it into a throwaway
-`XDG_DATA_HOME/omamp/`, write `[window]` `advanced=true` into
-`XDG_CONFIG_HOME/omamp/window.conf`, and run `build/omamp` with
-`QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software OMAMP_PROFILE=1`, with
+`XDG_DATA_HOME/thrum/`, write `[window]` `advanced=true` into
+`XDG_CONFIG_HOME/thrum/window.conf`, and run `build/thrum` with
+`QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software THRUM_PROFILE=1`, with
 `QT_QPA_PLATFORMTHEME` unset (the GTK platform theme exits when it finds no
 display).
 
@@ -1354,9 +1354,9 @@ twelve albums by invented artists, tones of one second, covers drawn by
 ffmpeg in plain colours (folder pictures, embedded ID3 pictures, and one
 album without), with made-up ratings, play counts, ReplayGain, lyrics and
 play dates. They were scanned into throwaway folders and captured with
-`OMAMP_DEMO` and `OMAMP_SCREENSHOT`, offscreen and in software, in the
+`THRUM_DEMO` and `THRUM_SCREENSHOT`, offscreen and in software, in the
 Night Ride theme (Matt's current Omarchy theme). The files sat in
-`/tmp/omamp-demo/Music` so the info panel shows a short path.
+`/tmp/thrum-demo/Music` so the info panel shows a short path.
 
 ### Decisions
 
@@ -1409,7 +1409,7 @@ Night Ride theme (Matt's current Omarchy theme). The files sat in
 ## Phase 2 backend: masks, tag writing, organise, audits and duplicates (20 October 2026)
 
 The core and the command line for Phase 2 are built; the window is not (1D
-is working in `src/app/` at the same time). Omamp can now write tags safely
+is working in `src/app/` at the same time). Thrum can now write tags safely
 and undo them, rename and move files by a mask with a preview and undo, fill
 tags from file names, list the Files to Edit checks, and find duplicates by
 tags, by bytes and by Chromaprint fingerprint. All tests pass. Nothing is
@@ -1442,7 +1442,7 @@ spaces, leading dots, reserved names, 255 bytes), and the rules are
 settable. Parse errors carry the character position. Patterns for tagging
 from file names reuse the parser and add `<Skip>`.
 
-**Tag writing.** Each file is copied to `.omamp-<random>-<name>` beside
+**Tag writing.** Each file is copied to `.thrum-<random>-<name>` beside
 itself, written there with TagLib, read back field by field (and its audio
 length checked), and renamed over the original only if the original has not
 changed meanwhile. Then one transaction journals each change and rewrites
@@ -1466,7 +1466,7 @@ field, old value, new value, source and time. Batches are named
 `tag-…`, `organise-…` or `undo-…` with a UTC time. `undo(batch)` restores
 the old values in the files and the database, marks the batch's rows undone
 and journals itself as an `undo-…` batch whose source is `undo:<batch>`, so
-undoing an undo redoes. `omamp undo` with no batch takes the newest batch
+undoing an undo redoes. `thrum undo` with no batch takes the newest batch
 that is neither an undo nor undone. A picture's old value is kept whole
 (JSON with base64 data); its new value only as a hash, since undo never
 needs it.
@@ -1585,7 +1585,7 @@ noise); the schema 4 to 6 upgrade; and each new command with `--json`.
   length within five seconds, so the bit-by-bit comparison is not quadratic.
 - **`tag --set rating=` takes stars** (0 to 5, halves allowed), like the
   query language; the API takes 0 to 100.
-- **`omamp tag` requires a query**, so `omamp tag --set genre=X` can't
+- **`thrum tag` requires a query**, so `thrum tag --set genre=X` can't
   silently rewrite a whole library.
 
 ### Known gaps
@@ -1596,7 +1596,7 @@ noise); the schema 4 to 6 upgrade; and each new command with `--json`.
   rename is local to the share). Writing in place would be faster and less
   safe; the plan chose safety.
 - **File ownership and extended attributes** are not kept by the copy; the
-  written file belongs to the user who ran Omamp.
+  written file belongs to the user who ran Thrum.
 - **The watcher sees the temporary file** (it has an audio extension) and
   queues a rescan of its folder, which finds nothing new. Harmless, but a
   little work. *Fixed; see "Fix: own writes and the job slot" at the end.
@@ -1608,7 +1608,7 @@ noise); the schema 4 to 6 upgrade; and each new command with `--json`.
 - **Case-only renames on a case-insensitive share** ("abba" to "ABBA" over
   SMB) get " (2)", because the new name already "exists".
 - **Missing artwork** counts albums the artwork cache has not looked at yet
-  as missing; `omamp art all` settles them.
+  as missing; `thrum art all` settles them.
 - **Fingerprints need some length.** fpcalc can't fingerprint the one-second
   fixture files; real songs are fine.
 - **Synchronising tags** (MediaMonkey's "Update tags from the library")
@@ -1708,13 +1708,13 @@ ratings into files) and `tags.popm_email`.
 **Command line.**
 
 ```text
-omamp tag <query> --set field=value ... [--set-mask field=<mask>] [--dry-run] [--json]
-omamp tag-from-filename <query> --pattern '<Track#> - <Title>' [--dry-run] [--json]
-omamp organise <query> --mask '<mask>' [--to <folder>] [--keep-folders] --dry-run|--apply [--json]
-omamp undo [batch] [--json]
-omamp journal [batch] [--limit n] [--json]
-omamp audit [check] [--limit n] [--json]
-omamp duplicates [--by tags|content|fingerprint] [--any-length] [--json]
+thrum tag <query> --set field=value ... [--set-mask field=<mask>] [--dry-run] [--json]
+thrum tag-from-filename <query> --pattern '<Track#> - <Title>' [--dry-run] [--json]
+thrum organise <query> --mask '<mask>' [--to <folder>] [--keep-folders] --dry-run|--apply [--json]
+thrum undo [batch] [--json]
+thrum journal [batch] [--limit n] [--json]
+thrum audit [check] [--limit n] [--json]
+thrum duplicates [--by tags|content|fingerprint] [--any-length] [--json]
 ```
 
 ## Phase 3 core: playlists, statistics, Auto-DJ and MediaMonkey (20 October 2026)
@@ -1779,13 +1779,13 @@ touches either; the hooks they need are listed at the end.
   and AutoPlaylists, translated to the query language or kept as snapshots
   with their criteria in the note.
 - **Commands**:
-  `omamp playlist list|show|create|add|remove|move|rename|delete|clear|reroll|import|export`,
-  `omamp autoplaylist create|set`,
-  `omamp collection list|show|create|remove|restore-defaults`,
-  `omamp stats --top … [--since …]`, `omamp stats --recent`,
-  `omamp stats --never`, `omamp autodj --source … --count n --seed n`,
-  `omamp import mediamonkey <db> --map … --dry-run|--apply [--overwrite]`,
-  `omamp import undo [batch]`, and `omamp undo <mmimport batch>`. All take
+  `thrum playlist list|show|create|add|remove|move|rename|delete|clear|reroll|import|export`,
+  `thrum autoplaylist create|set`,
+  `thrum collection list|show|create|remove|restore-defaults`,
+  `thrum stats --top … [--since …]`, `thrum stats --recent`,
+  `thrum stats --never`, `thrum autodj --source … --count n --seed n`,
+  `thrum import mediamonkey <db> --map … --dry-run|--apply [--overwrite]`,
+  `thrum import undo [batch]`, and `thrum undo <mmimport batch>`. All take
   `--json`.
 - **Docs**: [playlists.md](../playlists.md) and
   [mediamonkey-import.md](../mediamonkey-import.md).
@@ -1809,7 +1809,7 @@ Totals: 21 passed, 0 failed, 0 skipped, 0 blacklisted, 1248ms    (Phase 2: tags,
 Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted, 10534ms   (Phase 3 core: playlists, statistics, Auto-DJ, MediaMonkey)
 ```
 
-The new class is the last line (`OMAMP_TESTS=playlists`). It covers:
+The new class is the last line (`THRUM_TESTS=playlists`). It covers:
 
 - the schema 6 to 7 upgrade keeping old entries;
 - static playlists end to end: duplicates, insert, move, remove, reorder,
@@ -1843,7 +1843,7 @@ The new class is the last line (`OMAMP_TESTS=playlists`). It covers:
 ### Decisions
 
 - **Entries outlive tracks.** MediaMonkey drops dead links from playlists;
-  Omamp keeps them as unmatched entries with their path, so an exported
+  Thrum keeps them as unmatched entries with their path, so an exported
   playlist is never shorter than the one imported, and a track that comes
   back can be matched again later.
 - **An auto-playlist's sort and limit live in its query text**, not in the
@@ -1854,7 +1854,7 @@ The new class is the last line (`OMAMP_TESTS=playlists`). It covers:
   one.
 - **All-time statistics read the counters; `--since` reads the history.**
   The counters include imported and tag-read counts that have no dates; the
-  history is exact but only as old as Omamp (or the imported `Played`
+  history is exact but only as old as Thrum (or the imported `Played`
   table). All-time listening time is plays times length, an estimate.
 - **The import merges by default.** Ratings and custom fields only fill
   gaps; counts take the larger, last played the later, date added the
@@ -1875,8 +1875,8 @@ The new class is the last line (`OMAMP_TESTS=playlists`). It covers:
   Argon2, to stay inside Qt without another library. A four-digit PIN can
   be guessed offline whatever the hash, so this keeps the PIN from a casual
   reader of the database, not from a determined one.
-- **`--count n` takes a number only for `omamp autodj`**, so
-  `omamp query --count` keeps its old meaning.
+- **`--count n` takes a number only for `thrum autodj`**, so
+  `thrum query --count` keeps its old meaning.
 
 ### Known gaps
 
@@ -1889,7 +1889,7 @@ The new class is the last line (`OMAMP_TESTS=playlists`). It covers:
   translator learns MediaMonkey's real format.
 - **No rule builder yet.** The window's auto-playlist editor over
   `Query::parse()`'s tree is window work.
-- **No `omamp party` command.** Party mode is backend only, as planned; a PIN
+- **No `thrum party` command.** Party mode is backend only, as planned; a PIN
   typed on the command line would sit in the shell's history.
 - **Not imported from MediaMonkey:** the classification fields (tempo, mood,
   occasion, quality), MM5's `Custom6..10`, album ratings, bookmarks and
@@ -2037,8 +2037,8 @@ Player ──(AudioEngine interface)──┬── QtEngine: QMediaPlayer + QAu
 
 ### Choosing the engine and the settings
 
-- `OMAMP_ENGINE=native|qt` wins; otherwise `playback/engine` in
-  `~/.config/omamp/omamp.conf` (beside `state.json`); otherwise `qt`.
+- `THRUM_ENGINE=native|qt` wins; otherwise `playback/engine` in
+  `~/.config/thrum/thrum.conf` (beside `state.json`); otherwise `qt`.
 - New Player properties, saved in the `[playback]` group of the same file:
   `engineName` and `gapless` (both constant), `crossfadeSeconds`,
   `replayGainMode` (`off`, `track`, `album`), `replayGainPreamp`,
@@ -2058,8 +2058,8 @@ player.setEqBand(5, 4.5)            // band 5 is player.eqFrequencies[5], 1 kHz
 
 ### Tests without sound
 
-`tests/engine_tests.cpp` (`OMAMP_TESTS=engine`) with
-`tests/make-engine-fixtures`. `main()` sets `OMAMP_NO_AUDIO_DEVICE=1`: the
+`tests/engine_tests.cpp` (`THRUM_TESTS=engine`) with
+`tests/make-engine-fixtures`. `main()` sets `THRUM_NO_AUDIO_DEVICE=1`: the
 device sink then aborts instead of opening, the Qt engine leaves out its
 audio output, and every native test asserts that its sink is the in-memory
 `BufferSink`. That sink pulls only what is ready, as fast as the worker
@@ -2107,7 +2107,7 @@ advance, skipping a broken file, and saving the playback settings.
 
 ### CPU
 
-`OMAMP_ENGINE_BENCH=1 OMAMP_TESTS=engine build/tests/omamp_tests benchmarkCpu benchmarkRealtimeCpu`
+`THRUM_ENGINE_BENCH=1 THRUM_TESTS=engine build/tests/thrum_tests benchmarkCpu benchmarkRealtimeCpu`
 on the Ryzen 9 7950X3D: three minutes of 44.1 kHz stereo FLAC (pink noise
 under a chord), ReplayGain on.
 
@@ -2164,11 +2164,11 @@ That is well inside the budget of a few percent of one core.
   dragging a band fast may zipper slightly; a ReplayGain change mid-track
   steps the level.
 - **Qt's FFmpeg plugin prints a VDPAU probe failure** when the Qt engine
-  starts in tests. It comes from Qt's hardware probe, not from Omamp.
+  starts in tests. It comes from Qt's hardware probe, not from Thrum.
 
 ### What's needed to make native the default
 
-1. A day of real listening with `OMAMP_ENGINE=native`: gapless albums,
+1. A day of real listening with `THRUM_ENGINE=native`: gapless albums,
    shuffle, the NAS, seeking, pause, Bluetooth and USB outputs.
 2. Subtract the sink's latency from the position.
 3. Follow the default device (`QMediaDevices::audioOutputsChanged`) and
@@ -2181,7 +2181,7 @@ That is well inside the budget of a few percent of one core.
 ## Phase 4 core: the web (20 October 2026)
 
 The library side of Phase 4, built overnight while another agent worked on
-the window. Omamp can now match tracks to MusicBrainz releases and write
+the window. Thrum can now match tracks to MusicBrainz releases and write
 their tags and covers, fetch covers for albums without one, find and write
 lyrics, and queue and send scrobbles. Nothing here touches `src/app/` or
 `src/engine/`; the hooks the window and the player need are at the end.
@@ -2218,9 +2218,9 @@ further when `X-RateLimit-Remaining` reaches 0), Last.fm 200 ms. 503, 429,
 or the `Retry-After` value. A refused or unresolvable host, or the system
 saying it has no network (`QNetworkInformation`), is reported as offline at
 once. Answers to requests that ask for it are cached in
-`~/.cache/omamp/http/<xx>/<sha1>.bin` (200 answers, and 404 answers for at
+`~/.cache/thrum/http/<xx>/<sha1>.bin` (200 answers, and 404 answers for at
 most a day); an offline request falls back to an expired copy. Every base
-address can be moved by `OMAMP_<SERVICE>_URL` or the setting
+address can be moved by `THRUM_<SERVICE>_URL` or the setting
 `net.url.<service>`, which is how the tests reach the mock server.
 
 **Schema 8** adds `lyrics (track_id, plain, synced, source, lrclib_id,
@@ -2249,7 +2249,7 @@ Totals: 36 passed, 0 failed, 4 skipped, 0 blacklisted, 3855ms    (engine)
 Totals: 25 passed, 0 failed, 1 skipped, 0 blacklisted, 1265ms    (Phase 4 core: the web)
 ```
 
-The new class (`OMAMP_TESTS=web`) never leaves 127.0.0.1. It covers the
+The new class (`THRUM_TESTS=web`) never leaves 127.0.0.1. It covers the
 User-Agent and endpoint overrides; the shared pace across two worker
 threads; ListenBrainz's rate headers; retries on 503 and 429 and none on 400;
 the cache, refresh, forced offline with a stale answer, and a refused port
@@ -2268,7 +2268,7 @@ set aside, a refused token; Last.fm signatures, the auth steps, scrobbles and
 a dead session; the schema 7 to 8 upgrade; and every new command with
 `--json`.
 
-**Live smoke test.** `OMAMP_LIVE_TESTS=1 OMAMP_TESTS=web` runs `liveSmoke`:
+**Live smoke test.** `THRUM_LIVE_TESTS=1 THRUM_TESTS=web` runs `liveSmoke`:
 one MusicBrainz release search (Nirvana, Nevermind), one look-up of the top
 result, and one LRCLIB get (the example in LRCLIB's documentation), at the
 real pace with the real User-Agent. Run by hand on 20 October: all three
@@ -2289,7 +2289,7 @@ recordings, lengths, two labels and a release group; LRCLIB id 3396226 with
   the fraction), 17 % album title, 13 % artist, 5 % date, 3 % each for country
   and format preference, 2 % status. High is 0.85 and up, medium 0.65.
   `--apply` writes only from 0.80 unless a release is chosen.
-- **Several artists are written as Omamp's "A; B"** (the credited names), not
+- **Several artists are written as Thrum's "A; B"** (the credited names), not
   MusicBrainz's "A feat. B" credit text, so the multi-value artist tables
   keep working. The scrobblers send "A, B".
 - **Years, not full dates.** The tag writer keeps `year` and `originalyear`
@@ -2310,7 +2310,7 @@ recordings, lengths, two labels and a release group; LRCLIB id 3396226 with
   settings do; the environment can supply them instead.
 - **Network work happens only in `flush()` and the log-in helpers.** The
   player's hooks write to the database and return.
-- **`omamp net set` only touches web settings** (keys starting `acoustid.`,
+- **`thrum net set` only touches web settings** (keys starting `acoustid.`,
   `identify.`, `coverart.`, `lyrics.`, `scrobble.`, `listenbrainz.`,
   `lastfm.`, `net.`) and never prints a secret back.
 - **The web commands parse their own options** (`src/cli/webcli.cpp`); one
@@ -2321,7 +2321,7 @@ recordings, lengths, two labels and a release group; LRCLIB id 3396226 with
 
 - **No AcoustID key.** That path is tested against the mock only. Matt needs
   to register an application (free, non-commercial) and set `acoustid.key`,
-  or Omamp should ship one.
+  or Thrum should ship one.
 - **Not tried on a real library.** Identify, fetch-art and lyrics ran only
   against fixtures, apart from the live smoke test.
 - **Network on the build machine.** The agent's sandbox has no internet, and
@@ -2337,7 +2337,7 @@ recordings, lengths, two labels and a release group; LRCLIB id 3396226 with
   disc-number mismatch costs only the position points.
 - **A cover fetched without `--save-cover` lives only in the artwork cache.**
   If a later scan resets the album's `art_checked`, the cache searches the
-  files again and drops it; `omamp fetch-art` fetches it again.
+  files again and drops it; `thrum fetch-art` fetches it again.
 - **SYLT is read, not written.** Synced lyrics go to a `.lrc` file, or as LRC
   text in the plain lyrics tag.
 - **Secrets in the database.** Move tokens to the Secret Service
@@ -2424,11 +2424,11 @@ refresh.
 **Command line.**
 
 ```text
-omamp identify <query> [--dry-run | --apply] [--release <mbid>] [--min-score 0.8] [--json]
-omamp fetch-art <query> | --missing [--embed] [--save-cover] [--dry-run] [--json]
-omamp lyrics <query> [--fetch] [--write lrc|tag] [--dry-run] [--json]
-omamp scrobble status | flush | login listenbrainz --token <t> | login lastfm [--complete] [--json]
-omamp net status | set <key> <value> | unset <key> | clear-cache [--json]
+thrum identify <query> [--dry-run | --apply] [--release <mbid>] [--min-score 0.8] [--json]
+thrum fetch-art <query> | --missing [--embed] [--save-cover] [--dry-run] [--json]
+thrum lyrics <query> [--fetch] [--write lrc|tag] [--dry-run] [--json]
+thrum scrobble status | flush | login listenbrainz --token <t> | login lastfm [--complete] [--json]
+thrum net status | set <key> <value> | unset <key> | clear-cache [--json]
 ```
 
 ## Phase 2 window: the tag editor, organise, undo, Files to Edit and duplicates (20 October 2026)
@@ -2588,9 +2588,9 @@ duplicates.
 (the whole made-up library, with two copies renamed "(2)") and
 `docs/files-to-edit.png` ("Year differs within an album" with the info
 panel). They come from `tests/make-demo-library` plus two copied files and
-three tags changed with `omamp tag`, scanned into throwaway folders in the
-scratchpad and captured offscreen in software with `OMAMP_DEMO` and
-`OMAMP_SCREENSHOT`, in the Night Ride theme. New demo verbs: `action:<id>`
+three tags changed with `thrum tag`, scanned into throwaway folders in the
+scratchpad and captured offscreen in software with `THRUM_DEMO` and
+`THRUM_SCREENSHOT`, in the Night Ride theme. New demo verbs: `action:<id>`
 (any palette action), `selectall`, `mask:<text>`, `tagset:<field>=<value>`
 and `audits`.
 
@@ -2598,7 +2598,7 @@ and `audits`.
 
 - **Sheets, not separate windows.** Each editor is a large modal panel over
   the library in the theme (one main button filled with the accent), so
-  nothing opens a window of its own and every key stays in Omamp.
+  nothing opens a window of its own and every key stays in Thrum.
 - **‹keep› goes back by emptying.** Typing a mixed field empty returns it to
   ‹keep› rather than blanking every track; the ✕ blanks on purpose.
 - **Zero-count checks are dimmed, not hidden**, so Files to Edit keeps its
@@ -2644,7 +2644,7 @@ and `audits`.
 
 ## Phase 5 core: the NAS (20 October 2026)
 
-Omamp can now keep a library on a NAS in two ways: a mounted SMB or NFS share
+Thrum can now keep a library on a NAS in two ways: a mounted SMB or NFS share
 that it scans itself, hardened against shares that hang or vanish, or a
 Navidrome (OpenSubsonic) server whose library it mirrors without scanning
 across the network. The user guide is [docs/nas.md](../nas.md). The window
@@ -2663,7 +2663,7 @@ src/core/subsonic.{h,cpp}  SubsonicClient: token and API-key auth, the browse, c
 src/core/remote.{h,cpp}    RemoteSources (add, sync, remove, streamUrl, coverArt, scrobble,
                            setRating) and Secrets (secret-tool, or a 0600 file)
 src/core/peaks.{h,cpp}     PeaksCache: the waveform cache's storage, keyed by volume, path, size, time
-src/cli/clinas.cpp         omamp volume, omamp nas mount-guide, omamp remote
+src/cli/clinas.cpp         thrum volume, thrum nas mount-guide, thrum remote
 tests/nas_tests.cpp        19 tests: hung, stale and unmounted shares, the monitor, reassign, the walker
 tests/subsonic_tests.cpp   9 tests against a mock Subsonic server (QTcpServer on 127.0.0.1)
 ```
@@ -2682,7 +2682,7 @@ merged, it goes before 9 in `migrations()`; the migration tests compare with
 
 **Network volumes.** cifs, smb3, smbfs, nfs, nfs4, fuse.sshfs, fuse.rclone,
 davfs, fuse.davfs2, 9p and a few cluster filesystems count as network
-shares. Identity is unchanged: the `.omamp-volume-id` marker, else server and
+shares. Identity is unchanged: the `.thrum-volume-id` marker, else server and
 share. What changed is how a share is looked at:
 
 - `PathProbe::probe()` runs `stat()` (and reads the marker) on a thread of its
@@ -2701,21 +2701,21 @@ share. What changed is how a share is looked at:
   table alone. Each check runs on a worker thread with its own `Library`.
   It reports `volumesWentOffline` and `volumesCameOnline(ids, roots)`.
 - `Watcher::followMounts(monitor)` re-reads the roots and queues a `remount`
-  rescan (quick mode) of just the roots that came back. `omamp watch` uses it.
-- `Volumes::reassign()` (`omamp volume reassign`) points a volume at a new
+  rescan (quick mode) of just the roots that came back. `thrum watch` uses it.
+- `Volumes::reassign()` (`thrum volume reassign`) points a volume at a new
   root after checking that the volume's tracks are there. A marker volume
   keeps its identity: the old marker id is written onto the new share.
   `forget` removes a volume and its tracks, and refuses an online volume
   without `--force`.
 - `Library::open()` refuses a database on a network mount
-  (`checkDatabaseIsLocal`). `OMAMP_MOUNTINFO` lets tests fake the mount table.
+  (`checkDatabaseIsLocal`). `THRUM_MOUNTINFO` lets tests fake the mount table.
 
 **Scanning tuned for latency.** The scanner's walk moved into `Walker`, with
 the same rules (hidden entries skipped, only audio names stat'ed, linked files
 followed and linked folders not, no crossing into other filesystems, folder
 times for quick mode), now listing several folders at once. The default is 8
 walkers on a network volume and 4 on a local one, set per volume with
-`scan_workers` (`omamp volume workers`), or for one scanner with
+`scan_workers` (`thrum volume workers`), or for one scanner with
 `setWalkWorkers()`. Results are sorted by path, so the order no longer
 depends on the walk. `Scanner::setFileSystem()` takes the seam; tests and the
 benchmark put a `LatencyFileSystem` (a fixed wait per listing and per stat,
@@ -2744,21 +2744,21 @@ setRating. `RemoteSources::sync()`:
    row, rating and history back.
 
 Secrets go to the keyring through `secret-tool` (attributes
-`application=omamp remote=<uuid>`) when it and a session bus are there,
-otherwise to `~/.config/omamp/credentials.json` with mode 0600 in a 0700
-folder. `OMAMP_SECRET_STORE=file` forces the file; the tests set it.
+`application=thrum remote=<uuid>`) when it and a session bus are there,
+otherwise to `~/.config/thrum/credentials.json` with mode 0600 in a 0700
+folder. `THRUM_SECRET_STORE=file` forces the file; the tests set it.
 
 **`Library::playableUrl(trackId)`** gives a `file://` URL, or for a mirrored
 track the signed stream URL with the source's bitrate and format.
 `absolutePath()` returns empty for a mirrored track.
 
 **Waveform cache.** `PeaksCache` stores and loads peaks under
-`~/.cache/omamp/peaks/`, keyed by SHA-1 of volume key, relative path, size and
+`~/.cache/thrum/peaks/`, keyed by SHA-1 of volume key, relative path, size and
 modification time, with `prune(maxBytes)`. Nothing computes peaks yet.
 
-**Command line.** `omamp volume list|show|reassign|forget|workers`,
-`omamp nas mount-guide --smb //nas/music | --nfs nas:/export --at /mnt/music
-[--write-to dir] [--uid --gid --idle]`, and `omamp remote add subsonic <url>
+**Command line.** `thrum volume list|show|reassign|forget|workers`,
+`thrum nas mount-guide --smb //nas/music | --nfs nas:/export --at /mnt/music
+[--write-to dir] [--uid --gid --idle]`, and `thrum remote add subsonic <url>
 --user u --password-stdin | --api-key-stdin`, `remote list|sync [--full]|set
 --max-bitrate --format|remove [--keep-tracks]`. All take `--json`. Secrets are
 refused on the command line. The mount guide prints a `.mount` and an
@@ -2817,7 +2817,7 @@ command line is tested too.
 
 ### Benchmark
 
-`omamp_bench nas --files 100000` walks 1,000 artists × 10 albums × 10 tracks
+`thrum_bench nas --files 100000` walks 1,000 artists × 10 albums × 10 tracks
 (100,000 files, 11,001 folders) held in memory, waiting a fixed time for every
 listing and every stat. The model column is round trips × wait ÷ walkers.
 
@@ -2837,7 +2837,7 @@ listing and every stat. The model column is round trips × wait ÷ walkers.
 | Quick | 2 ms | 16 | 11,001 | 11,000 | 4.8 s | 2.8 s |
 
 The gap to the model is `sleep_for` overshooting by about 60 µs per wait. End
-to end (`omamp_bench files --files 100000 --latency-us 500 --walk-workers 8`,
+to end (`thrum_bench files --files 100000 --latency-us 500 --walk-workers 8`,
 hard links on tmpfs, database work included): first scan 4.8 s (no latency),
 unchanged rescan 8.4 s, quick rescan 1.4 s, with 16,880 listings and 116,878
 stats over the two; peak memory 185 MB. Without latency the unchanged rescan
@@ -2881,7 +2881,7 @@ not. Nothing was measured against a real NAS.
 - **Secrets: keyring first, a 0600 file otherwise**, and the tests force the
   file so they never touch the desktop keyring.
 - **The mount guide uses `hard` for NFS** (safe tag writes) and relies on
-  Omamp's probes for responsiveness; `vers=3.1.1` and `noserverino` for SMB;
+  Thrum's probes for responsiveness; `vers=3.1.1` and `noserverino` for SMB;
   credentials in `/etc/samba/credentials/`, edited with `sudoedit` so the
   password never reaches a command line.
 - **The NAS commands live in their own file**, `src/cli/clinas.cpp`, with a
@@ -2902,13 +2902,13 @@ not. Nothing was measured against a real NAS.
 - **A song in two albums** keeps only its latest album in `remote_tracks`.
 - **Cover art for mirrored tracks** is fetched by `RemoteSources::coverArt`,
   but the artwork cache and the window's image provider don't call it yet.
-- **`omamp watch` follows mounts; the window doesn't** until it creates a
+- **`thrum watch` follows mounts; the window doesn't** until it creates a
   `MountMonitor`.
 - **Probing local disks** (USB drives that hang) is left for later.
 
 ### What the window and the player need
 
-1. **Volume panel.** `Volumes::list()` (or `omamp volume list --json`) for
+1. **Volume panel.** `Volumes::list()` (or `thrum volume list --json`) for
    rows; each `VolumeRow::toJson()` has kind, state, root, tracks, offline
    and missing counts and the walker count. Actions: Rescan (scan that
    volume's `libraryRoots` in quick mode), Reassign (a folder picker through
@@ -2986,7 +2986,7 @@ position moves while playing count, a seek resets the mark, a jump back
 does not count. When a track ends by itself the rest after the last
 position report counts too. A play ends when the track ends, Next or
 Previous is pressed, another track is chosen or played now (a user skip),
-playback stops, or Omamp quits (`aboutToQuit` calls `finishPlay()`).
+playback stops, or Thrum quits (`aboutToQuit` calls `finishPlay()`).
 `PlayRecorder` turns that into `Stats::recordPlay()` and
 `Scrobbler::trackStarted/trackProgress/trackFinished` on its own connection,
 opened only if the library file exists, so the deck alone never makes a
@@ -3081,7 +3081,7 @@ verbs for screenshots: `party:<preset>` and `playlist:<id>`.
 ### Test results
 
 `bin/test` with `JOBS=4`, a throwaway `HOME` and XDG folders, offscreen in
-software, `OMAMP_NO_AUDIO_DEVICE=1`:
+software, `THRUM_NO_AUDIO_DEVICE=1`:
 
 ```text
 Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 83ms      (player)
@@ -3103,7 +3103,7 @@ Totals: 10 passed, 0 failed, 0 skipped, 0 blacklisted, 6787ms    (Phase 3 window
 Totals: 7 passed, 0 failed, 0 skipped, 0 blacklisted, 8200ms     (Phase 3 window: from the keyboard)
 ```
 
-The new classes (`OMAMP_TESTS=p3window`) cover:
+The new classes (`THRUM_TESTS=p3window`) cover:
 
 - **Counting plays**: two 2-second FLAC files made by `ffmpeg`, scanned,
   played from the list through the native engine into the in-memory
@@ -3132,7 +3132,7 @@ The new classes (`OMAMP_TESTS=p3window`) cover:
 - **Settings round trip**: library settings back after reopening, unknown
   keys refused, the token only through its check, folders; the Player's
   crossfade, ReplayGain, clip prevention, EQ and engine choice back from
-  `omamp.conf`.
+  `thrum.conf`.
 - **Collections**: own nodes and a value node's tracks, a bad query
   refused, columns remembered.
 - **In the window**: a playlist from the palette and the name sheet, the
@@ -3152,9 +3152,9 @@ library), `docs/autoplaylist-editor.png` (three rules, sort by rating
 descending, a two-hour limit) and `docs/settings-playback.png` (native
 engine, 3 s crossfade, album gain, the equaliser on). They come from
 `tests/make-demo-library` scanned into throwaway XDG folders in the
-scratchpad, with playlists made by `omamp playlist` and `omamp
-autoplaylist`, captured offscreen in software with `OMAMP_DEMO` and
-`OMAMP_SCREENSHOT` in the Night Ride theme. No audio device was opened.
+scratchpad, with playlists made by `thrum playlist` and `thrum
+autoplaylist`, captured offscreen in software with `THRUM_DEMO` and
+`THRUM_SCREENSHOT` in the Night Ride theme. No audio device was opened.
 
 ### Decisions
 
@@ -3206,7 +3206,7 @@ autoplaylist`, captured offscreen in software with `OMAMP_DEMO` and
   position reports in real use are untested for heard time.
 - **No "now playing" scrobbles**, as above. Listens themselves queue and
   send.
-- **Last.fm login** is still the command line (`omamp scrobble login
+- **Last.fm login** is still the command line (`thrum scrobble login
   lastfm`); the page says so.
 - **No search inside a playlist view, no drag from the album grid, no
   dragging playlists in the tree** (move them with the menu).
@@ -3227,7 +3227,7 @@ autoplaylist`, captured offscreen in software with `OMAMP_DEMO` and
 
 `TidyWindowKeysTests::editTagsFromTheKeyboardAndUndo` failed about two runs
 in five at a `finished.wait(30000)` line. The report blamed the folder
-watcher: Omamp's own writes woke it, and its rescan took the window's single
+watcher: Thrum's own writes woke it, and its rescan took the window's single
 job slot, so a `Ctrl+Z` pressed during the rescan was refused. Part of that
 was true and is fixed below, but it was not what broke the test.
 
@@ -3246,7 +3246,7 @@ redo depends on.
 ### What was wrong in the app
 
 - **Own writes woke the watcher.** The tag writer's temporary copy was
-  already hidden (`.omamp-…`), and the watcher and scanner skip hidden names.
+  already hidden (`.thrum-…`), and the watcher and scanner skip hidden names.
   But the rename over the original, the organiser's moves, the folders it
   makes and removes, and files sent to the trash were all inotify events, so
   each started a rescan 1.5 seconds later. The rescan found nothing new
@@ -3261,7 +3261,7 @@ redo depends on.
 
 ### The fix
 
-- **`src/core/ownwrites.{h,cpp}`**: a process-wide list of paths Omamp is
+- **`src/core/ownwrites.{h,cpp}`**: a process-wide list of paths Thrum is
   changing itself. `OwnWrites::note(path)` marks a path as ours for five
   seconds; `noteFolder()` also marks each parent that `mkpath` is about to
   make. The tag writer notes the file before and after the rename and the
@@ -3322,10 +3322,10 @@ bug.
 
 Before the fix, 2 of 5 runs of the `tidywindow` tests failed (at lines 644
 and 672). After it, with `QT_QPA_PLATFORM=offscreen`,
-`QT_QUICK_BACKEND=software`, `OMAMP_NO_AUDIO_DEVICE=1` and a temporary
+`QT_QUICK_BACKEND=software`, `THRUM_NO_AUDIO_DEVICE=1` and a temporary
 `HOME`:
 
-- `OMAMP_TESTS=tidywindow`, 10 runs in a row: 10 passed (TidyWindowTests
+- `THRUM_TESTS=tidywindow`, 10 runs in a row: 10 passed (TidyWindowTests
   9/9, TidyWindowKeysTests 5/5, OwnWritesTests 6/6 each time).
 - The full suite, twice: every class passed both times. The only skips are
   the opt-in ones (four engine CPU benchmarks, the live web smoke test).
@@ -3371,7 +3371,7 @@ queue entry (path, trackId) ──Player::urlFor──> Resolver ──> QUrl wi
   saved or restored. `AudioEngine::redact()` blanks `t`, `s`, `p`,
   `apiKey`, `token` and similar query values and `user:password@` in every
   error the engines or the Player show. `trackFailed`, `source()`, markers
-  and `trackAt()` carry the path. With `OMAMP_FFMPEG_LOG` set, FFmpeg's log
+  and `trackAt()` carry the path. With `THRUM_FFMPEG_LOG` set, FFmpeg's log
   goes through `redact()` too.
 - **Engine interface**: `load(path, url = {})`, `queueNext(path, url = {})`,
   `skipTo(path, url = {})`, `buffering()` and `bufferingChanged()`.
@@ -3381,7 +3381,7 @@ queue entry (path, trackId) ──Player::urlFor──> Resolver ──> QUrl wi
 - **Decoder over the network** (`streaming.{h,cpp}` holds the options):
   - `rw_timeout` and `timeout` 15 s; `reconnect=1`,
     `reconnect_on_network_error=1`, `reconnect_delay_max=4`,
-    `reconnect_delay_total_max=12`; `user_agent` `Omamp/<version>`.
+    `reconnect_delay_total_max=12`; `user_agent` `Thrum/<version>`.
   - `reconnect_streamed=0`, deliberately. On a server that ignores ranges,
     FFmpeg's reconnect asks for the rest with a Range header, gets the whole
     file back, and plays it as the continuation. A test caught it. Such a
@@ -3439,19 +3439,19 @@ queue entry (path, trackId) ──Player::urlFor──> Resolver ──> QUrl wi
 
 ### Tests without sound or servers
 
-`tests/streaming_tests.cpp` (`OMAMP_TESTS=streaming`), 27 tests.
+`tests/streaming_tests.cpp` (`THRUM_TESTS=streaming`), 27 tests.
 `tests/audiohttp.h` is an HTTP/1.1 server on 127.0.0.1, one blocking thread
 per connection, serving the engine fixtures at `/stream/<name>` with or
 without byte ranges, in pieces with delays, chunked, after a delay, as 404,
 or breaking off after N bytes (once or every time). It records each request.
 The tests shorten the timeouts (`rw_timeout` 3 s, reconnect to 1 s) through
 `Streaming::setOptions`. Every engine runs into a `BufferSink`, and
-`OMAMP_NO_AUDIO_DEVICE=1` still makes a device sink abort.
+`THRUM_NO_AUDIO_DEVICE=1` still makes a device sink abort.
 
 | Test | What it shows |
 |---|---|
 | Redaction | `t`, `s`, `p`, `apiKey` and `user:password@` blanked; `id`, `u`, `f` and local paths untouched |
-| Open a stream | Sample-identical to the file; `User-Agent: Omamp/…` sent; seekable with ranges |
+| Open a stream | Sample-identical to the file; `User-Agent: Thrum/…` sent; seekable with ranges |
 | Server errors | 404 and a refused connection give a message without the token |
 | Seek with ranges | Exact samples at 1500, 500, 2000, 0 and 2999 ms in the sawtooth |
 | Seek without ranges | Exact samples forwards and backwards (read on, or reopen) |
@@ -3533,7 +3533,7 @@ crossfade on. It now has everything the Qt engine has plus gapless playback,
 crossfade, ReplayGain, the equaliser, skip on failure, streaming with
 buffering and clean error handling, latency-corrected position and
 following the default device. The Qt engine stays as the fallback
-(`OMAMP_ENGINE=qt`). What still argues for waiting is only that no note has
+(`THRUM_ENGINE=qt`). What still argues for waiting is only that no note has
 gone through `DeviceSink` on real hardware.
 
 ### Known gaps
@@ -3681,7 +3681,7 @@ have their own rows below. In the track list an offline track is greyed as
 before and now says why on hover.
 
 **Connect a NAS.** SMB or NFS, the share and the mount point; the steps fill
-in as you type, from `omamp nas mount-guide` run in-process (`Cli::runNas`
+in as you type, from `thrum nas mount-guide` run in-process (`Cli::runNas`
 with `--json`, never `--write-to`): the two unit files with their names, the
 commands in order (each with Copy, and **Copy every command**), the fstab
 line, and adding the folder. Its mistakes are reworded for a form. A second
@@ -3708,7 +3708,7 @@ mode locks the tag-writing ones (`edit-tags`) and the NAS ones
 ### Test results
 
 `bin/test` with `JOBS=4`, a throwaway `HOME` and XDG folders, offscreen in
-software, `OMAMP_NO_AUDIO_DEVICE=1`, `OMAMP_SECRET_STORE=file`, after
+software, `THRUM_NO_AUDIO_DEVICE=1`, `THRUM_SECRET_STORE=file`, after
 merging main (streaming):
 
 ```text
@@ -3736,7 +3736,7 @@ Totals: 11 passed, 0 failed, 0 skipped    Phase 4/5 window
 Totals: 27 passed, 0 failed, 0 skipped    streaming
 ```
 
-`OMAMP_TESTS=p45window` (MockHttp and MockSubsonic on 127.0.0.1 only, three
+`THRUM_TESTS=p45window` (MockHttp and MockSubsonic on 127.0.0.1 only, three
 runs in a row, all passing) covers:
 
 - **Identify, in the window**: three files made by ffmpeg, `Ctrl+A`-style
@@ -3783,12 +3783,12 @@ changes tab), `docs/lyrics.png` (made-up timed lyrics following a forced
 position), `docs/volumes.png` (the demo disk, an SMB share that isn't
 connected, a Navidrome server) and `docs/remote-source.png` (the add sheet
 after a successful test). They come from `tests/make-demo-library` in
-throwaway XDG folders in the scratchpad, with a few tags changed by `omamp
+throwaway XDG folders in the scratchpad, with a few tags changed by `thrum
 tag`, one SMB volume written into the demo database, a server added with
-`omamp remote add`, and a small Python server on 127.0.0.1 standing in for
+`thrum remote add`, and a small Python server on 127.0.0.1 standing in for
 MusicBrainz, the Cover Art Archive and Navidrome with made-up answers.
-Captured offscreen in software, Night Ride theme, with `OMAMP_DEMO` and
-`OMAMP_SCREENSHOT`. Looking at them led to a narrower album column, wider
+Captured offscreen in software, Night Ride theme, with `THRUM_DEMO` and
+`THRUM_SCREENSHOT`. Looking at them led to a narrower album column, wider
 release tracks, the readable tag changes first, equal old and new columns,
 fixed-width icons, server volumes shown once, and a title line on the
 Lyrics tab.
@@ -3811,14 +3811,14 @@ Lyrics tab.
 - **`Ctrl+I`**: `I` toggles the info panel, `Ctrl+I` was free. Lyrics got a
   tab and a palette action, not `L` (taken by Add folder).
 - **The mount guide runs the command-line code in-process** rather than
-  duplicating it, so the window and `omamp nas mount-guide` can't drift.
+  duplicating it, so the window and `thrum nas mount-guide` can't drift.
 - **Mount monitoring follows watching by default.** Tests that turn
   watching off keep the old synchronous volume check, so their fixtures
   (volumes forced online) aren't undone by a check arriving later.
 - **Forget only offline volumes** from the page, as the core prefers; a
   connected one is rescanned instead.
 - **Removing a server takes its tracks** (the page offers no "keep tracks";
-  `omamp remote remove --keep-tracks` still does).
+  `thrum remote remove --keep-tracks` still does).
 - **The Last.fm API key and secret are settings** like the other keys
   (Phase 4's decision); the page never shows the session key, and it can't
   be set by hand.
@@ -3846,13 +3846,13 @@ Lyrics tab.
 
 ## Phase 6: device sync, reports and the AUR package (20 October 2026)
 
-Omamp now syncs music to a folder, a USB drive or a Syncthing folder, and
+Thrum now syncs music to a folder, a USB drive or a Syncthing folder, and
 saves any list as CSV or HTML. A sync profile names its target, what to
 sync (playlists, auto-playlists, collections, queries or the whole
 library), format rules that convert with the `ffmpeg` command, and a file
 name mask. A dry run lists every copy, conversion and delete before anything
 is written. In the window this is the Devices page and a Devices node in the
-tree; on the command line it is `omamp sync` and `omamp report`, both with
+tree; on the command line it is `thrum sync` and `thrum report`, both with
 `--json`. The AUR package is ready in `aur/` and not published. The user
 guide is [docs/sync.md](../sync.md). No schema change.
 
@@ -3862,9 +3862,9 @@ guide is [docs/sync.md](../sync.md). No schema change.
 
 ```text
 src/core/devicesync.{h,cpp}   profiles (in settings: sync.profiles), sources, format rules, target checks,
-                              device detection, plan() (the dry run), apply(), the .omamp-sync.json manifest
+                              device detection, plan() (the dry run), apply(), the .thrum-sync.json manifest
 src/core/report.{h,cpp}       CSV and HTML reports of a list of track ids, with chosen columns
-src/cli/clisync.cpp           omamp sync list|devices|create|show|set|run|remove, omamp report
+src/cli/clisync.cpp           thrum sync list|devices|create|show|set|run|remove, thrum report
 src/app/devicescontroller.*   library.devices: profiles, devices, sourceChoices, saveProfile, previewProfile
                               and syncProfile (both through runJob), the folder picker
 src/app/librarycontroller_reports.cpp  exportList (folder picker) and exportListTo; listTrackIds
@@ -3873,7 +3873,7 @@ src/app/librarycontroller.cpp a device node's scope is the profile's tracks (jso
 src/app/DevicesSheet.qml      the page: profiles on the left, the form, then the preview
 src/app/Main.qml, LibraryTreePane.qml  palette actions devices, sync-device, export-csv, export-html;
                               tree menus Sync now, Edit sync profile…, New sync profile…, Save the list as…
-tests/sync_tests.cpp          SyncTests (11) and SyncWindowTests (4), OMAMP_TESTS=sync,syncwindow
+tests/sync_tests.cpp          SyncTests (11) and SyncWindowTests (4), THRUM_TESTS=sync,syncwindow
 aur/                          PKGBUILD, .SRCINFO, README (how it was checked and how to publish)
 ```
 
@@ -3889,7 +3889,7 @@ sync never fills the system disk under `/run/media`. A Syncthing target must
 hold `.stfolder`. A target that is inside a library folder, or holds one, is
 refused. `detectDevices()` lists the folders under `/run/media/$USER` and
 `/media` that are mount points, and the folders in Syncthing's `config.xml`
-(`XDG_STATE_HOME`, then `XDG_CONFIG_HOME`); `OMAMP_MEDIA_ROOTS` replaces the
+(`XDG_STATE_HOME`, then `XDG_CONFIG_HOME`); `THRUM_MEDIA_ROOTS` replaces the
 media roots for screenshots.
 
 **The plan** takes each source's tracks in order, once each. Offline and
@@ -3899,16 +3899,16 @@ plus the extension of its rule; two tracks with one name get "(2)". A file
 is kept when the manifest records the same source path, the library's size
 and modification time, and the same rule signature (`copy`, `opus:128`), or,
 with no manifest entry, when a plain copy of the same size is no older than
-the source. Files not planned are deleted when the manifest says Omamp wrote
+the source. Files not planned are deleted when the manifest says Thrum wrote
 them, or when "delete other files" is on; anything under a hidden name is
 never listed. Conversions are estimated at duration × bitrate. A plan that
-doesn't fit the free space (QStorageInfo; `OMAMP_SYNC_FREE_BYTES` in tests)
+doesn't fit the free space (QStorageInfo; `THRUM_SYNC_FREE_BYTES` in tests)
 says so and `apply()` refuses it. A plan with conversions fails at once when
 ffmpeg isn't installed.
 
 **Applying** deletes first (and removes the folders it empties), then copies
 and converts on up to four threads. Every file is written under
-`.omamp-sync-<thread>` in its folder and renamed into place. ffmpeg runs as
+`.thrum-sync-<thread>` in its folder and renamed into place. ffmpeg runs as
 `-map 0:a:0 -map_metadata 0 -c:a <encoder> -b:a <n>k`; MP3, AAC and FLAC also
 map the cover (`0:v?`, attached_pic) and retry without it if that fails.
 Cancel kills the running ffmpeg. Playlist files (`<name>.m3u8`, relative
@@ -3928,7 +3928,7 @@ portal picker gives, and respects the write sandbox.
 ### Test results
 
 `bin/test` with `JOBS=8`, a throwaway `HOME` and XDG folders, offscreen in
-software, `OMAMP_NO_AUDIO_DEVICE=1`: every class passed, 343 tests (328
+software, `THRUM_NO_AUDIO_DEVICE=1`: every class passed, 343 tests (328
 before). The only skips are the opt-in ones (four engine CPU benchmarks, the
 live web smoke test).
 
@@ -3956,8 +3956,8 @@ The sync tests make FLAC, MP3, M4A and WMA files with ffmpeg and cover:
   config;
 - CSV quoting, the formula guard, columns, unknown columns and formats; HTML
   escaping, title, summary and rows;
-- `omamp sync` create, a bad rule, dry run and run with `--json`, list with
-  the last result, set, the text dry run, an unknown profile; `omamp report`
+- `thrum sync` create, a bad rule, dry run and run with `--json`, list with
+  the last result, set, the text dry run, an unknown profile; `thrum report`
   to stdout and to an HTML file, and `--json` without `--out` refused.
 
 The window tests open the Devices page from the palette (the drive under the
@@ -3977,8 +3977,8 @@ never matching) fails two sync tests, so they detect those bugs.
 a "Road trip" playlist and the "Five stars" auto-playlist synced once, then
 changed; the preview after **Preview**) and `docs/report.png` (an HTML
 report, captured with headless Chromium). Captured offscreen in software
-with `OMAMP_DEMO="action:devices;click:previewProfile"`,
-`OMAMP_SCREENSHOT_DELAY=3000` and fake media roots. The first capture put
+with `THRUM_DEMO="action:devices;click:previewProfile"`,
+`THRUM_SCREENSHOT_DELAY=3000` and fake media roots. The first capture put
 the preview below the fold; the form is now shorter (sources and the query
 on one row, the two switches on one row) and the preview has the rest of the
 page.
@@ -3987,7 +3987,7 @@ page.
 
 - **Profiles in settings, not a table.** A handful of rows; no migration,
   and `--db` works unchanged.
-- **Files Omamp wrote and that left the list are always removed;** "delete
+- **Files Thrum wrote and that left the list are always removed;** "delete
   other files" adds everything else. A sync that left stale copies would
   not be a sync; a sync that deleted a phone's other music by default would
   be worse.
@@ -3998,7 +3998,7 @@ page.
 - **No conversion to the file's own lossy format;** a rule like
   `*->mp3:192` copies MP3s as they are.
 - **USB means "a mounted drive",** not a particular device class: phones
-  that mount over MTP through gvfs show under `/run/user`, which Omamp
+  that mount over MTP through gvfs show under `/run/user`, which Thrum
   doesn't detect but accepts as a folder target.
 - **Reports from the window use the list on screen,** not a separate
   dialog, so a query, a playlist or a collection all work the same way.
@@ -4011,7 +4011,7 @@ page.
   Everything ran against folders in a temporary directory.
 - **MTP phones** (no mount point) are not detected; gvfs's mount under
   `/run/user/<uid>/gvfs` may work as a plain folder target; that is untested.
-- **Covers in Opus and Vorbis copies** are left out: Omamp doesn't map the
+- **Covers in Opus and Vorbis copies** are left out: Thrum doesn't map the
   picture for those codecs.
 - **The form's folder picker** (portal) and the report folder picker can't be
   driven by the tests; `exportListTo` and the profile's target property are
@@ -4033,7 +4033,7 @@ documentation is [docs/now-playing.md](../now-playing.md).
 ```
 src/app/nowplaying.{h,cpp}     the playing track's cover (QML: nowPlayingArt), off the window's thread
 src/app/appearance.{h,cpp}     deck style, visualiser, big-view settings and palettes (QML: appearance)
-src/app/visualiser.{h,cpp}     QQuickPaintedItem: bars, peaks, mirror, scope, fire (QML: Omamp 1.0)
+src/app/visualiser.{h,cpp}     QQuickPaintedItem: bars, peaks, mirror, scope, fire (QML: Thrum 1.0)
 src/app/DeckView.qml           the deck, moved out of Main.qml, in the deck style, with the cover
 src/app/BigView.qml            the big Now Playing view; PartyDisplay.qml is now this view
 src/app/BigLyrics.qml          timed lyrics for the big view
@@ -4043,7 +4043,7 @@ src/app/AppearancePage.qml     Settings > Appearance (page 4)
 src/app/CoverArt.qml, Bevel.qml, TitleButton.qml   small parts
 src/engine/spectrum.*          a time-domain tap: waveform(), 128 points, for the oscilloscope
 src/app/mpris.*                mpris:artUrl
-tests/nowplaying_tests.cpp     the tests below (OMAMP_TESTS=nowplaying)
+tests/nowplaying_tests.cpp     the tests below (THRUM_TESTS=nowplaying)
 ```
 
 - **Covers without the library window.** `NowPlaying` follows the player's
@@ -4078,7 +4078,7 @@ tests/nowplaying_tests.cpp     the tests below (OMAMP_TESTS=nowplaying)
   1000 px) or narrow (cover above). Rating stars write through
   `TagEditor::quickSet(id, "rating", …)`, which now says "Saving the
   rating". It opens the library only when the playing track is in it.
-- **`omamp mini` / `omamp micro`** start in a compact player.
+- **`thrum mini` / `thrum micro`** start in a compact player.
 - **Plugin**: `Service.artUrl` from Quickshell's `trackArtUrl`; the panel
   shows a 56 px cover beside the track details; `Model.coverSource()`
   accepts file, http(s) and inline pictures only.
@@ -4101,12 +4101,12 @@ class has 8, counting initTestCase and cleanupTestCase:
 - in Main.qml: the strip's cover; `N` opens the big view with three tracks
   up next and three timed lyric lines from a `.lrc`; `Shift+L`; `Shift+V`;
   a click on the fourth star saves a rating of 80; `Esc` closes; `Ctrl+M`
-  gives 420x64 titled "Omamp mini"; a resized mini player comes back at its
-  size; `Ctrl+Shift+M` gives 275x28 "Omamp micro"; both go back to the full
+  gives 420x64 titled "Thrum mini"; a resized mini player comes back at its
+  size; `Ctrl+Shift+M` gives 275x28 "Thrum micro"; both go back to the full
   size and the sizes reach `window.conf`; the Classic style from the
   palette reaches the deck and the window colour and persists; each
   visualiser draws on the deck; the Appearance page's Silver button works;
-  and no QML warning comes from Omamp's files throughout.
+  and no QML warning comes from Thrum's files throughout.
 
 Plugin: `node omarchy-plugin/tests/model.test.mjs` passes (two new cases);
 `qmllint` reports only the kinds of warning the files already had;
@@ -4121,10 +4121,10 @@ in the Night Ride theme; `docs/now-playing-big-default.png` is in Omarchy's
 default theme. They come from `tests/make-demo-library` with the new
 `DEMO_SECONDS=60`, which makes minute-long tracks with harmonics, a swell
 and a tick, so the analyser and the oscilloscope have something to show.
-They were captured offscreen in software with `OMAMP_DEMO`
-(`action:big-view`, `action:mini-player`…) and `OMAMP_SCREENSHOT`, on the
+They were captured offscreen in software with `THRUM_DEMO`
+(`action:big-view`, `action:mini-player`…) and `THRUM_SCREENSHOT`, on the
 native engine (which plays in real time into a buffer under
-`OMAMP_NO_AUDIO_DEVICE`), with a throwaway HOME pointing at the Night Ride
+`THRUM_NO_AUDIO_DEVICE`), with a throwaway HOME pointing at the Night Ride
 theme and the session bus out of reach. Looking at them led to a narrower
 LCD so the lamps fit beside the cover, the big-view and mini buttons moving
 to the deck's title bar, a rewritten fire (the first smeared sideways),
@@ -4144,7 +4144,7 @@ column only when there are lyrics.
   graph; a 64 px CPU blur stretched with smooth scaling looks the same in
   every renderer and costs one small file per cover.
 - **The compact mode isn't remembered** between runs, only each player's
-  size: a mini player that Hyprland tiles is no use. `omamp mini` opens
+  size: a mini player that Hyprland tiles is no use. `thrum mini` opens
   one, which is also when a window rule applies.
 - **The advanced window stays plain.** The strip keeps the Omarchy look in
   every style; only the deck, the mini players and the big view change.
@@ -4171,7 +4171,7 @@ column only when there are lyrics.
 
 ### After merging
 
-- Rebuild and reinstall Omamp (`bin/install` or `bin/install-user`). The
+- Rebuild and reinstall Thrum (`bin/install` or `bin/install-user`). The
   running copy doesn't send `mpris:artUrl`, so the bar has no cover until
   then.
 - The plugin changes only `Widget.qml`, `Service.qml` and `Model.js`, no new
@@ -4181,7 +4181,7 @@ column only when there are lyrics.
 ## Spotify (20 October 2026)
 
 Spotify can now sit beside the library, off until **Settings → Spotify →
-Show Spotify in Omamp** is switched on. Omamp drives spotify_player (the full
+Show Spotify in Thrum** is switched on. Thrum drives spotify_player (the full
 integration) or Spotifast (control only) through their command lines and never
 holds a Spotify credential. [docs/spotify.md](../spotify.md) is the user's
 guide and the reasoning; this entry is the record. Nothing reached Spotify:
@@ -4196,11 +4196,11 @@ every test and screenshot ran against a fake `spotify_player`.
   source: ids are bare, a track's duration is `{"secs","nanos"}`, a
   playlist's owner is `["name","user id"]`, lists carry no pictures.
   `repair()` undoes the CLI's `\n` → newline rewrite. `Settings` in
-  `~/.config/omamp/spotify.conf`. `Backend` with `SpotifyPlayerBackend` and
+  `~/.config/thrum/spotify.conf`. `Backend` with `SpotifyPlayerBackend` and
   `SpotifastBackend`; each command is a `QProcess` with stdin closed and a
   20 s limit.
 - **Guards**: spotify_player's CLI starts a client of its own when no
-  instance runs, and that client may stop to ask for a sign-in. Omamp runs a
+  instance runs, and that client may stop to ask for a sign-in. Thrum runs a
   command only when the sign-in files exist (`credentials.json`,
   `*_token.json`, names only) and an instance runs (found in `/proc` by its
   executable or script path, without a CLI subcommand).
@@ -4217,7 +4217,7 @@ every test and screenshot ran against a fake `spotify_player`.
   position smoothly between reads, follows a pause or resume from another
   device, and counts the track as finished when Spotify stops at (or back to
   the start after) its end. A start not seen within 12 s fails with a reason
-  (Premium or no Connect device). State reads that began before Omamp's own
+  (Premium or no Connect device). State reads that began before Thrum's own
   latest command, or within 1.5 s of it, don't change the play state.
 - **`SpotifyController`** (QML `spotify`): settings, status (installed,
   signed in, running, account, Premium, device, devices), the view
@@ -4226,7 +4226,7 @@ every test and screenshot ran against a fake `spotify_player`.
   track, links, the blend strip's search and the palette's. Work runs on two
   one-thread pools: control (playback, in order) and data (lists, search,
   status).
-- **`SpotifyArt`**: pictures in `~/.cache/omamp/spotify`, from the playback
+- **`SpotifyArt`**: pictures in `~/.cache/thrum/spotify`, from the playback
   state's album images or from Spotify's public oEmbed page, at most three at
   a time, each once. `NowPlaying::setReferenceArt()` lets the deck and MPRIS
   use them; a `track-<id>.jpg` link keeps a restored queue's cover.
@@ -4241,14 +4241,14 @@ every test and screenshot ran against a fake `spotify_player`.
   track list while searching, with a "Local" heading over the list),
   `SpotifyHooks.qml` (palette actions `spotify` and `settings-spotify`,
   opening the node or the tab, toasts). JobsBar names the backend.
-- **CLI**: `omamp spotify status|search|playlists|liked|albums|artists|
+- **CLI**: `thrum spotify status|search|playlists|liked|albums|artists|
   tracks|play|now|pause|resume`, with `--json` and `--backend`.
 - **DevHooks**: a `wait:<ms>` demo step, so screenshots can let a worker's
   answer land.
 
 ### Test results
 
-`tests/spotify_tests.cpp` (`OMAMP_TESTS=spotify`), 17 tests against
+`tests/spotify_tests.cpp` (`THRUM_TESTS=spotify`), 17 tests against
 `tests/fake-spotify/spotify_player` and `spotifast` on `PATH`, answering from
 `tests/fixtures/spotify` (made-up data from `make-fixtures.py`):
 
@@ -4292,9 +4292,9 @@ lost their check to the device list's (one parent, one exclusive group).
 
 ### Decisions
 
-- **spotify_player over linking librespot**: no credentials in Omamp, no Rust
+- **spotify_player over linking librespot**: no credentials in Thrum, no Rust
   in the build, and a CLI that already answers in JSON.
-- **The queue stays Omamp's**: each Spotify track starts on its own, so
+- **The queue stays Thrum's**: each Spotify track starts on its own, so
   local and Spotify tracks mix in one order. The cost is about a second
   between Spotify tracks.
 - **Everything through the CLI, nothing through spotify_player's UDP socket**
@@ -4314,7 +4314,7 @@ lost their check to the device list's (one parent, one exclusive group).
 - **Premium is inferred**: from the Connect device being there, or from a
   start that never shows up. spotify_player's CLI can't say directly.
 - **The account name is inferred** from the owner of most of your playlists.
-- **Like works on the playing track only**, and Omamp knows a track is
+- **Like works on the playing track only**, and Thrum knows a track is
   liked only after Liked Songs has been opened.
 - **Playlists show at most what spotify_player returns** for each section,
   read whole each time; there is no paging or caching.
@@ -4330,7 +4330,7 @@ lost their check to the device list's (one parent, one exclusive group).
   actions. `SpotifyHooks.settingsPage` is 5 (after Appearance); if the radio
   tab lands first, bump it.
 - Rebuild and reinstall. Then Settings → Spotify → switch on → Sign in…, and
-  run `omamp spotify status`.
+  run `thrum spotify status`.
 
 ## Internet radio (20 October 2026)
 
@@ -4345,7 +4345,7 @@ src/core/radio.{h,cpp}         stations (migration 10), the Nightride catalogue 
                                station tiles, radio-browser.info search, .pls/.m3u lists
 src/app/radiocontroller.{h,cpp} QML `radio`: tuning, live song, feed subscription, ICY reader for the Qt
                                engine, favourites, search, add, lists, catalogue refresh, scrobbling
-src/cli/cliradio.cpp           omamp radio list|play|search|add|remove|favourite|unfavourite|import|export|heard
+src/cli/cliradio.cpp           thrum radio list|play|search|add|remove|favourite|unfavourite|import|export|heard
 src/app/RadioView.qml          the channel picker (cards: colour, genres, live song, star)
 src/app/RadioSheet.qml         the picker over the deck (Shift+R)
 src/app/FindStationsSheet.qml, AddStationSheet.qml
@@ -4384,7 +4384,7 @@ tests/radio_tests.cpp, tests/radiohttp.h
   titles (`Radio::IcyParser`).
 - **MPRIS**: no `mpris:length` and `CanSeek` false for a live station;
   `xesam:url` is the queue reference; `OpenUri` takes `radio://` and
-  `http(s)` addresses (so `omamp radio play` and `playerctl open` work). The
+  `http(s)` addresses (so `thrum radio play` and `playerctl open` work). The
   bar plugin already handles a zero length, so it needed no change.
 - **Covers**: `NowPlaying` gives a station its saved favicon (96 px or
   larger) or a tile in its colour with its name, through the usual sizes
@@ -4396,7 +4396,7 @@ tests/radio_tests.cpp, tests/radiohttp.h
 
 ### Checked against nightride.fm (20 October 2026)
 
-A few requests with `User-Agent: Omamp/0.1`:
+A few requests with `User-Agent: Thrum/0.1`:
 
 - The page lists seven stream channels: nightride, chillsynth, datawave,
   spacesynth, darksynth, horrorsynth, ebsm (and "archives", which is
@@ -4410,7 +4410,7 @@ A few requests with `User-Agent: Omamp/0.1`:
   (`audio/mpeg`, 320 kbps, 44.1 kHz, `icy-metaint: 16000`, in-stream titles
   such as `StreamTitle='Akyut - Heaven's Shadow'`) and `<id>.ogg` (Opus).
   `<id>.m4a` is 404; the site also has HLS under `/hls/<id>/<id>.m3u8`,
-  which Omamp doesn't use.
+  which Thrum doesn't use.
 - radio-browser.info: the SRV record `_api._tcp.radio-browser.info` named
   `de1.api.radio-browser.info`; `all.api.radio-browser.info/json/servers`
   didn't answer in 10 s, so it is only the second choice.
@@ -4418,7 +4418,7 @@ A few requests with `User-Agent: Omamp/0.1`:
 ### Test results
 
 `bin/test` with JOBS=4: **365 passed, 0 failed, 5 skipped** (the existing
-skips). The new class `RadioTests` (`OMAMP_TESTS=radio`) has 14, counting
+skips). The new class `RadioTests` (`THRUM_TESTS=radio`) has 14, counting
 initTestCase and cleanupTestCase, and takes about 9 seconds. Nothing reaches
 the internet: `tests/radiohttp.h` serves endless looped MP3 streams with ICY
 titles every 8000 bytes, the Nightride feed (a snapshot on connect, then
@@ -4437,7 +4437,7 @@ page and a favicon.
   built-in channel), refusing non-http addresses and removing built-ins,
   renaming; PLS and M3U out and in;
 - the decoder on a live stream: no length, no seek, two ICY titles in
-  turn, `Icy-MetaData: 1` and Omamp's User-Agent sent;
+  turn, `Icy-MetaData: 1` and Thrum's User-Agent sent;
 - tuning Darksynth after a local track: it goes in after it; the feed's
   song as title, artist and album; seeks ignored while the clock runs;
   MPRIS without a length, with the reference as the address and the
@@ -4463,7 +4463,7 @@ page and a favicon.
   channel in the palette; `Shift+R` opens the picker with live lines; `R`
   is still repeat; arrow keys and `Enter` tune in and close it; LIVE and
   the dial on the deck; `]` and `[`; a palette entry by name; `F` in the
-  picker; Find stations from the palette; and no QML warning from Omamp's
+  picker; Find stations from the palette; and no QML warning from Thrum's
   files.
 
 ### Screenshots
@@ -4523,7 +4523,7 @@ hidden when stopped, and plain plurals.
 
 ## Menu bar and view switching (20 October 2026)
 
-Matt, using Omamp for real: "We don't really have a menu for Omamp that I
+Matt, using Thrum for real: "We don't really have a menu for Thrum that I
 can see... I really need a menu to this app", and "I can't work out how to
 search for Spotify". He was on the deck and didn't know `Tab` opens the
 library; nearly everything was reachable only by key or through `Ctrl+K`.
@@ -4571,7 +4571,7 @@ tiled window before it filled the tile.
   or `Enter` into it before anything is listed, focuses its search box.
 - **Keys that now work from the deck too**: `/` and `Ctrl+F` (Find, opening
   the library), `Ctrl+B`, `G`, `I` and `F5`, as their menu entries do.
-- **Help → About Omamp**: the version and the MIT licence.
+- **Help → About Thrum**: the version and the MIT licence.
 
 ### Tab into the library
 
@@ -4597,14 +4597,14 @@ tile's size. And the library view was built synchronously on the first
 - Measured offscreen in software with the made-up library (35 tracks):
   `setAdvanced(true)` plus one rendered frame took 54–61 ms on a cold start
   (every first `Tab` before) and 19–21 ms after the idle build
-  (`MenuTests::tabIsQuickAfterStartUp` prints both). `OMAMP_PROFILE=1`'s
+  (`MenuTests::tabIsQuickAfterStartUp` prints both). `THRUM_PROFILE=1`'s
   "Tab into advanced mode … to the screen" went from 71–103 ms to 24–86 ms
-  with `OMAMP_PROFILE_WAIT=2500` (new: waits before profiling, as a person
+  with `THRUM_PROFILE_WAIT=2500` (new: waits before profiling, as a person
   would); that figure includes the offscreen frame timer, so it is noisy.
 
 ### Tests
 
-`tests/menu_tests.cpp` (`OMAMP_TESTS=menu`), offscreen, software, no audio
+`tests/menu_tests.cpp` (`THRUM_TESTS=menu`), offscreen, software, no audio
 device, temporary folders, eleven cases:
 
 - `WindowPlacement` reading `hyprctl` output (tiled, floating, fullscreen
@@ -4655,7 +4655,7 @@ light theme.
 - **Entries run after the menu closes** (`Qt.callLater`, and no exit
   transition), so Find and Search Spotify keep the keys they move.
 - **No MediaMonkey import entry under File.** The import is a command-line
-  tool (`omamp import mediamonkey`); Help links to its guide instead of a
+  tool (`thrum import mediamonkey`); Help links to its guide instead of a
   menu entry for a window that doesn't exist.
 - **Equaliser** opens Settings → Playback, which holds it.
 - **`Alt` toggles a hidden bar** rather than showing it while held, because
@@ -4689,10 +4689,10 @@ listed, but opening "This Is Brian Fallon" (149 tracks) failed with
 of `429 Too Many Requests` from the Web API just after start-up (me/player,
 me/playlists, me/albums, me/following, devices), then
 `retry_after_secs=19` for the playlist itself, with spotify_player waiting
-and retrying on its own past Omamp's 20 s limit. Run alone, the same
+and retrying on its own past Thrum's 20 s limit. Run alone, the same
 `get item` took about 1.1 s.
 
-Two causes. Omamp read `get key playback` every second while a Spotify track
+Two causes. Thrum read `get key playback` every second while a Spotify track
 played (one Web API request each time) and fired devices and the library in
 a burst when switched on. And Matt's `app.toml` sets `client_id` to
 Spotify's own desktop app ID (`65b708073fc…`), which every librespot-based
@@ -4712,9 +4712,9 @@ any 4xx (`client/spotify.rs`).
   2 s (500 ms near the end) while playing. Property reads only; no method is
   called. spotify_player's metadata has no id (`mpris:trackid` is `/`), so
   `SpotifyPlayback::isOurs()` matches by title and length (±3 s); Spotifast's
-  `xesam:url` carries the URI. A track whose name Omamp doesn't know is
+  `xesam:url` carries the URI. A track whose name Thrum doesn't know is
   confirmed by one command-line read. Without MPRIS the command line is read
-  every 5 s while a Spotify track plays in Omamp (1.5 s while starting and
+  every 5 s while a Spotify track plays in Thrum (1.5 s while starting and
   near the end), and never otherwise. The view reads "playing now" once when
   shown, at most every 15 s, and only without MPRIS.
 - **One request queue** (`src/core/spotify/spotifyrequests.*`):
@@ -4727,7 +4727,7 @@ any 4xx (`client/spotify.rs`).
   (searches 5) by view key, shown at once while a stale one is re-read;
   Refresh bypasses. Switching on reads devices and playlists only (the
   account comes from the playlists); sections load when the view is shown.
-  After Omamp starts the daemon, the data lane waits 6 s. The library
+  After Thrum starts the daemon, the data lane waits 6 s. The library
   search strip, the palette and the view share one search request.
 - **Rate limits**: lists get 60 s (`longTimeoutMs`, was 20 s).
   `Spotify::readLogNews()` reads new lines of spotify_player's newest log for
@@ -4739,7 +4739,7 @@ any 4xx (`client/spotify.rs`).
   loading… Spotify is slow right now (N s)" after 4 s, Cancel, and a
   refresh button.
 - **Your own client ID**: `SpotifyPlayerBackend::writeClientId()` backs up
-  `app.toml` to `app.toml.omamp-backup-<time>`, replaces the top-level
+  `app.toml` to `app.toml.thrum-backup-<time>`, replaces the top-level
   `client_id` line (multi-line strings and tables respected) or adds one
   above the first table, and saves atomically; it refuses an ID that isn't
   32 hex digits and a file with `client_id_command`. `signedIn()` now needs
@@ -4751,7 +4751,7 @@ any 4xx (`client/spotify.rs`).
 
 ### Test results
 
-`OMAMP_TESTS=spotify`: 31 passed (29 tests plus set-up and tidy-up), 0
+`THRUM_TESTS=spotify`: 31 passed (29 tests plus set-up and tidy-up), 0
 failed; the new ones also passed three runs in a row. New tests:
 
 | Test | What it shows |
@@ -4770,7 +4770,7 @@ failed; the new ones also passed three runs in a row. New tests:
 | Shared search | Library search, palette and view: one `search` command |
 
 `enableAndDisable` now shows the view before expecting the playlists and
-checks `user-playlists` ran once. Every test points Omamp at a bus name that
+checks `user-playlists` ran once. Every test points Thrum at a bus name that
 doesn't exist, so Matt's real spotify_player MPRIS is never read.
 
 `bin/test` with JOBS=4: every class passed (27 Totals lines, 0 failed).
@@ -4782,7 +4782,7 @@ daemon) and `org.mpris.MediaPlayer2.spotifast`. Introspected and read
 properties only. spotify_player's Metadata: `xesam:title`, `xesam:artist`
 (one joined string), `xesam:album`, `mpris:trackid` `/`, `mpris:length`,
 `mpris:artUrl`. Spotifast adds `xesam:url` (`spotify:track:<id>`) and its
-Position doesn't announce changes. Matt's daemon, config and Omamp were not
+Position doesn't announce changes. Matt's daemon, config and Thrum were not
 touched.
 
 ### Screenshots (not committed)
@@ -4800,13 +4800,13 @@ was squeezed by a text Refresh button, so it became an icon with a tooltip.
   in the playlist and the playback state).
 - **No progressive playlist.** spotify_player's `get item` returns the whole
   playlist at once and has no paging, so a 149-track playlist still arrives
-  in one piece. Omamp shows the old copy (when it has one) meanwhile.
+  in one piece. Thrum shows the old copy (when it has one) meanwhile.
 - **spotify_player's own start-up burst** comes from spotify_player, not
-  Omamp; Omamp only waits it out.
+  Thrum; Thrum only waits it out.
 - **Your own client ID still shares some requests**: spotify_player 0.25.1
   reads `me/playlists` and `playlists/` through ncspot's ID whatever you set.
 - **The view's playing-now line without MPRIS** updates only when the view
-  is shown or while Omamp plays a Spotify track.
+  is shown or while Thrum plays a Spotify track.
 - **Translations**: the new strings are English only.
 
 ## Spotify: restricted endpoints (20 October 2026)
@@ -4854,7 +4854,7 @@ Reading spotify_player 0.25.1's source (`cli/client.rs`,
 - `playback start track` reads `tracks/<id>` first (allowed, 0.2 s).
 - `search` asks for 10 of each kind; Spotify answered 5 to 10.
 - `playback start radio` reads `hm://` autoplay data and `tracks` in bulk;
-  Omamp never used it.
+  Thrum never used it.
 - Any 4xx except a 429 from your own ID makes spotify_player log "Custom
   Spotify Web API request failed; retrying with ncspot client method=… url=…
   status=…" and ask again with ncspot's ID. Only ncspot's requests go
@@ -4864,10 +4864,10 @@ Reading spotify_player 0.25.1's source (`cli/client.rs`,
 `client_port`) has no listener, and the daemon (`spotify_player -d`, still
 running) holds TCP sockets only. Probe 5 was answered by a client the CLI
 started itself, which is what spotify_player does when nothing listens.
-Until the daemon is restarted, every Omamp command starts a fresh
+Until the daemon is restarted, every Thrum command starts a fresh
 spotify_player client. The cause is unproven: the socket went quiet while
 it waited on the other user's playlist, after `timeout` stopped the CLI.
-Omamp also stops a CLI command on Cancel and on its time limit, so that
+Thrum also stops a CLI command on Cancel and on its time limit, so that
 may do the same. The daemon was left alone, as the brief required.
 
 ### What changed
@@ -4878,7 +4878,7 @@ may do the same. The daemon was left alone, as the brief required.
   repeated names; albums newest first; headings "Popular tracks" and
   "Albums". An artist known only by id takes its name from your followed
   artists, Spotify's oEmbed page, or its own tracks. `tracksOf(artist)`
-  and `omamp spotify tracks <artist>` use it too. Nothing in Omamp sends
+  and `thrum spotify tracks <artist>` use it too. Nothing in Thrum sends
   `get item … artist` any more.
 - **A catalogue** (`Spotify::Catalogue`, `WebApiCatalogue`): artist pages
   and playlist tracks come through one interface, owned by the backend, so
@@ -4904,12 +4904,12 @@ may do the same. The daemon was left alone, as the brief required.
 - **Refusals remembered** (`Spotify::Refusals`, `refusalKey`):
   `readLogNews` collects today's refusal lines (a 429 there counts as a rate
   limit, not a refusal). The controller learns them per client ID for the
-  day, in `~/.cache/omamp/spotify/refused.json`, and lists them in Settings
+  day, in `~/.cache/thrum/spotify/refused.json`, and lists them in Settings
   → Spotify ("Refused today"). A playlist that turns out refused while it
   loads stops waiting within about a second (the next log read), opens
   restricted, and is not asked for again that day. The running request
   still finishes and fills the cache.
-- **omamp-spotify-session** (`sidecar/omamp-spotify-session`, added at the
+- **thrum-spotify-session** (`sidecar/thrum-spotify-session`, added at the
   coordinator's request after a study of Spotifast): a Rust helper on
   librespot-core 0.8.0 from crates.io. It signs in with spotify_player's
   `credentials.json` (read only, nothing stored), opens a session without
@@ -4923,8 +4923,8 @@ may do the same. The daemon was left alone, as the brief required.
   hyper-proxy2), and none comes from git. `bin/build` builds it with
   `--locked` when `cargo` is installed and skips it otherwise.
   `bin/install-user` and `pkgbuild/PKGBUILD` (makedepends `cargo`) install
-  it beside `omamp`.
-- **Omamp's side** (`src/core/spotify/spotifysession.*`): `SessionReader`
+  it beside `thrum`.
+- **Thrum's side** (`src/core/spotify/spotifysession.*`): `SessionReader`
   runs the helper on a thread of its own, one request at a time, started on
   first use and kept running; Cancel and time limits stop the wait, not the
   helper. `SessionCatalogue` reads every playlist through it (Web API on
@@ -4932,8 +4932,8 @@ may do the same. The daemon was left alone, as the brief required.
   pages as top tracks plus albums from search. Settings: `session_reads`
   (on), "Read Spotify-made playlists and artists' top tracks the way
   Spotify's own app does", with a note that these are private endpoints.
-  The CLI uses it too. `OMAMP_SPOTIFY_SESSION` names the helper (`off` for
-  none); otherwise Omamp looks beside its own program, then on PATH.
+  The CLI uses it too. `THRUM_SPOTIFY_SESSION` names the helper (`off` for
+  none); otherwise Thrum looks beside its own program, then on PATH.
 - **Retry** on a playlist shown whole because reading it failed reads it
   again. A dev hook step `accept:<objectName>` presses Enter in a text
   field (for the screenshots).
@@ -4947,13 +4947,13 @@ signed in after 1.16 s; "This Is Brian Fallon" (owner `spotify`, 33 rows):
 
 ### Test results
 
-`OMAMP_TESTS=spotify`: 39 passed (37 tests plus set-up and tidy-up),
+`THRUM_TESTS=spotify`: 39 passed (37 tests plus set-up and tidy-up),
 0 failed. The fake `spotify_player` now logs refusals as 0.25.1 does and
 answers late for `get item … artist` and for playlists listed in
 `restricted`. It also starts contexts (`context-track`). A fake
-`omamp-spotify-session` answers from the fixtures (`session-fail`,
+`thrum-spotify-session` answers from the fixtures (`session-fail`,
 `session-signin`, `session-slow`). Every test sets
-`OMAMP_SPOTIFY_SESSION=off` unless it brings the fake.
+`THRUM_SPOTIFY_SESSION=off` unless it brings the fake.
 
 | Test | What it shows |
 |---|---|
@@ -4963,7 +4963,7 @@ answers late for `get item … artist` and for playlists listed in
 | Refused while loading | Someone else's playlist refused today: restricted within 3.5 s of a 5 s answer, listed in `refused`, not asked again, still restricted in a new controller |
 | Context through MPRIS | Not confirmed while the old song shows; confirmed when a new one plays; the deck follows a track change; no state reads |
 | Another catalogue | A swapped-in catalogue lists Spotify's own playlist and the artist page; no `get item`, no search |
-| Session reader | Spotify's own playlist and an artist's top tracks through the reader, one process for all; reader failing: your playlist falls back to the Web API, Spotify's opens whole with the error, Retry reads it; switched off: whole again, saved; `omamp spotify tracks` uses it |
+| Session reader | Spotify's own playlist and an artist's top tracks through the reader, one process for all; reader failing: your playlist falls back to the Web API, Spotify's opens whole with the error, Retry reads it; switched off: whole again, saved; `thrum spotify tracks` uses it |
 | Reader can't sign in | The artist page still comes from search |
 
 `cargo test`: 3 passed (track shape, Spotify's status kept, bad ids
@@ -4982,14 +4982,14 @@ credential, and without the helper) and an artist page from search.
 ### Known gaps
 
 - **The daemon's CLI socket on Matt's machine is gone** (above). Restart
-  spotify_player (Omamp's Settings → Spotify → Start after stopping it, or
-  log out and in). Whether Omamp's own Cancel can cause the same is not
+  spotify_player (Thrum's Settings → Spotify → Start after stopping it, or
+  log out and in). Whether Thrum's own Cancel can cause the same is not
   known; if it can, Cancel should stop waiting without stopping the CLI
   process.
 - **Playing a Spotify-made playlist by context is unverified on the real
   account**: no playback was allowed. spotify_player's source shows only
   player requests; if Spotify refused the start, spotify_player retries
-  with ncspot's ID in the background, and Omamp says the start failed
+  with ncspot's ID in the background, and Thrum says the start failed
   after 12 s.
 - **Shuffle may be ignored** when nothing has played on the device since
   spotify_player started (spotify_player sets shuffle only with an existing
@@ -5011,7 +5011,7 @@ credential, and without the helper) and an artist page from search.
 
 Matt asked for two things after using the Spotify view for real: to hold
 Shift (or Ctrl) and click several Spotify tracks, then add them all to a
-playlist; and to add Spotify tracks to Omamp's own playlists, so one
+playlist; and to add Spotify tracks to Thrum's own playlists, so one
 playlist can mix Spotify and local songs. Both are built.
 
 ### What was built
@@ -5026,12 +5026,12 @@ playlist can mix Spotify and local songs. Both are built.
   track list's selection, so the two lists behave alike.
 - **Acting on the chosen rows.** `SpotifyController::playChosen`,
   `addChosenToSpotifyPlaylist`, `addChosenToNewSpotifyPlaylist`,
-  `addChosenToOmampPlaylist` and `copyChosenLinks` take the list (the
+  `addChosenToThrumPlaylist` and `copyChosenLinks` take the list (the
   view's or the strip's). One chosen row behaves as before (an album or
   playlist row means all its tracks); several mean the tracks among them,
   in list order. The header buttons and the row menu call them.
-- **Add to playlist ▸** (`SpotifyAddMenu.qml`) has two groups: Omamp
-  playlists, with **New Omamp playlist…**, and your Spotify playlists, with
+- **Add to playlist ▸** (`SpotifyAddMenu.qml`) has two groups: Thrum
+  playlists, with **New Thrum playlist…**, and your Spotify playlists, with
   **New Spotify playlist…**. spotify_player 0.25.1 has `playlist new
   [name] [description]` (checked with `--help`), so the backend gained
   `createPlaylist`; the new playlist's id is found by reading the playlist
@@ -5061,9 +5061,9 @@ playlist can mix Spotify and local songs. Both are built.
   after the usual `#EXTINF`; import turns those links and `spotify:track:`
   URIs back into Spotify entries and never matches them to local files.
   `ImportResult` counts them as `spotify`.
-- **The command line.** `omamp playlist add <playlist> <links…>` takes
+- **The command line.** `thrum playlist add <playlist> <links…>` takes
   Spotify URIs and links. It asks spotify_player for names only when
-  Spotify is on in Omamp and spotify_player is signed in and running, and
+  Spotify is on in Thrum and spotify_player is signed in and running, and
   otherwise adds the ids and says so. `playlist show` prints the link and
   `[Spotify]`; JSON entries carry `spotify` and `url`.
 - **Saving Now Playing as a playlist** keeps its Spotify tracks' album and
@@ -5091,7 +5091,7 @@ and offscreen in software:
   `Ctrl`+click in Liked Songs, `Enter` playing just the chosen rows, a
   double-click playing the list, and Copy Spotify links;
 - the header's **Add to playlist** menu showing both groups and adding a
-  four-track range to an Omamp playlist with names, albums and art; a new
+  four-track range to a Thrum playlist with names, albums and art; a new
   Spotify playlist made through the name sheet with the four tracks;
 - three Spotify tracks dragged onto a playlist node, then the playlist view
   showing the mark and "(off)" once Spotify is switched off.
@@ -5107,11 +5107,11 @@ radio test's schema check now accepts later steps.
 
 `docs/spotify-multiselect.png` (five Liked Songs chosen, the Add to
 playlist menu open with both groups) and `docs/mixed-playlist.png` (an
-Omamp playlist of five local files and four Spotify tracks), in Matt's
+Thrum playlist of five local files and four Spotify tracks), in Matt's
 light theme (OneQode Light Glass), with `*-night-ride.png` copies.
 Offscreen in software, in a throwaway HOME on a `dbus-run-session` bus, with
 the made-up demo library, made-up covers and the fake spotify_player; the
-mixed playlist was filled with `omamp playlist add`. Looking at them found
+mixed playlist was filled with `thrum playlist add`. Looking at them found
 that Material's menu items were 48 pixels tall with 16-pixel text, and the
 menu had no background in software rendering; the menu now has compact
 lines, a plain panel and the width of its widest line, as the menu bar's
@@ -5128,7 +5128,7 @@ do.
   and playlists among them are ignored; one chosen album still means all
   its tracks.
 - **The command line never starts spotify_player** to look names up, and
-  asks it only when Spotify is on in Omamp.
+  asks it only when Spotify is on in Thrum.
 
 ### Known gaps
 
@@ -5147,7 +5147,7 @@ do.
 ## Audio: following the default output (20 October 2026)
 
 On Matt's desktop the Jabra Link 390 dongle, the default output, dropped
-off and came back. Omamp moved to the SteelSeries Arctis when the dongle
+off and came back. Thrum moved to the SteelSeries Arctis when the dongle
 left, as designed, but stayed there when it came back and was the default
 again, so nothing was heard. Its PipeWire stream showed
 `node.target = "103"` (the Arctis) and `node.dont-reconnect = "true"`, and
@@ -5166,7 +5166,7 @@ again, so nothing was heard. Its PipeWire stream showed
   is no escape: a null `QAudioDevice` means Qt's own default, pinned the
   same way. The PulseAudio backend (`QT_AUDIO_BACKEND=pulseaudio`) passes
   the sink name to `pa_stream_connect_playback`, which pins it too.
-- **Qt's idea of the default went stale.** Omamp followed
+- **Qt's idea of the default went stale.** Thrum followed
   `QMediaDevices::defaultAudioOutput()` on `audioOutputsChanged`. Qt's
   device monitor learns the default from PipeWire's `default` metadata but
   lists a node only after it has enumerated the node's formats; the
@@ -5207,7 +5207,7 @@ again, so nothing was heard. Its PipeWire stream showed
   when pipewire-pulse restarts), it is started again after 1 s, doubling
   to 30 s, and the default is polled every 3 s meanwhile. All of this runs
   only while a stream is open (native) or the player is playing or paused
-  (Qt), so an idle Omamp runs no pactl.
+  (Qt), so an idle Thrum runs no pactl.
 - **Moving**: `DeviceSink` reopens on the new device through its existing
   path (same rate, same reader, so position and gapless state carry on; the
   up to 100 ms in the old device's buffer is lost). It also watches its
@@ -5216,12 +5216,12 @@ again, so nothing was heard. Its PipeWire stream showed
   default is unchanged; three failures in a row without the stream going
   active stop that until the next device change. `QtEngine` sets its
   `QAudioOutput`'s device, which QMediaPlayer applies while playing.
-- Under `OMAMP_NO_AUDIO_DEVICE` neither engine builds a follower.
+- Under `THRUM_NO_AUDIO_DEVICE` neither engine builds a follower.
 
 ### Tests
 
 `OutputFollowerTests` in `tests/engine_tests.cpp` (run with
-`OMAMP_TESTS=engine`), with a fake sound server and a fake Qt device list;
+`THRUM_TESTS=engine`), with a fake sound server and a fake Qt device list;
 nothing talks to PipeWire.
 
 | Test | What it shows |
@@ -5251,25 +5251,25 @@ nothing talks to PipeWire.
   (with a warning) and tries again at the next device event. A restart is
   then still the cure.
 - **pactl must be installed** (libpulse, part of Omarchy) for the server's
-  answer; without it Omamp behaves as before.
+  answer; without it Thrum behaves as before.
 - **No output picker.** If one is added, a chosen device should switch the
   follower off.
 
 ## Mini players on Hyprland (20 October 2026)
 
-Matt, using Omamp for real: "mini and micro players glitch out when you
+Matt, using Thrum for real: "mini and micro players glitch out when you
 select them, then just appear in the same box". His window was tiled and
 large. `Ctrl+M` drew the small strip in the middle of the big tile with
 empty space around it.
 
 Two causes. A Hyprland window rule applies only when a window opens, so
-his rule for the titles `Omamp mini` and `Omamp micro` never touched a
+his rule for the titles `Thrum mini` and `Thrum micro` never touched a
 window that switched later. And the compact layouts filled the window but
 centred their rows vertically, so in a big tile the strip sat in the middle.
 
 ### What changed
 
-- **Omamp asks Hyprland itself.** `WindowPlacement` (`src/app/windowplacement.*`)
+- **Thrum asks Hyprland itself.** `WindowPlacement` (`src/app/windowplacement.*`)
   gained `enterCompact(title, width, height, fresh)` and `leaveCompact()`.
   Entering reads `hyprctl -j clients` (this process's window, by pid;
   retried for two seconds while a new window maps), then `hyprctl -j
@@ -5282,7 +5282,7 @@ centred their rows vertically, so in a big tile the strip sat in the middle.
   that was floating. Mini to micro keeps the state from before the first
   compact player.
 - **Hyprland's "ok" is checked.** It answers "ok" even for an address it
-  does not know, so after the batch Omamp reads the clients again and
+  does not know, so after the batch Thrum reads the clients again and
   counts the switch done only when the window floats at about the compact
   size. A Lua error line, a failed `hyprctl` or a missing monitor counts as
   refused.
@@ -5296,9 +5296,9 @@ centred their rows vertically, so in a big tile the strip sat in the middle.
   than the strip shows the strip along the top, full width, and the line
   "Your window manager keeps this window large. Make it floating to shrink
   it."
-- **`omamp mini` / `omamp micro`.** The mode now comes from `startMode`
+- **`thrum mini` / `thrum micro`.** The mode now comes from `startMode`
   when `NowPlayingModes` is created, so the window's first title and size
-  are the compact ones and the rule applies on opening. Omamp also asks
+  are the compact ones and the rule applies on opening. Thrum also asks
   Hyprland (for a desktop without the rule); leaving tiles the window, as a
   new window would be.
 
@@ -5310,8 +5310,8 @@ and move exact, pin on and off, float off, and a move back to workspace 9.
 A bad address answers "ok"; an unknown dispatcher answers `error: …`, and
 `hyprctl` exits 0 either way.
 
-A test build of Omamp (temporary XDG folders, `OMAMP_NO_AUDIO_DEVICE=1`, a
-private D-Bus session, on workspace 9) was driven through `OMAMP_DEMO`
+A test build of Thrum (temporary XDG folders, `THRUM_NO_AUDIO_DEVICE=1`, a
+private D-Bus session, on workspace 9) was driven through `THRUM_DEMO`
 actions with a `hyprctl` on `PATH` that logs every call and turns "pin on"
 into a harmless dispatch, so the window could not follow Matt onto his
 workspace. `hyprctl clients -j` showed:
@@ -5325,12 +5325,12 @@ workspace. `hyprctl clients -j` showed:
 | Library → mini → back | as above | | |
 | Floated by hand at 400, 300, 900 × 700 → mini → back | yes | 400, 300 | 900 × 700 |
 
-`hyprctl configerrors` was empty before and after. Matt's own Omamp window
+`hyprctl configerrors` was empty before and after. Matt's own Thrum window
 was not touched.
 
 ### Tests
 
-`tests/menu_tests.cpp` (`OMAMP_TESTS=menu`), five new cases with a fake
+`tests/menu_tests.cpp` (`THRUM_TESTS=menu`), five new cases with a fake
 `hyprctl` that keeps one client's state in files, applies the dispatches it
 is sent, logs each batch and can be told to fail:
 
@@ -5352,13 +5352,13 @@ is sent, logs each batch and can be told to fail:
 - **Start-up with Matt's rule was not run for real**: his rule pins the
   window, which would have put a test window on his screen. The offscreen
   test covers the title and size of the first frame.
-- **Pin on was never sent to the test Omamp**, for the same reason; it was
+- **Pin on was never sent to the test Thrum**, for the same reason; it was
   checked once by hand on the `foot` window, which showed on Matt's
   workspace for under a second before it was unpinned and sent back.
 - **Leaving puts the window on the workspace you are on**, not the one it
   came from, because a pinned window travels with you.
 - **A window in fullscreen** is first returned to normal by Qt; if Hyprland
-  still reports it fullscreen when Omamp asks, it counts as tiled.
+  still reports it fullscreen when Thrum asks, it counts as tiled.
 - **Translations**: the hint is English only.
 
 ## Layout: art column, sidebar, big bar (20 October 2026)
@@ -5381,12 +5381,12 @@ src/app/SideSection.qml, SectionOrder.qml   a folding section; the list that hid
 src/app/BigBar.qml              the large now playing bar
 src/app/LayoutSettings.qml      Settings > Appearance > Layout
 src/app/ArtThumb.qml            a list row's cover, by track id or queue entry
-tests/layout_tests.cpp          OMAMP_TESTS=layout
+tests/layout_tests.cpp          THRUM_TESTS=layout
 ```
 
 - **The Art column.** `TrackListModel::Art` is the last model column, so
   every other column keeps its number, and the view shows it first. Its
-  `ArtRole` is the album's picture (`image://omamp-art/album/<id>/96?v=<artwork>`),
+  `ArtRole` is the album's picture (`image://thrum-art/album/<id>/96?v=<artwork>`),
   so an album's tracks share one request; an album searched and found bare
   asks for nothing. Settings saved before the column existed get it at the
   start, once. Dragging a header moves a column (`movableColumns`), and the
@@ -5415,8 +5415,8 @@ tests/layout_tests.cpp          OMAMP_TESTS=layout
   article in the Omarchy language or English, and reads Wikipedia's REST
   summary. Disambiguation pages count as nothing. Wikidata and Wikipedia are
   two new `Net::Service`s at five requests a second, cached for 30 days;
-  MusicBrainz keeps its one a second and week. `OMAMP_WIKIDATA_URL` and
-  `OMAMP_WIKIPEDIA_URL` (with `{lang}`) point them elsewhere for tests.
+  MusicBrainz keeps its one a second and week. `THRUM_WIKIDATA_URL` and
+  `THRUM_WIKIPEDIA_URL` (with `{lang}`) point them elsewhere for tests.
 - **Packaged notes** come first in About the album: `album.txt`,
   `about.txt`, `liner notes.*`, `notes.md`, `info.txt`, `credits.txt`,
   `README*` and `.nfo` files in the album's folder (or above a `CD1` folder),
@@ -5445,7 +5445,7 @@ tests/layout_tests.cpp          OMAMP_TESTS=layout
   decoded only in the formats their first bytes name (JPEG, PNG, WebP, GIF,
   BMP): `ArtworkCache::pictureFormat`, used by the artwork cache, Now
   Playing and the About pictures.
-- **Saved columns were never restored** when Omamp started in the library:
+- **Saved columns were never restored** when Thrum started in the library:
   the window's settings arrive after the view is made. The view now applies
   them when they come.
 - **Qt 6.12**: after a column moves, `TableView` sizes its row order once
@@ -5484,11 +5484,11 @@ benchmark).
 
 ### Performance
 
-`OMAMP_LAYOUT_BENCH=1 OMAMP_TESTS=layout build/tests/omamp_tests artColumnAt200k`
+`THRUM_LAYOUT_BENCH=1 THRUM_TESTS=layout build/tests/thrum_tests artColumnAt200k`
 builds a library of 199,991 tracks in 18,181 albums, each with its own
 `cover.png`, then scrolls the list three rows a frame for 400 frames in a
 1,400 × 860 window, offscreen in software, on the development machine with
-other work running. `OMAMP_LAYOUT_BENCH_ART=0` runs it without the column.
+other work running. `THRUM_LAYOUT_BENCH_ART=0` runs it without the column.
 
 | | Art column off | Art column on |
 |---|---:|---:|
@@ -5557,7 +5557,7 @@ src/app/BigBar.qml                the three places
 src/app/Analyser.qml              idle, reduceMotion and the stereo waveform for every visualiser
 src/app/NowPlayingModes.qml       Shift+V picks the bar's style in the library; palette actions
 src/engine/spectrum.*, player.*   stereoWaveform (left then right); Player.playsElsewhere
-tests/visualiser_tests.cpp        OMAMP_TESTS=visualiser
+tests/visualiser_tests.cpp        THRUM_TESTS=visualiser
 ```
 
 - **Places.** *Behind the seek bar* (the default): a band across the middle
@@ -5615,12 +5615,12 @@ tests/visualiser_tests.cpp        OMAMP_TESTS=visualiser
 ### Tests
 
 `tests/visualiser_tests.cpp`, offscreen in software with
-`OMAMP_NO_AUDIO_DEVICE`, under a temporary `XDG_*` home:
+`THRUM_NO_AUDIO_DEVICE`, under a temporary `XDG_*` home:
 
 - the stereo waveform keeps the channels apart;
 - every one of the twelve styles at 1,600 × 60, 400 × 120, 140 × 36 and
   1,200 × 200, from silence, a sine, white noise and a FLAC made by ffmpeg and
-  decoded by Omamp's `Decoder`, fed through `Spectrum` as the player does:
+  decoded by Thrum's `Decoder`, fed through `Spectrum` as the player does:
   each paints, draws more than one colour when there is sound, and logs no
   warning;
 - idle keeps the clock at 30 fps; idle with reduced motion stops it; hidden
@@ -5644,7 +5644,7 @@ measurement).
 
 ### CPU
 
-`OMAMP_VIS_BENCH=1 OMAMP_TESTS=visualiser build/tests/omamp_tests cpuOnAWideStrip`
+`THRUM_VIS_BENCH=1 THRUM_TESTS=visualiser build/tests/thrum_tests cpuOnAWideStrip`
 runs each style in a 1,600 × 60 window for three seconds, fed the decoded
 fixture through `Spectrum` every 33 ms, then idle. Offscreen, software
 renderer, Ryzen 9 7950X3D with other work running. CPU is the whole test
@@ -5678,8 +5678,8 @@ with each new style behind the seek bar, then the ribbon along the edge and
 the LED matrix beside the cover; `docs/big-bar-visualiser-dark.png` is the
 whole library window with Synthwave. They come from `tests/make-demo-library`
 with `DEMO_SECONDS=60`, playing Neon Coast's Night Drive on the native
-engine into a buffer (`OMAMP_NO_AUDIO_DEVICE`), so the PCM tap feeds the
-analyser. Captured offscreen in software with `OMAMP_SCREENSHOT`, in a
+engine into a buffer (`THRUM_NO_AUDIO_DEVICE`), so the PCM tap feeds the
+analyser. Captured offscreen in software with `THRUM_SCREENSHOT`, in a
 private mount and network namespace with a throwaway home: light is a copy
 of the desktop's current theme (OneQode Light Glass), dark is Night Ride.
 Looking at them led to the band behind the seek bar growing from 35 px (too
@@ -5697,7 +5697,7 @@ dust.
   it is given its own, as asked.
 - **Behind the seek bar is the default.** It adds no height and leaves the
   cover and buttons where they were.
-- **Idle means no PCM.** Spotify's sound never passes through Omamp, so the
+- **Idle means no PCM.** Spotify's sound never passes through Thrum, so the
   analyser hears silence while a Spotify track plays; `playsElsewhere`
   tells the visualiser to show its idle animation instead of a flat line.
 - **Hide while idle applies to the bar only.** The deck and the strip frame
@@ -5725,7 +5725,7 @@ you select all this stuff … but not too many!" Both are built.
 src/app/firstrun.{h,cpp}      new install or older one; [setup] in window.conf; the sidebar switched on once
 src/app/SetupWizard.qml       the five steps, over the real window
 src/app/SetupActions.qml      opens it at start, Help → Run setup again…, the palette action, the banner
-tests/setup_tests.cpp         OMAMP_TESTS=setup
+tests/setup_tests.cpp         THRUM_TESTS=setup
 ```
 
 ### What was built
@@ -5753,14 +5753,14 @@ tests/setup_tests.cpp         OMAMP_TESTS=setup
   back. An older install never gets it forced: a banner ("New: a short setup
   to choose your look and layout") offers it until it is run or closed.
   **Help → Run setup again…** and the palette's **Run setup again…** open it
-  at any time; `omamp mini` and `omamp micro` never open it.
+  at any time; `thrum mini` and `thrum micro` never open it.
 - **Skip puts things back.** Skipping restores the start view, deck style,
   visualiser, covers, sidebar, column browser and bar exactly as they were
   when the setup opened, so a re-run that is skipped changes nothing.
 
 ### Test results
 
-`tests/setup_tests.cpp` (OMAMP_TESTS=setup), offscreen in software with no
+`tests/setup_tests.cpp` (THRUM_TESTS=setup), offscreen in software with no
 audio device, each window with its own `window.conf`:
 
 - a new install is due for the setup, keeps being due after a half-way quit,
@@ -5791,8 +5791,8 @@ overwrote the action it was opened by; it now calls `setAdvanced()`.
 
 `docs/setup-{start,look,layout,music,done}-{light,dark}.png`, in OneQode
 Light Glass and Night Ride (copies of the theme files in a throwaway HOME),
-from `tests/make-demo-library`, captured with `OMAMP_DEMO` and
-`OMAMP_SCREENSHOT`, offscreen in software, with no session bus and no audio.
+from `tests/make-demo-library`, captured with `THRUM_DEMO` and
+`THRUM_SCREENSHOT`, offscreen in software, with no session bus and no audio.
 Looking at them led to: the player styles as a compact list with a short
 note each (they wrapped badly in a flow), the panel sized to each step
 instead of a fixed height, visible step dots in the light theme, the top
@@ -5808,7 +5808,7 @@ position below the menu bar, and a shorter Navidrome line.
 - **Spotify switches on at Finish, not live.** Switching it on starts its
   checks and sign-in flow; the setup only records the wish and opens the
   Spotify page afterwards.
-- **"Start in" is the existing remembered mode.** Omamp already opens in the
+- **"Start in" is the existing remembered mode.** Thrum already opens in the
   view it closed in; the setup sets that.
 
 ### Known gaps
@@ -5898,7 +5898,7 @@ tests/visualiser_tests.cpp  four new tests and a CPU measurement
 
 ### CPU
 
-`OMAMP_VIS_BENCH=1 OMAMP_TESTS=visualiser build/tests/omamp_tests cpuBehindTheWholeBar`
+`THRUM_VIS_BENCH=1 THRUM_TESTS=visualiser build/tests/thrum_tests cpuBehindTheWholeBar`
 loads the library window (1,600 × 900, Night Ride, large bar at the bottom)
 with the visualiser behind the whole bar, 1,582 × 110, and feeds the decoded
 fixture through `Spectrum` every 33 ms for eight seconds per style, then
@@ -5943,7 +5943,7 @@ about 6 %. The oscilloscope row is after a fix (below); it first measured
 
 ### Tests
 
-`tests/visualiser_tests.cpp` (OMAMP_TESTS=visualiser), offscreen in
+`tests/visualiser_tests.cpp` (THRUM_TESTS=visualiser), offscreen in
 software with no audio device under a temporary XDG home:
 
 - `fullBarFadeAndEveryStyle`: the mask is clear at both ends, at the style's
@@ -5977,8 +5977,8 @@ bar at the bottom), `docs/fullbar-styles-dark.png` (each of the twelve styles
 behind the whole bar, labelled) and `docs/big-view-edge-to-edge-dark.png`.
 Made-up library from `tests/make-demo-library` with `DEMO_SECONDS=60`,
 playing Neon Coast's Midnight Highway on the native engine into a buffer
-(`OMAMP_NO_AUDIO_DEVICE`) so the PCM tap feeds the analyser; captured with
-`OMAMP_SCREENSHOT`, offscreen in software, in a throwaway HOME with no
+(`THRUM_NO_AUDIO_DEVICE`) so the PCM tap feeds the analyser; captured with
+`THRUM_SCREENSHOT`, offscreen in software, in a throwaway HOME with no
 session bus. Light is a copy of the desktop's current theme (OneQode Light
 Glass), dark is Night Ride. Looking at them led to:
 
@@ -6060,7 +6060,7 @@ tests/visualiser_tests.cpp    three tests and an opt-in CPU measurement
   and ticked, the keyboard's tile outlined in the accent. The tiles sit in a
   `Loader` that is active only while the picker is visible, so closing it
   destroys them and nothing animates in the background.
-- **Sound.** The previews take `backend.levels` while Omamp is playing its
+- **Sound.** The previews take `backend.levels` while Thrum is playing its
   own sound; otherwise a 30 Hz timer in the picker makes up a signal (a
   beat in the bass and wandering bands, as the setup wizard's previews do),
   so the first five styles are not empty while paused or on Spotify.
@@ -6085,7 +6085,7 @@ tests/visualiser_tests.cpp    three tests and an opt-in CPU measurement
 
 ### Tests
 
-`tests/visualiser_tests.cpp` (OMAMP_TESTS=visualiser), offscreen, software,
+`tests/visualiser_tests.cpp` (THRUM_TESTS=visualiser), offscreen, software,
 no audio device, temporary XDG home:
 
 - `pickerInTheLargeBar`: the button is in the bar; a click opens the picker
@@ -6107,7 +6107,7 @@ no audio device, temporary XDG home:
 - `wheelCyclesStyles`: down and up over the bar's visualiser, three small
   touchpad steps make one, wrapping at the end, the bar's own style, behind
   the whole bar, and over the deck's analyser (the shared style), saved.
-- `cpuPickerOpen` (opt-in, `OMAMP_VIS_BENCH=1`): below.
+- `cpuPickerOpen` (opt-in, `THRUM_VIS_BENCH=1`): below.
 
 `menu_tests`' check that every menu entry is a palette action covers the new
 entry.
@@ -6118,7 +6118,7 @@ measurements).
 
 ### CPU
 
-`OMAMP_VIS_BENCH=1 OMAMP_TESTS=visualiser build/tests/omamp_tests cpuPickerOpen`:
+`THRUM_VIS_BENCH=1 THRUM_TESTS=visualiser build/tests/thrum_tests cpuPickerOpen`:
 the library window at 1,400 × 800, Night Ride, large bar, nothing playing
 (so the previews run on the made-up signal, the heavier case), five seconds
 each. Software renderer, Ryzen 9 7950X3D, load average about 5.
@@ -6140,8 +6140,8 @@ other work on the machine; the tiles no longer exist then.
 Synthwave behind the whole bar) and `docs/visualiser-picker-big-dark.png`
 (the big view). Made-up library from `tests/make-demo-library`, playing
 Neon Coast's Night Drive on the native engine into a buffer
-(`OMAMP_NO_AUDIO_DEVICE`), opened with `OMAMP_DEMO=click:…`, captured with
-`OMAMP_SCREENSHOT` offscreen in software in a private mount and network
+(`THRUM_NO_AUDIO_DEVICE`), opened with `THRUM_DEMO=click:…`, captured with
+`THRUM_SCREENSHOT` offscreen in software in a private mount and network
 namespace with a throwaway home. Light is a copy of the desktop's current
 theme (OneQode Light Glass), dark is Night Ride. Looking at them led to:
 
@@ -6179,11 +6179,11 @@ theme (OneQode Light Glass), dark is Night Ride. Looking at them led to:
 
 ## Bar plugin visualiser (21 October 2026)
 
-The Omamp widget in the Omarchy bar now draws a small, faint copy of
-Omamp's visualiser behind "Artist – Title", and a larger one behind the
-title, artist and album in its panel. It follows the style chosen in Omamp,
+The Thrum widget in the Omarchy bar now draws a small, faint copy of
+Thrum's visualiser behind "Artist – Title", and a larger one behind the
+title, artist and album in its panel. It follows the style chosen in Thrum,
 fades out at both ends and towards the bottom, and disappears while nothing
-plays through Omamp. Omamp sends the levels on a local socket.
+plays through Thrum. Thrum sends the levels on a local socket.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../omarchy-plugin-visualiser-dark.png">
@@ -6193,17 +6193,17 @@ plays through Omamp. Omamp sends the levels on a local socket.
 ### What was built
 
 - **`src/app/levelsfeed.{h,cpp}`**: `LevelsFeed` listens on
-  `$XDG_RUNTIME_DIR/omamp-levels.sock` (user-only access;
-  `OMAMP_LEVELS_SOCKET` overrides it) and writes one compact JSON line per
+  `$XDG_RUNTIME_DIR/thrum-levels.sock` (user-only access;
+  `THRUM_LEVELS_SOCKET` overrides it) and writes one compact JSON line per
   frame: `{"style","reduceMotion","active","levels":[16 x 0..100]}`. The 24
   analyser bands fold to 16, each the loudest of the bands it covers. A
   client gets one frame on connecting, one when playing stops (`active`
   false, no levels), one when the style or Reduce motion changes, and up to
   20 a second while music plays (10 with Reduce motion). A frame identical
   to the last is skipped, so silence costs nothing either. The frame timer
-  runs only while a client is connected and music plays through Omamp; the
+  runs only while a client is connected and music plays through Thrum; the
   levels are not even read otherwise. Writes never wait: a client more than
-  64 KB behind is dropped. A second Omamp finds the first answering on the
+  64 KB behind is dropped. A second Thrum finds the first answering on the
   socket and stays quiet; a stale socket file from a crash is replaced.
 - **`main.cpp`** feeds it `player.levels()`, the shared visualiser style
   (`appearance.visualiser`, the one the deck and the big view use), Reduce
@@ -6223,25 +6223,25 @@ plays through Omamp. Omamp sends the levels on a local socket.
 
 - **A Unix socket, not D-Bus or a CLI.** Quickshell 0.3.2 has no general
   D-Bus client for QML (only MPRIS, the tray menu and its own services), so
-  a custom `org.omamp.Visualiser` interface would need a helper process to
-  reach the bar. A `omamp levels --stream` CLI read through `Process` would
-  run a second Omamp binary, with its library and Qt start-up, just to relay
+  a custom `org.thrum.Visualiser` interface would need a helper process to
+  reach the bar. A `thrum levels --stream` CLI read through `Process` would
+  run a second Thrum binary, with its library and Qt start-up, just to relay
   bytes. Quickshell's `Socket` + `SplitParser` reads a local socket directly
   in the shell process, with no extra process, no polling and no file
-  writes, and Qt's `QLocalServer` costs Omamp nothing until someone
-  connects. Omamp throttles at the source; the plugin also drops frames
+  writes, and Qt's `QLocalServer` costs Thrum nothing until someone
+  connects. Thrum throttles at the source; the plugin also drops frames
   closer than 40 ms in case of a misbehaving sender.
 - **The plugin connects on events, not on a timer.** Every failed connect
   logs a `quickshell.io.socket` warning in the journal, so a steady retry
   while sharing is off would fill it. The widget connects when it first
-  shows a track (and once more 1.5 s later, as Omamp opens the socket just
+  shows a track (and once more 1.5 s later, as Thrum opens the socket just
   after it appears on MPRIS), when music starts and when the track changes.
 - **On by default on both sides, and subtle.** Matt asked for it, and both
-  ends cost nothing until music plays: Omamp's socket sits idle and the
+  ends cost nothing until music plays: Thrum's socket sits idle and the
   widget draws nothing while there are no levels. Subtle is 32 % opacity
   (26 % for the blocky Bars, Skyline and LED), Normal 55 % (44 %); the
   pictures show the words stay clear over every style in light and dark.
-- **"Same as Omamp" follows the shared style**, not the large bar's own
+- **"Same as Thrum" follows the shared style**, not the large bar's own
   style, because the deck, the big view and the mini players all show it.
 - **Twelve styles fold into eight.** The oscilloscope and the waveform
   ribbon need the waveform, which the feed does not carry, so both become a
@@ -6255,7 +6255,7 @@ plays through Omamp. Omamp sends the levels on a local socket.
 
 ### CPU cost
 
-- **Omamp**: one frame (fold the bands, write the JSON line) takes about
+- **Thrum**: one frame (fold the bands, write the JSON line) takes about
   2 µs and is 114 bytes, so 20 frames a second is about 40 µs and 2.3 KB a
   second. Measured end to end on the built binary (offscreen, no audio
   device, private D-Bus, temporary XDG folders) playing a test tone: 4 clock
@@ -6268,7 +6268,7 @@ plays through Omamp. Omamp sends the levels on a local socket.
 
 ### Test results
 
-- `OMAMP_TESTS=levelsfeed` (15 tests): the cost of a frame, the band folding and the line
+- `THRUM_TESTS=levelsfeed` (15 tests): the cost of a frame, the band folding and the line
   format; nothing listens until started and enabled, and turning it off
   removes the socket; the setting persists in `window.conf`; with no client
   the clock never runs and the levels are never read; a new client gets one
@@ -6276,7 +6276,7 @@ plays through Omamp. Omamp sends the levels on a local socket.
   identical frames are skipped; style and Reduce motion changes arrive at
   once and Reduce motion halves the rate; stopping sends one idle frame and
   stops the clock; the clock stops when the last client leaves; a second
-  Omamp leaves the first one feeding; a stale socket file is replaced; the
+  Thrum leaves the first one feeding; a stale socket file is replaced; the
   Appearance check box turns the feed off.
 - Plugin: `node omarchy-plugin/tests/model.test.mjs` passes (15 new cases);
   `qmllint` reports only the unqualified-access warnings the files already
@@ -6292,23 +6292,23 @@ plays through Omamp. Omamp sends the levels on a local socket.
   render harness with `MiniVisualiser.qml`, laid out as `Widget.qml` lays
   it out; the shell's `qs.*` modules are not available offscreen. The panel
   copy was not rendered.
-- **Turning sharing back on in Omamp** shows in the bar with the next track
+- **Turning sharing back on in Thrum** shows in the bar with the next track
   or the next press of play, not at once.
-- **A second Omamp** does not take over the socket when the first quits.
+- **A second Thrum** does not take over the socket when the first quits.
 - **Translations**: the new strings are English only.
 
 ### After merging
 
-- Rebuild and reinstall Omamp; the running copy has no socket.
+- Rebuild and reinstall Thrum; the running copy has no socket.
 - `omarchy restart shell`: the plugin has a new file (`MiniVisualiser.qml`)
   and new manifest settings, which a hot reload does not pick up. Then check
-  `journalctl --user --since '2 min ago'` for errors from `contra.omamp`,
-  and `omarchy-shell contra.omamp status` for `visualiser.connected` while
+  `journalctl --user --since '2 min ago'` for errors from `contra.thrum`,
+  and `omarchy-shell contra.thrum status` for `visualiser.connected` while
   music plays.
 
 ## First-run setup: floating windows (21 October 2026)
 
-Matt ran the setup with Omamp floating on one of his floating workspaces.
+Matt ran the setup with Thrum floating on one of his floating workspaces.
 On step two the bottom of the panel disappeared below the window, so he had
 to make the window bigger; after Finish there was a gap at the bottom until
 he resized it by hand.
@@ -6365,10 +6365,10 @@ almost every step, so it hit this all the time; plain `Tab` did too.
 A test build (temporary XDG folders, a private D-Bus session, no audio) on
 workspace 9, launched with `cua-bg-launch`, floated and tagged
 `omarchy-floating-workspace` by hand, and driven through the setup with
-`OMAMP_DEMO`. Before the fix Hyprland stayed at 1100 × 760 throughout while
+`THRUM_DEMO`. Before the fix Hyprland stayed at 1100 × 760 throughout while
 Qt changed size. After it, Qt and Hyprland agreed at every step: 1100 × 760
 during the setup, 1360 × 820 after Finish into the library, 500 × 680 after
-switching to the deck. Matt's own Omamp and his Hyprland config were not
+switching to the deck. Matt's own Thrum and his Hyprland config were not
 touched; the window was closed afterwards.
 
 ### Tests
@@ -6487,9 +6487,9 @@ tests/visualiser_tests.cpp          two new tests, the contrast test extended, a
 
 ### Real music
 
-The opt-in `realMusicSheet` test (`OMAMP_VIS_REAL="<file>@<seconds>;…"`,
-`OMAMP_VIS_SHOTS=<folder>`) draws the large bar in the library window,
-1,600 px wide, at each moment of each file: Omamp's `Decoder` reads six
+The opt-in `realMusicSheet` test (`THRUM_VIS_REAL="<file>@<seconds>;…"`,
+`THRUM_VIS_SHOTS=<folder>`) draws the large bar in the library window,
+1,600 px wide, at each moment of each file: Thrum's `Decoder` reads six
 seconds up to the moment and pushes them through `Spectrum` at 30 updates a
 second, as the player does, and it prints how full the analyser was and the
 contrast under the title and the artist. No audio device is opened and the
@@ -6534,7 +6534,7 @@ against their colour, so the halo is not counted.
 
 ### CPU
 
-`OMAMP_VIS_BENCH=1 … cpuBehindTheWholeBar`, as in
+`THRUM_VIS_BENCH=1 … cpuBehindTheWholeBar`, as in
 [Full-bar visualisers](#full-bar-visualisers-21-october-2026), run on the
 old build and the new one back to back (load average 6–9, so a point or two
 of noise either way):
@@ -6583,8 +6583,8 @@ opt-in benchmarks and live tests, and the new opt-in real-music sheet).
 `docs/fullbar-synthwave-{light,dark}.png` and `docs/fullbar-styles-dark.png`,
 retaken: the made-up library from `tests/make-demo-library` with
 `DEMO_SECONDS=60`, playing Neon Coast's Midnight Highway on the native
-engine into a buffer (`OMAMP_NO_AUDIO_DEVICE`), captured with
-`OMAMP_DEMO` and `OMAMP_SCREENSHOT`, offscreen in software, in a throwaway
+engine into a buffer (`THRUM_NO_AUDIO_DEVICE`), captured with
+`THRUM_DEMO` and `THRUM_SCREENSHOT`, offscreen in software, in a throwaway
 HOME with no session bus. Light is a copy of OneQode Light Glass, dark of
 Night Ride.
 

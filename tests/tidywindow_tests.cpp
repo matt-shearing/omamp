@@ -241,7 +241,7 @@ private slots:
         QVERIFY(QDir(m.root).exists("music/Band/Album"));
         // No temporary copies left behind.
         for (const QString &f : files(m.music))
-            QVERIFY2(!QFileInfo(f).fileName().startsWith(".omamp-"), qPrintable(f));
+            QVERIFY2(!QFileInfo(f).fileName().startsWith(".thrum-"), qPrintable(f));
     }
 
     void tagEditorArtworkAndLyrics() {
@@ -843,7 +843,7 @@ private slots:
     }
 };
 
-// Omamp's own writes and the folder watcher: tag saves, organise, undo and
+// Thrum's own writes and the folder watcher: tag saves, organise, undo and
 // the trash never start a rescan, a change from outside still does, and
 // the window's jobs never wait for (or give way to) a rescan.
 class OwnWritesTests : public QObject {

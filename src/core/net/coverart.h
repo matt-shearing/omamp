@@ -31,14 +31,14 @@ int snapSize(int requested);
 // has none.
 Fetched front(Net::HttpClient &http, const QString &releaseId, int size, const QString &releaseGroupId = {});
 
-// What `omamp fetch-art` does for one album.
+// What `thrum fetch-art` does for one album.
 struct AlbumOptions {
     int size = 500;          // the archive's size; the setting coverart.size overrides 0
     bool embed = false;      // write it into every track of the album (journalled, undoable)
     bool saveFile = false;   // save cover.jpg beside the tracks when there is no picture file yet
     bool search = true;      // search MusicBrainz by album and artist when no track has an MBID
     bool dryRun = false;
-    QString artCacheDir;     // empty: ~/.cache/omamp/art
+    QString artCacheDir;     // empty: ~/.cache/thrum/art
     QString sandbox;         // tests: never write outside this folder
 };
 

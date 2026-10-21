@@ -1,11 +1,11 @@
 // The library window's layout: the Art column, the sidebar and its About
-// sections, and the large now playing bar (OMAMP_TESTS=layout).
+// sections, and the large now playing bar (THRUM_TESTS=layout).
 //
 // Offscreen, in software, with no audio device. MusicBrainz, Wikidata and
 // Wikipedia are a MockHttp on 127.0.0.1: nothing here reaches the internet.
 //
-// OMAMP_LAYOUT_BENCH=1 also scrolls a library of 200,000 tracks
-// (OMAMP_LAYOUT_BENCH_TRACKS to change it) with the Art column on and
+// THRUM_LAYOUT_BENCH=1 also scrolls a library of 200,000 tracks
+// (THRUM_LAYOUT_BENCH_TRACKS to change it) with the Art column on and
 // prints the frame times.
 #include <QElapsedTimer>
 #include <QImage>
@@ -241,16 +241,16 @@ private slots:
         m_server = std::make_unique<MockHttp>();
         const QString base = m_server->url();
         m_server->setHandler([base](const MockHttp::Request &r) { return aboutHandler(r, base); });
-        setEnv("OMAMP_MUSICBRAINZ_URL", base + "/ws/2");
-        setEnv("OMAMP_WIKIDATA_URL", base);
-        setEnv("OMAMP_WIKIPEDIA_URL", base + "/wp/{lang}");
+        setEnv("THRUM_MUSICBRAINZ_URL", base + "/ws/2");
+        setEnv("THRUM_WIKIDATA_URL", base);
+        setEnv("THRUM_WIKIPEDIA_URL", base + "/wp/{lang}");
         m_oldCache = qgetenv("XDG_CACHE_HOME");
         setEnv("XDG_CACHE_HOME", m_cache.path());
         for (Net::Service s : {Net::Service::MusicBrainz, Net::Service::Wikidata, Net::Service::Wikipedia})
             Net::Config::setIntervalMs(s, 0);
     }
     void cleanupTestCase() {
-        for (const char *name : {"OMAMP_MUSICBRAINZ_URL", "OMAMP_WIKIDATA_URL", "OMAMP_WIKIPEDIA_URL"})
+        for (const char *name : {"THRUM_MUSICBRAINZ_URL", "THRUM_WIKIDATA_URL", "THRUM_WIKIPEDIA_URL"})
             qunsetenv(name);
         if (m_oldCache.isEmpty())
             qunsetenv("XDG_CACHE_HOME");
@@ -362,7 +362,7 @@ private slots:
         QVERIFY(a.imageFile.endsWith(".png") && QFileInfo::exists(a.imageFile));
         // Every request said who is asking.
         for (const auto &r : m_server->requests())
-            QVERIFY(r.headers.value("user-agent").startsWith("Omamp/"));
+            QVERIFY(r.headers.value("user-agent").startsWith("Thrum/"));
         // A German reader with no German article gets the English one.
         const About::Summary b = client.album("Neon Coast", "Night Drive", {}, "de");
         QVERIFY(b.found());
@@ -405,7 +405,7 @@ private slots:
         // Track 1 is Neon Coast's first, on album 1.
         const int neon = library.tracks()->rowOfTrack(1);
         QCOMPARE(library.tracks()->data(library.tracks()->index(neon, TrackListModel::Art), TrackListModel::ArtRole)
-                     .toString().left(28), QString("image://omamp-art/album/1/96"));
+                     .toString().left(28), QString("image://thrum-art/album/1/96"));
 
         // Off from the View menu's action, and on again; rows grow taller.
         layout->setArtColumn(false);
@@ -515,18 +515,18 @@ private slots:
 
     // Opt-in: scroll 200,000 tracks with the Art column and time the frames.
     void artColumnAt200k() {
-        if (qEnvironmentVariableIntValue("OMAMP_LAYOUT_BENCH") <= 0)
-            QSKIP("set OMAMP_LAYOUT_BENCH=1 to measure");
-        const int tracks = qEnvironmentVariableIntValue("OMAMP_LAYOUT_BENCH_TRACKS") > 0
-                               ? qEnvironmentVariableIntValue("OMAMP_LAYOUT_BENCH_TRACKS") : 200000;
+        if (qEnvironmentVariableIntValue("THRUM_LAYOUT_BENCH") <= 0)
+            QSKIP("set THRUM_LAYOUT_BENCH=1 to measure");
+        const int tracks = qEnvironmentVariableIntValue("THRUM_LAYOUT_BENCH_TRACKS") > 0
+                               ? qEnvironmentVariableIntValue("THRUM_LAYOUT_BENCH_TRACKS") : 200000;
         QTemporaryDir dir;
         QElapsedTimer made;
         made.start();
         // 11 tracks an album, every album with its own cover.
         makeLibrary(dir.filePath("library.db"), dir.filePath("music"), tracks / 11, 11, 1);
         qInfo("made %d tracks in %d albums in %lld ms", tracks / 11 * 11, tracks / 11, made.elapsed());
-        // OMAMP_LAYOUT_BENCH_ART=0: the same without the Art column, to compare.
-        const bool art = qEnvironmentVariable("OMAMP_LAYOUT_BENCH_ART") != "0";
+        // THRUM_LAYOUT_BENCH_ART=0: the same without the Art column, to compare.
+        const bool art = qEnvironmentVariable("THRUM_LAYOUT_BENCH_ART") != "0";
         startInAdvancedMode(dir, {{"window/advancedWidth", 1400}, {"window/advancedHeight", 860}, {"layout/artColumn", art}});
         Window w(dir);
         QVERIFY(w.load());

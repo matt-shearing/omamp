@@ -1,6 +1,6 @@
 .pragma library
 
-// Pure helpers for the Omamp bar widget: which MPRIS player is Omamp, the
+// Pure helpers for the Thrum bar widget: which MPRIS player is Thrum, the
 // labels the bar and panel draw, and the theme green. Kept free of QML so
 // tests/model.test.mjs can run it under node.
 
@@ -19,35 +19,35 @@ var GLYPH_MUTED = String.fromCodePoint(0xF075F)   // nf-md-volume_mute
 var GLYPH_WINDOW = String.fromCodePoint(0xF05B2)  // nf-md-window_restore
 var GLYPH_MUSIC = String.fromCodePoint(0xF075A)   // nf-md-music
 
-// The bus name is the reliable part: Omamp registers
-// org.mpris.MediaPlayer2.omamp, or ...omamp.instanceNNN for a second copy.
+// The bus name is the reliable part: Thrum registers
+// org.mpris.MediaPlayer2.thrum, or ...thrum.instanceNNN for a second copy.
 // Identity and DesktopEntry are the fallback while the player is still
 // reading its properties.
-function isOmamp(player) {
+function isThrum(player) {
   if (!player) return false
   var bus = String(player.dbusName || "")
-  if (bus === "org.mpris.MediaPlayer2.omamp" || bus.indexOf("org.mpris.MediaPlayer2.omamp.") === 0) return true
-  return String(player.desktopEntry || "") === "omamp" || String(player.identity || "") === "Omamp"
+  if (bus === "org.mpris.MediaPlayer2.thrum" || bus.indexOf("org.mpris.MediaPlayer2.thrum.") === 0) return true
+  return String(player.desktopEntry || "") === "thrum" || String(player.identity || "") === "Thrum"
 }
 
-// The first Omamp copy wins, preferring the main bus name over an instance.
-function findOmamp(players) {
+// The first Thrum copy wins, preferring the main bus name over an instance.
+function findThrum(players) {
   var list = players || []
   var fallback = null
   for (var i = 0; i < list.length; i++) {
     var p = list[i]
-    if (!isOmamp(p)) continue
-    if (String(p.dbusName || "") === "org.mpris.MediaPlayer2.omamp") return p
+    if (!isThrum(p)) continue
+    if (String(p.dbusName || "") === "org.mpris.MediaPlayer2.thrum") return p
     if (!fallback) fallback = p
   }
   return fallback
 }
 
-// How many Omamp copies are on the bus; reported by `status` for checking.
-function countOmamp(players) {
+// How many Thrum copies are on the bus; reported by `status` for checking.
+function countThrum(players) {
   var list = players || []
   var n = 0
-  for (var i = 0; i < list.length; i++) if (isOmamp(list[i])) n++
+  for (var i = 0; i < list.length; i++) if (isThrum(list[i])) n++
   return n
 }
 
@@ -59,7 +59,7 @@ function trackLine(artist, title) {
   return t || a
 }
 
-// mm:ss, or h:mm:ss past the hour, as Omamp's own clock shows it.
+// mm:ss, or h:mm:ss past the hour, as Thrum's own clock shows it.
 function clock(seconds) {
   var s = Number(seconds)
   if (!isFinite(s) || s < 0) s = 0
@@ -85,13 +85,13 @@ function stateGlyph(playing, stopped) {
 }
 
 function tooltip(running, line, state) {
-  if (!running) return "Omamp is not running. Click to open it."
-  if (!line) return "Omamp: nothing in the playlist"
+  if (!running) return "Thrum is not running. Click to open it."
+  if (!line) return "Thrum: nothing in the playlist"
   var word = state === "playing" ? "" : " (" + state + ")"
   return line + word
 }
 
-// Theme colours by name from colors.toml, the way Omamp itself reads them.
+// Theme colours by name from colors.toml, the way Thrum itself reads them.
 // Returns { green, accent } with "" for anything the theme leaves out.
 function themeColors(raw) {
   var out = { green: "", accent: "", color2: "" }
@@ -119,7 +119,7 @@ function clamp01(v) {
   return Math.max(0, Math.min(1, n))
 }
 
-// The cover to show: Omamp sends a file:// URL; other players may send
+// The cover to show: Thrum sends a file:// URL; other players may send
 // http(s) or an inline picture. Anything else shows the placeholder.
 function coverSource(url) {
   var s = String(url || "")
@@ -168,15 +168,15 @@ function thumbSize(barSize, padding) {
 }
 
 // ------------------------------------------------------------ the visualiser
-// Omamp shares its analyser over a local socket (src/app/levelsfeed.h): one
+// Thrum shares its analyser over a local socket (src/app/levelsfeed.h): one
 // JSON line per frame, {style, reduceMotion, active, levels: 16 x 0..100}.
 // The bar draws a small, faint copy of the style behind the track's name.
 
-// The socket Omamp listens on, under $XDG_RUNTIME_DIR.
+// The socket Thrum listens on, under $XDG_RUNTIME_DIR.
 function vizSocketPath(runtimeDir) {
   var dir = String(runtimeDir || "")
   if (dir === "") return ""
-  return dir.replace(/\/+$/, "") + "/omamp-levels.sock"
+  return dir.replace(/\/+$/, "") + "/thrum-levels.sock"
 }
 
 // One line of the feed, or null for anything that is not one. Levels come
@@ -196,14 +196,14 @@ function parseVizFrame(line) {
   }
 }
 
-// The style setting: "same" (as Omamp), "bars" or "line".
+// The style setting: "same" (as Thrum), "bars" or "line".
 function vizChoice(value) {
   var v = String(value || "").trim().toLowerCase()
   if (v === "bars" || v === "line") return v
   return "same"
 }
 
-// Omamp's twelve styles fold into eight small ones the bar can draw from
+// Thrum's twelve styles fold into eight small ones the bar can draw from
 // the levels alone (the oscilloscope and ribbon have no waveform here).
 var MINI_STYLES = {
   bars: "bars", peaks: "bars", fire: "bars",
@@ -213,10 +213,10 @@ var MINI_STYLES = {
   synthwave: "synthwave", stars: "stars"
 }
 
-function miniStyle(omampStyle, choice) {
+function miniStyle(thrumStyle, choice) {
   var c = vizChoice(choice)
   if (c !== "same") return c
-  var s = String(omampStyle || "").toLowerCase()
+  var s = String(thrumStyle || "").toLowerCase()
   return MINI_STYLES.hasOwnProperty(s) ? MINI_STYLES[s] : "bars"
 }
 
@@ -229,7 +229,7 @@ function vizOpacity(strength, style) {
   return Math.round(base * factor * 1000) / 1000
 }
 
-// Whether a frame is due: Omamp sends at most 20 a second, and the bar
+// Whether a frame is due: Thrum sends at most 20 a second, and the bar
 // drops anything faster than minMs from a misbehaving feed.
 function frameDue(lastMs, nowMs, minMs) {
   var last = Number(lastMs), now = Number(nowMs), min = Number(minMs)

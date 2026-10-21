@@ -23,7 +23,7 @@ class Player;
 //   - A file that isn't in the library gets the picture in its tags, else a
 //     cover/folder/front picture in its folder, read on the fly.
 //
-// Every picture lands in the artwork cache (~/.cache/omamp/art) as
+// Every picture lands in the artwork cache (~/.cache/thrum/art) as
 // <hash>-96.jpg, -256.jpg and -600.jpg, named by the hash of the original
 // picture as the library names them, plus <hash>-blur.jpg: a small blurred
 // copy that the big view stretches behind everything. The blur is made on

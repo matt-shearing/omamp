@@ -47,7 +47,7 @@ bool isUrl(const QString &s) {
 QString resolveLocation(const QString &location, const QDir &base) {
     QString loc = location.trimmed();
     // A Spotify track (an open.spotify.com link or a spotify: URI) becomes
-    // the same spotify://track/<id> entry Omamp's own playlists hold.
+    // the same spotify://track/<id> entry Thrum's own playlists hold.
     if (const QString spotify = Playlists::spotifyTrackPath(loc); !spotify.isEmpty())
         return spotify;
     if (loc.startsWith("file://", Qt::CaseInsensitive))

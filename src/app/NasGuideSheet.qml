@@ -4,7 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // Connect a NAS: the share's name and where to mount it, and the exact
-// steps to make Linux mount it on demand. Omamp never runs sudo or mounts
+// steps to make Linux mount it on demand. Thrum never runs sudo or mounts
 // anything itself; it writes out the commands, each with a Copy button, for
 // you to run in a terminal. The full guide (docs/nas.md) is on the second tab.
 ToolSheet {
@@ -97,7 +97,7 @@ ToolSheet {
                         Layout.fillWidth: true
                         Layout.topMargin: 12
                         wrapMode: Text.Wrap
-                        text: qsTr("Omamp reads music from a NAS through a folder that Linux mounts. These steps make it mount by itself the first time Omamp looks, and never hold up start-up when the NAS is off. Omamp never runs these commands or asks for your password: you run them in a terminal.")
+                        text: qsTr("Thrum reads music from a NAS through a folder that Linux mounts. These steps make it mount by itself the first time Thrum looks, and never hold up start-up when the NAS is off. Thrum never runs these commands or asks for your password: you run them in a terminal.")
                         font.pixelSize: 13
                         color: theme.c.foreground
                     }
@@ -151,7 +151,7 @@ ToolSheet {
                         visible: sheet.guide.ok === true
                         spacing: 6
 
-                        Step { text: qsTr("1. Save these two files in ~/omamp-mount-units") }
+                        Step { text: qsTr("1. Save these two files in ~/thrum-mount-units") }
                         Text {
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
@@ -207,7 +207,7 @@ ToolSheet {
                             Text {
                                 Layout.fillWidth: true
                                 wrapMode: Text.Wrap
-                                text: qsTr("Once %1 shows your music, add it as a library folder. Omamp marks the share so it knows it again, even if it's later mounted somewhere else.").arg(mountPoint.text)
+                                text: qsTr("Once %1 shows your music, add it as a library folder. Thrum marks the share so it knows it again, even if it's later mounted somewhere else.").arg(mountPoint.text)
                                 font.pixelSize: 12
                                 color: theme.c.muted
                             }

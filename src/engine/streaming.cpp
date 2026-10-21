@@ -27,7 +27,7 @@ QString userAgent() {
     QString version = QCoreApplication::applicationVersion();
     if (version.isEmpty())
         version = QStringLiteral("dev");
-    return QStringLiteral("Omamp/") + version;
+    return QStringLiteral("Thrum/") + version;
 }
 
 QByteArray ffmpegLocation(const QString &path, const QUrl &url) {

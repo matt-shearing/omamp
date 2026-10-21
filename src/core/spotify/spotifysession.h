@@ -10,8 +10,8 @@
 
 // Reading what Spotify keeps from new Web API apps, the way Spotify's own
 // apps read it: the tracks of Spotify's own playlists ("This Is …", the
-// Daily Mixes) and an artist's top tracks. omamp-spotify-session
-// (sidecar/omamp-spotify-session, Rust and librespot) signs in with the
+// Daily Mixes) and an artist's top tracks. thrum-spotify-session
+// (sidecar/thrum-spotify-session, Rust and librespot) signs in with the
 // librespot credential spotify_player already keeps, which it only reads,
 // and asks Spotify's private spclient endpoints, which have no per-app
 // quota. Spotify's developer terms don't cover those endpoints and Spotify
@@ -19,7 +19,7 @@
 // and the Web API stays the fallback. docs/spotify.md.
 namespace Spotify {
 
-// The sidecar, kept running while Omamp runs: one JSON request a line on
+// The sidecar, kept running while Thrum runs: one JSON request a line on
 // its input, one answer a line on its output. It lives on a thread of its
 // own, so any worker can ask; one request runs at a time.
 class SessionReader : public QObject {
@@ -35,8 +35,8 @@ public:
     // How many sidecar processes were started (tests).
     int starts() const { return m_starts; }
 
-    // The sidecar to run: OMAMP_SPOTIFY_SESSION when set ("off" for none),
-    // else omamp-spotify-session beside Omamp's own program, else on PATH.
+    // The sidecar to run: THRUM_SPOTIFY_SESSION when set ("off" for none),
+    // else thrum-spotify-session beside Thrum's own program, else on PATH.
     // Empty when there is none.
     static QString findProgram();
 
@@ -56,7 +56,7 @@ private:
     int m_starts = 0;
 };
 
-// The catalogue Omamp uses when the sidecar is there: every playlist's
+// The catalogue Thrum uses when the sidecar is there: every playlist's
 // tracks and an artist's top tracks from the session, the artist's albums
 // from Web API search, and the Web API whenever the session fails.
 class SessionCatalogue : public Catalogue {

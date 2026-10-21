@@ -1,4 +1,4 @@
-// The levels feed for the Omarchy bar plugin (OMAMP_TESTS=levelsfeed).
+// The levels feed for the Omarchy bar plugin (THRUM_TESTS=levelsfeed).
 //
 // Each test opens its own socket in a temporary folder and reads it with a
 // QLocalSocket, as Quickshell's Socket does. No audio, no window on screen,
@@ -255,7 +255,7 @@ private slots:
         QVERIFY(!feed.sending());
     }
 
-    void aSecondOmampLeavesTheFirstOneFeeding() {
+    void aSecondThrumLeavesTheFirstOneFeeding() {
         QTemporaryDir dir;
         const QString path = dir.filePath("levels.sock");
         LevelsFeed first({}, path);
@@ -289,7 +289,7 @@ private slots:
         QQmlEngine engine;
         engine.rootContext()->setContextProperty("levelsFeed", &feed);
         engine.rootContext()->setContextProperty("theme", &theme);
-        QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(OMAMP_APP_DIR) + "/BarFeedSettings.qml"));
+        QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(THRUM_APP_DIR) + "/BarFeedSettings.qml"));
         std::unique_ptr<QObject> root(component.create());
         QVERIFY2(root, qPrintable(component.errorString()));
         auto *box = root->findChild<QObject *>("shareWithBar");

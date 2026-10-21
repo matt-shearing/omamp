@@ -61,10 +61,10 @@ MprisWatch::MprisWatch(QObject *parent) : QObject(parent), m_bus(connection()) {
 MprisWatch::~MprisWatch() { unwatch(); }
 
 QDBusConnection MprisWatch::connection() {
-    const QString address = qEnvironmentVariable("OMAMP_SPOTIFY_MPRIS_BUS");
+    const QString address = qEnvironmentVariable("THRUM_SPOTIFY_MPRIS_BUS");
     if (address.isEmpty())
         return QDBusConnection::sessionBus();
-    const QString name = "omamp-spotify-mpris-" + QString::number(qHash(address), 16);
+    const QString name = "thrum-spotify-mpris-" + QString::number(qHash(address), 16);
     QDBusConnection c(name);
     if (c.isConnected())
         return c;
@@ -72,7 +72,7 @@ QDBusConnection MprisWatch::connection() {
 }
 
 void MprisWatch::setService(const QString &busName) {
-    const QString env = qEnvironmentVariable("OMAMP_SPOTIFY_MPRIS_NAME");
+    const QString env = qEnvironmentVariable("THRUM_SPOTIFY_MPRIS_NAME");
     const QString name = busName.isEmpty() ? QString() : (env.isEmpty() ? busName : env);
     // The environment can name a different bus too.
     const QDBusConnection bus = connection();

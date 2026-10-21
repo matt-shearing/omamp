@@ -17,18 +17,18 @@ function check(name, fn) {
   catch (e) { failures++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 }
 
-const omamp = { dbusName: "org.mpris.MediaPlayer2.omamp", identity: "Omamp", desktopEntry: "omamp" };
-const second = { dbusName: "org.mpris.MediaPlayer2.omamp.instance4242", identity: "Omamp", desktopEntry: "omamp" };
+const thrum = { dbusName: "org.mpris.MediaPlayer2.thrum", identity: "Thrum", desktopEntry: "thrum" };
+const second = { dbusName: "org.mpris.MediaPlayer2.thrum.instance4242", identity: "Thrum", desktopEntry: "thrum" };
 const spotify = { dbusName: "org.mpris.MediaPlayer2.spotify", identity: "Spotify", desktopEntry: "spotify" };
-const lookalike = { dbusName: "org.mpris.MediaPlayer2.omampire", identity: "Omampire", desktopEntry: "omampire" };
+const lookalike = { dbusName: "org.mpris.MediaPlayer2.thrumire", identity: "Thrumire", desktopEntry: "thrumire" };
 
-check("finds Omamp among other players", () => assert.equal(M.findOmamp([spotify, omamp]), omamp));
-check("prefers the main bus name over a second copy", () => assert.equal(M.findOmamp([second, omamp]), omamp));
-check("falls back to a second copy", () => assert.equal(M.findOmamp([spotify, second]), second));
-check("ignores other players and lookalike names", () => assert.equal(M.findOmamp([spotify, lookalike]), null));
-check("counts every copy", () => assert.equal(M.countOmamp([omamp, spotify, second]), 2));
-check("no players, no Omamp", () => assert.equal(M.findOmamp(null), null));
-check("identity alone is enough while the bus name is unknown", () => assert.ok(M.isOmamp({ identity: "Omamp" })));
+check("finds Thrum among other players", () => assert.equal(M.findThrum([spotify, thrum]), thrum));
+check("prefers the main bus name over a second copy", () => assert.equal(M.findThrum([second, thrum]), thrum));
+check("falls back to a second copy", () => assert.equal(M.findThrum([spotify, second]), second));
+check("ignores other players and lookalike names", () => assert.equal(M.findThrum([spotify, lookalike]), null));
+check("counts every copy", () => assert.equal(M.countThrum([thrum, spotify, second]), 2));
+check("no players, no Thrum", () => assert.equal(M.findThrum(null), null));
+check("identity alone is enough while the bus name is unknown", () => assert.ok(M.isThrum({ identity: "Thrum" })));
 
 check("artist and title", () => assert.equal(M.trackLine("Neon Coast", "Midnight Highway"), "Neon Coast – Midnight Highway"));
 check("title only", () => assert.equal(M.trackLine("", "Untitled"), "Untitled"));
@@ -64,7 +64,7 @@ check("tooltips", () => {
 });
 
 check("covers: file, web and inline pictures pass", () => {
-  assert.equal(M.coverSource("file:///home/u/.cache/omamp/art/ab-600.jpg"), "file:///home/u/.cache/omamp/art/ab-600.jpg");
+  assert.equal(M.coverSource("file:///home/u/.cache/thrum/art/ab-600.jpg"), "file:///home/u/.cache/thrum/art/ab-600.jpg");
   assert.equal(M.coverSource("https://example.org/c.jpg"), "https://example.org/c.jpg");
   assert.equal(M.coverSource("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA");
 });
@@ -75,8 +75,8 @@ check("covers: nothing else does", () => {
   assert.equal(M.coverSource("javascript:alert(1)"), "");
 });
 
-const art = "file:///home/u/.cache/omamp/art/ab-600.jpg";
-const art2 = "file:///home/u/.cache/omamp/art/cd-600.jpg";
+const art = "file:///home/u/.cache/thrum/art/ab-600.jpg";
+const art2 = "file:///home/u/.cache/thrum/art/cd-600.jpg";
 check("cover step: a new cover replaces the old at once", () => {
   assert.deepEqual(M.coverStep(art, art2, true), { cover: art2, hold: false });
   assert.deepEqual(M.coverStep("", art, true), { cover: art, hold: false });
@@ -116,8 +116,8 @@ check("clamp01", () => { assert.equal(M.clamp01(1.4), 1); assert.equal(M.clamp01
 
 // ------------------------------------------------------------ the visualiser
 check("the feed's socket is under the runtime folder", () => {
-  assert.equal(M.vizSocketPath("/run/user/1000"), "/run/user/1000/omamp-levels.sock");
-  assert.equal(M.vizSocketPath("/run/user/1000/"), "/run/user/1000/omamp-levels.sock");
+  assert.equal(M.vizSocketPath("/run/user/1000"), "/run/user/1000/thrum-levels.sock");
+  assert.equal(M.vizSocketPath("/run/user/1000/"), "/run/user/1000/thrum-levels.sock");
   assert.equal(M.vizSocketPath(""), "");
 });
 check("a frame parses, with levels as 0..1", () => {
@@ -140,19 +140,19 @@ check("junk is not a frame", () => {
   assert.equal(M.parseVizFrame('{"levels":"x"}').levels.length, 0);
 });
 check("the style setting", () => {
-  assert.equal(M.vizChoice("Same as Omamp"), "same");
+  assert.equal(M.vizChoice("Same as Thrum"), "same");
   assert.equal(M.vizChoice("Bars"), "bars");
   assert.equal(M.vizChoice("Line"), "line");
   assert.equal(M.vizChoice(undefined), "same");
 });
-check("every Omamp style has a small one, and unknown ones are bars", () => {
+check("every Thrum style has a small one, and unknown ones are bars", () => {
   const want = { bars: "bars", peaks: "bars", fire: "bars", mirror: "skyline", skyline: "skyline",
     scope: "ribbon", ribbon: "ribbon", line: "line", pulse: "pulse", led: "led", synthwave: "synthwave", stars: "stars" };
-  for (const [omamp, mini] of Object.entries(want)) assert.equal(M.miniStyle(omamp, "Same as Omamp"), mini, omamp);
-  assert.equal(M.miniStyle("hologram", "Same as Omamp"), "bars");
-  assert.equal(M.miniStyle("", "Same as Omamp"), "bars");
+  for (const [thrum, mini] of Object.entries(want)) assert.equal(M.miniStyle(thrum, "Same as Thrum"), mini, thrum);
+  assert.equal(M.miniStyle("hologram", "Same as Thrum"), "bars");
+  assert.equal(M.miniStyle("", "Same as Thrum"), "bars");
 });
-check("a chosen style overrides Omamp's", () => {
+check("a chosen style overrides Thrum's", () => {
   assert.equal(M.miniStyle("synthwave", "Bars"), "bars");
   assert.equal(M.miniStyle("synthwave", "Line"), "line");
 });

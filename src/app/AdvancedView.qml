@@ -119,7 +119,7 @@ FocusScope {
         library.tracks.filter = text
     }
 
-    // The window's settings can arrive after this view is made (when Omamp
+    // The window's settings can arrive after this view is made (when Thrum
     // starts in the library), so the saved columns are applied when they come.
     property bool columnsRestored: false
     function restoreSavedColumns() {
@@ -479,7 +479,7 @@ FocusScope {
                         visible: view.spotifyNode
                         onLeave: view.focusTree()
                         onAction: (id) => view.action(id)
-                        // Chosen Spotify tracks dragged onto an Omamp playlist in the tree.
+                        // Chosen Spotify tracks dragged onto a Thrum playlist in the tree.
                         onTracksDragged: (pos) => tree.dragOver(pos)
                         onTracksDropped: (pos) => tree.dropSpotifyAt(pos, spotify.items)
                     }

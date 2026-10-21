@@ -65,7 +65,7 @@ ArtworkCache::ArtworkCache(Library &library, const QString &cacheDir)
     : m_library(library), m_dir(cacheDir.isEmpty() ? defaultCacheDir() : cacheDir) {}
 
 QString ArtworkCache::defaultCacheDir() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/omamp/art";
+    return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/thrum/art";
 }
 
 const QList<int> &ArtworkCache::sizes() {
@@ -323,7 +323,7 @@ qint64 ArtworkCache::store(const Picture &picture, int size, QString *path) {
         }
         const QByteArray kind = pictureFormat(picture.bytes);
         if (kind.isEmpty()) {
-            m_error = QString("Not a picture Omamp reads (JPEG, PNG, WebP, GIF or BMP)");
+            m_error = QString("Not a picture Thrum reads (JPEG, PNG, WebP, GIF or BMP)");
             return 0;
         }
         QBuffer buffer;
@@ -488,7 +488,7 @@ void ArtworkPrefetch::start(int size) {
         ArtworkCache cache(library, dir);
         *made = cache.prefetch(size, job);
     });
-    m_thread->setObjectName("omamp-artwork");
+    m_thread->setObjectName("thrum-artwork");
     connect(m_thread, &QThread::finished, this, [this, made] { emit finished(*made); });
     // Pictures are a nicety: they never compete with playback or the window.
     m_thread->start(QThread::LowestPriority);

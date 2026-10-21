@@ -579,7 +579,7 @@ QList<Item> parseContextTracks(const QJsonObject &o) {
 // --- Settings -------------------------------------------------------------------
 
 QString Settings::defaultPath() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/spotify.conf";
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/thrum/spotify.conf";
 }
 
 Settings Settings::load(const QString &path) {
@@ -613,12 +613,12 @@ bool Settings::save(const QString &path) const {
 // --- Backend --------------------------------------------------------------------
 
 int Backend::timeoutMs() {
-    const int env = qEnvironmentVariableIntValue("OMAMP_SPOTIFY_TIMEOUT_MS");
+    const int env = qEnvironmentVariableIntValue("THRUM_SPOTIFY_TIMEOUT_MS");
     return env > 0 ? env : 20000;
 }
 
 int Backend::longTimeoutMs() {
-    const int env = qEnvironmentVariableIntValue("OMAMP_SPOTIFY_LONG_TIMEOUT_MS");
+    const int env = qEnvironmentVariableIntValue("THRUM_SPOTIFY_LONG_TIMEOUT_MS");
     return env > 0 ? env : 60000;
 }
 
@@ -732,21 +732,21 @@ bool Backend::runProgram(const QString &program, const QStringList &arguments, Q
 // --- spotify_player -------------------------------------------------------------
 
 SpotifyPlayerBackend::SpotifyPlayerBackend(const QString &program)
-    : m_program(findProgram(program, "OMAMP_SPOTIFY_PLAYER", "spotify_player")) {}
+    : m_program(findProgram(program, "THRUM_SPOTIFY_PLAYER", "spotify_player")) {}
 
 QString SpotifyPlayerBackend::configFolder() {
-    const QString env = qEnvironmentVariable("OMAMP_SPOTIFY_PLAYER_CONFIG");
+    const QString env = qEnvironmentVariable("THRUM_SPOTIFY_PLAYER_CONFIG");
     return env.isEmpty() ? QDir::homePath() + "/.config/spotify-player" : env;
 }
 
 QString SpotifyPlayerBackend::cacheFolder() {
-    const QString env = qEnvironmentVariable("OMAMP_SPOTIFY_PLAYER_CACHE");
+    const QString env = qEnvironmentVariable("THRUM_SPOTIFY_PLAYER_CACHE");
     return env.isEmpty() ? QDir::homePath() + "/.cache/spotify-player" : env;
 }
 
 bool SpotifyPlayerBackend::signedIn() const {
     // librespot's credentials.json and a Web API <client id>_token.json.
-    // Only their names are looked at; Omamp never opens them.
+    // Only their names are looked at; Thrum never opens them.
     // With a client_id in app.toml, its own token must be there: a new ID
     // needs `spotify_player authenticate` again.
     const QDir cache(cacheFolder());
@@ -893,7 +893,7 @@ bool SpotifyPlayerBackend::writeClientId(const QString &folder, const QString &g
             return fail(tr("Couldn't read %1.").arg(path));
         data = in.readAll();
         in.close();
-        const QString stem = path + ".omamp-backup-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
+        const QString stem = path + ".thrum-backup-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
         QString copy = stem;
         for (int n = 2; QFileInfo::exists(copy); ++n)
             copy = stem + '-' + QString::number(n);
@@ -1065,7 +1065,7 @@ bool SpotifyPlayerBackend::json(const QStringList &arguments, QJsonValue *value,
     const QJsonDocument doc = QJsonDocument::fromJson("[" + repair(out) + "]", &parseError);
     if (parseError.error != QJsonParseError::NoError || !doc.isArray()) {
         if (error)
-            *error = tr("spotify_player answered something Omamp can't read: %1").arg(parseError.errorString());
+            *error = tr("spotify_player answered something Thrum can't read: %1").arg(parseError.errorString());
         return false;
     }
     *value = doc.array().at(0);
@@ -1171,7 +1171,7 @@ QList<Item> SpotifyPlayerBackend::artistPage(const Item &artist, QStringList *se
     name = name.trimmed();
     if (name.isEmpty()) {
         if (error)
-            *error = tr("Omamp doesn't know this artist's name, so it can't look the artist up.");
+            *error = tr("Thrum doesn't know this artist's name, so it can't look the artist up.");
         return {};
     }
     // Two searches: the plain name ranks the best-known tracks first, and
@@ -1280,7 +1280,7 @@ QString SpotifyPlayerBackend::account(QString *error) {
 // --- Spotifast ------------------------------------------------------------------
 
 SpotifastBackend::SpotifastBackend(const QString &program)
-    : m_program(findProgram(program, "OMAMP_SPOTIFAST", "spotifast")) {}
+    : m_program(findProgram(program, "THRUM_SPOTIFAST", "spotifast")) {}
 
 bool SpotifastBackend::running() const {
     if (m_program.isEmpty())

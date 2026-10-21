@@ -8,7 +8,7 @@
 #include "outputfollower.h"
 
 QtEngine::QtEngine(bool withDevice, QObject *parent) : AudioEngine(parent) {
-    if (withDevice && !qEnvironmentVariableIsSet("OMAMP_NO_AUDIO_DEVICE")) {
+    if (withDevice && !qEnvironmentVariableIsSet("THRUM_NO_AUDIO_DEVICE")) {
         m_player.setAudioOutput(&m_output);
         // QAudioOutput has the same blind spot as the native engine's sink:
         // Qt pins the stream to one device and its idea of the default can

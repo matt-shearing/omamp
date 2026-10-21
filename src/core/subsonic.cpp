@@ -64,7 +64,7 @@ QByteArray SubsonicClient::get(const QUrl &url, QString *contentType, int *statu
     ++m_requests;
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QString("Omamp/%1").arg(QCoreApplication::applicationVersion().isEmpty()
+                      QString("Thrum/%1").arg(QCoreApplication::applicationVersion().isEmpty()
                                                    ? QString("dev")
                                                    : QCoreApplication::applicationVersion()));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -133,7 +133,7 @@ SubsonicClient::Reply SubsonicClient::call(const QString &method, const QUrlQuer
             r.error = QString("The server refused %1 (error %2)").arg(method).arg(r.code);
         if (r.code == 41)
             r.error += ". This server can't check tokens (common with LDAP sign-in); use an API key instead "
-                       "(omamp remote add ... --api-key-stdin)";
+                       "(thrum remote add ... --api-key-stdin)";
         return r;
     }
     r.ok = true;

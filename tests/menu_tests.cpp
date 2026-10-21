@@ -248,10 +248,10 @@ private slots:
     void placementCommands() {
         const qint64 pid = 4242;
         const QByteArray clients = R"([{"address":"0x1","pid":17,"title":"x"},
-            {"address":"0xa","pid":4242,"title":"Omamp","monitor":1,"floating":false},
-            {"address":"0xb","pid":4242,"title":"Omamp mini","monitor":1,"floating":false}])";
+            {"address":"0xa","pid":4242,"title":"Thrum","monitor":1,"floating":false},
+            {"address":"0xb","pid":4242,"title":"Thrum mini","monitor":1,"floating":false}])";
         QCOMPARE(WindowPlacement::clientIn(clients, pid).value("address").toString(), QString("0xa"));
-        QCOMPARE(WindowPlacement::clientIn(clients, pid, "Omamp mini").value("address").toString(), QString("0xb"));
+        QCOMPARE(WindowPlacement::clientIn(clients, pid, "Thrum mini").value("address").toString(), QString("0xb"));
         QVERIFY(WindowPlacement::clientIn(clients, 99).isEmpty());
 
         const QJsonArray monitors = QJsonDocument::fromJson(R"([{"id":0,"x":0,"y":0,"width":6144,"height":2560,"scale":1},
@@ -306,7 +306,7 @@ private slots:
         QQuickItem *root = qobject_cast<QQuickItem *>(rig.find("deckView"))->parentItem();
 
         rig.run("mini-player");
-        QCOMPARE(rig.window->title(), QString("Omamp mini"));
+        QCOMPARE(rig.window->title(), QString("Thrum mini"));
         QVERIFY(modes->property("placing").toBool());
         QCOMPARE(root->property("opacity").toDouble(), 0.0);
         QCOMPARE(rig.window->width(), 1700); // never asks for a size itself
@@ -328,7 +328,7 @@ private slots:
         QVERIFY(!rig.find("compactHint")->property("visible").toBool());
 
         rig.run("micro-player");
-        QCOMPARE(rig.window->title(), QString("Omamp micro"));
+        QCOMPARE(rig.window->title(), QString("Thrum micro"));
         QTRY_COMPARE(batches(dir.path()).size(), 2);
         QVERIFY(batches(dir.path()).at(1).contains("x = 275, y = 28, exact"));
         QVERIFY(batches(dir.path()).at(1).contains("x = 8405, y = 72, exact"));
@@ -337,7 +337,7 @@ private slots:
 
         // Back: unpinned and tiled again, as it was before the mini player.
         rig.run("micro-player");
-        QVERIFY(rig.window->title() != "Omamp micro");
+        QVERIFY(rig.window->title() != "Thrum micro");
         QVERIFY(modes->property("placing").toBool());
         QTRY_COMPARE(batches(dir.path()).size(), 3);
         QCOMPARE(batches(dir.path()).at(2), WindowPlacement::batch({
@@ -375,7 +375,7 @@ private slots:
         QVERIFY2(m_warnings.isEmpty(), qPrintable(m_warnings.join("\n")));
     }
 
-    // `omamp mini`: the title and size are there from the first frame, for
+    // `thrum mini`: the title and size are there from the first frame, for
     // the window rule; Hyprland is asked as well, for a desktop without the
     // rule; and going back tiles the window, Hyprland's default.
     void compactPlayerAtStartUp() {
@@ -394,7 +394,7 @@ private slots:
         });
         QVERIFY(rig.load());
         QVERIFY(created);
-        QCOMPARE(firstTitle, QString("Omamp mini"));
+        QCOMPARE(firstTitle, QString("Thrum mini"));
         QCOMPARE(firstSize, QSize(420, 64));
         QObject *modes = rig.modes();
         QCOMPARE(modes->property("compact").toString(), QString("mini"));
@@ -430,7 +430,7 @@ private slots:
         QCOMPARE(placed.at(0).at(0).toBool(), false);
         QTRY_VERIFY(!modes->property("placing").toBool());
         QCOMPARE(rig.window->width(), 1700);
-        QCOMPARE(rig.window->title(), QString("Omamp mini"));
+        QCOMPARE(rig.window->title(), QString("Thrum mini"));
         auto *mini = qobject_cast<QQuickItem *>(rig.find("miniPlayer"));
         QVERIFY(mini && mini->property("large").toBool());
         QCOMPARE(mini->width(), 1700.0);
@@ -649,14 +649,14 @@ private slots:
         QDir().mkpath(fake.filePath("state"));
         QFile(fake.filePath("cache/credentials.json")).open(QIODevice::WriteOnly);
         QFile(fake.filePath("cache/0123456789abcdef_token.json")).open(QIODevice::WriteOnly);
-        qputenv("PATH", QByteArray(OMAMP_TESTS_DIR) + "/fake-spotify:" + oldPath);
+        qputenv("PATH", QByteArray(THRUM_TESTS_DIR) + "/fake-spotify:" + oldPath);
         qputenv("FAKE_SPOTIFY_DIR", fake.filePath("state").toUtf8());
-        qputenv("OMAMP_SPOTIFY_PLAYER_CACHE", fake.filePath("cache").toUtf8());
-        qputenv("OMAMP_SPOTIFY_PLAYER_CONFIG", fake.filePath("config").toUtf8());
-        qputenv("OMAMP_SPOTIFY_OEMBED", "off");
+        qputenv("THRUM_SPOTIFY_PLAYER_CACHE", fake.filePath("cache").toUtf8());
+        qputenv("THRUM_SPOTIFY_PLAYER_CONFIG", fake.filePath("config").toUtf8());
+        qputenv("THRUM_SPOTIFY_OEMBED", "off");
         auto restore = qScopeGuard([&] {
             qputenv("PATH", oldPath);
-            for (const char *v : {"FAKE_SPOTIFY_DIR", "OMAMP_SPOTIFY_PLAYER_CACHE", "OMAMP_SPOTIFY_PLAYER_CONFIG", "OMAMP_SPOTIFY_OEMBED"})
+            for (const char *v : {"FAKE_SPOTIFY_DIR", "THRUM_SPOTIFY_PLAYER_CACHE", "THRUM_SPOTIFY_PLAYER_CONFIG", "THRUM_SPOTIFY_OEMBED"})
                 qunsetenv(v);
         });
         writeConf(dir.filePath("window.conf"), false);

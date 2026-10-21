@@ -5,19 +5,19 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$ROOT/build"
 cd "$ROOT/build"
 
-qmake6 "$ROOT/omamp.pro"
+qmake6 "$ROOT/thrum.pro"
 make -j"${JOBS:-$(nproc)}"
-echo "Built $ROOT/build/omamp"
+echo "Built $ROOT/build/thrum"
 
-# omamp-spotify-session reads Spotify's own playlists and artists' top
-# tracks (docs/spotify.md). It needs Rust; without cargo, Omamp works
+# thrum-spotify-session reads Spotify's own playlists and artists' top
+# tracks (docs/spotify.md). It needs Rust; without cargo, Thrum works
 # without it. --locked keeps to the crate versions in Cargo.lock.
-SIDECAR="$ROOT/sidecar/omamp-spotify-session"
+SIDECAR="$ROOT/sidecar/thrum-spotify-session"
 if command -v cargo >/dev/null 2>&1; then
     cargo build --release --locked -j"${JOBS:-$(nproc)}" --manifest-path "$SIDECAR/Cargo.toml" \
         --target-dir "$ROOT/build/sidecar"
-    install -m755 "$ROOT/build/sidecar/release/omamp-spotify-session" "$ROOT/build/omamp-spotify-session"
-    echo "Built $ROOT/build/omamp-spotify-session"
+    install -m755 "$ROOT/build/sidecar/release/thrum-spotify-session" "$ROOT/build/thrum-spotify-session"
+    echo "Built $ROOT/build/thrum-spotify-session"
 else
-    echo "cargo isn't installed, so omamp-spotify-session wasn't built (optional)" >&2
+    echo "cargo isn't installed, so thrum-spotify-session wasn't built (optional)" >&2
 fi

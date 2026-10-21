@@ -1,4 +1,4 @@
-//! omamp-spotify-session: reads what Spotify won't let a new Web API app read
+//! thrum-spotify-session: reads what Spotify won't let a new Web API app read
 //! (the tracks of Spotify's own playlists, an artist's top tracks) the way
 //! Spotify's own apps do, over a librespot session.
 //!
@@ -26,7 +26,7 @@
 //! failure has "error" and, when Spotify gave one, "status". Tracks are
 //! shaped as spotify_player prints them, with duration_ms.
 //!
-//! One-shot, for a person or a test: omamp-spotify-session playlist <id>,
+//! One-shot, for a person or a test: thrum-spotify-session playlist <id>,
 //! artist-top <id>, or ping, each printing one answer.
 
 use std::collections::HashMap;
@@ -88,7 +88,7 @@ fn default_credentials() -> PathBuf {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: omamp-spotify-session [--credentials <file>] [serve | ping | playlist <id> | artist-top <id>]"
+        "usage: thrum-spotify-session [--credentials <file>] [serve | ping | playlist <id> | artist-top <id>]"
     );
     std::process::exit(2);
 }

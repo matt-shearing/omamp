@@ -20,7 +20,7 @@ struct Credit {
 
 // "Name A feat. Name B", as the release credits it.
 QString creditText(const QList<Credit> &credits);
-// The credited artists' names, for Omamp's multi-value artist field.
+// The credited artists' names, for Thrum's multi-value artist field.
 QStringList creditNames(const QList<Credit> &credits);
 QStringList creditIds(const QList<Credit> &credits);
 QList<Credit> parseCredits(const QJsonArray &array);

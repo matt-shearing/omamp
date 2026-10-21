@@ -1,8 +1,8 @@
 # The query language
 
-One language finds music everywhere in Omamp: the search box, auto-playlists,
+One language finds music everywhere in Thrum: the search box, auto-playlists,
 collections, Auto-DJ sources, sync lists, the command palette and
-`omamp query`. A query is a line of words and filters. Every part must match,
+`thrum query`. A query is a line of words and filters. Every part must match,
 unless you join parts with `OR`.
 
 ```text
@@ -17,9 +17,9 @@ genre:rock played:>1y sort:random limit:2h
 Try any of them from a terminal:
 
 ```sh
-omamp query 'added:<30d plays:0'
-omamp query --count 'genre:none'
-omamp query --explain 'rating:4.. sort:-plays limit:50'
+thrum query 'added:<30d plays:0'
+thrum query --count 'genre:none'
+thrum query --explain 'rating:4.. sort:-plays limit:50'
 ```
 
 ## Words
@@ -183,7 +183,7 @@ Without `sort:`, tracks come in library order.
 
 A shuffle is fixed by a seed. The window keeps one seed while you scroll, so
 the list does not reshuffle under you, and picks a new one when you ask for
-a new shuffle. `omamp query` picks a new seed each run and prints it in its
+a new shuffle. `thrum query` picks a new seed each run and prints it in its
 JSON as `seed`; pass `--seed` to repeat that run.
 
 ## Limits
@@ -249,14 +249,14 @@ never quietly returns the wrong tracks.
 Every error says what is wrong and where, counting characters from 1:
 
 ```text
-$ omamp query 'artst:neon'
-omamp: Unknown field "artst"; did you mean artist:? (at character 1)
+$ thrum query 'artst:neon'
+thrum: Unknown field "artst"; did you mean artist:? (at character 1)
 
-$ omamp query 'added:soon'
-omamp: added: needs a date (2024, 2024-06, 2024-06-30, today) or an age (30d, 2w, 6m, 1y), not "soon" (at character 1)
+$ thrum query 'added:soon'
+thrum: added: needs a date (2024, 2024-06, 2024-06-30, today) or an age (30d, 2w, 6m, 1y), not "soon" (at character 1)
 
-$ omamp query '(neon sort:year)'
-omamp: sort: applies to the whole query, so it can't go inside ( ), after - or next to OR (at character 7)
+$ thrum query '(neon sort:year)'
+thrum: sort: applies to the whole query, so it can't go inside ( ), after - or next to OR (at character 7)
 ```
 
 With `--json`, the error is also printed on standard output as
@@ -277,7 +277,7 @@ give back one that compiles to exactly the same SQL.
 ## The command line
 
 ```text
-omamp query <text...>     print the tracks a query finds
+thrum query <text...>     print the tracks a query finds
   --json                  as JSON, with total, count, duration_ms and seed
   --count                 print only how many tracks match
   --limit <n>             print at most n (after the query's own limit:)

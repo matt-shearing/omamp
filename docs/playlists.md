@@ -1,6 +1,6 @@
 # Playlists, collections, statistics and Auto-DJ
 
-Omamp keeps four kinds of list in its library:
+Thrum keeps four kinds of list in its library:
 
 - A **playlist** is a list you build by hand. It keeps its order, can hold the
   same song twice, and keeps an entry even when its file goes missing.
@@ -55,7 +55,7 @@ every command takes `--json` for scripts and agents.
   collection is open is remembered for that collection; other nodes keep
   the window's own columns.
 - **Plays.** The player counts what you hear, by the rule below, whenever a
-  track ends, is skipped or stopped, or another starts, and when Omamp
+  track ends, is skipped or stopped, or another starts, and when Thrum
   quits. Plays and Last played update in the list straight away.
 
 ![The auto-playlist editor](autoplaylist-editor.png)
@@ -63,14 +63,14 @@ every command takes `--json` for scripts and agents.
 ## Playlists
 
 ```sh
-omamp playlist create "Road trips" --folder
-omamp playlist create Summer --parent "Road trips"
-omamp playlist add "Road trips/Summer" 'genre:pop year:2000..2009'
-omamp playlist add Summer --ids 12,40,12 --at 1
-omamp playlist show Summer
-omamp playlist move Summer 5 1        # entry 5 to the top
-omamp playlist remove Summer 3 4      # entries 3 and 4
-omamp playlist list
+thrum playlist create "Road trips" --folder
+thrum playlist create Summer --parent "Road trips"
+thrum playlist add "Road trips/Summer" 'genre:pop year:2000..2009'
+thrum playlist add Summer --ids 12,40,12 --at 1
+thrum playlist show Summer
+thrum playlist move Summer 5 1        # entry 5 to the top
+thrum playlist remove Summer 3 4      # entries 3 and 4
+thrum playlist list
 ```
 
 You can name a playlist by its id, its name, or its path through folders
@@ -108,8 +108,8 @@ Spotify tracks beside your own files.
 </picture>
 
 - **Adding them.** In the Spotify view or the Spotify strip under the
-  library search, choose tracks and use **Add to playlist ▸ Omamp
-  playlists**, or drag them onto a playlist in the tree. **New Omamp
+  library search, choose tracks and use **Add to playlist ▸ Thrum
+  playlists**, or drag them onto a playlist in the tree. **New Thrum
   playlist…** makes one and adds them. One album row adds the album's
   tracks.
 - **What is kept.** Each Spotify entry stores the track's link
@@ -122,8 +122,8 @@ Spotify tracks beside your own files.
   they are greyed, and hovering one says why: "Spotify is off — turn it on
   in Settings → Spotify".
 - **Playing.** The playlist goes into Now Playing in its order. Your files
-  play in Omamp; when a Spotify track's turn comes, Spotify plays it on its
-  device and Omamp follows, then goes back to the next file. Shuffle and
+  play in Thrum; when a Spotify track's turn comes, Spotify plays it on its
+  device and Thrum follows, then goes back to the next file. Shuffle and
   Repeat work across both. While Spotify can't play, its entries are left
   out of Now Playing, and one notice says how many and why. A playlist of
   only Spotify tracks says why and plays nothing.
@@ -134,12 +134,12 @@ Spotify tracks beside your own files.
 - **The command line.**
 
   ```sh
-  omamp playlist add Summer spotify:track:<id> https://open.spotify.com/track/<id>
-  omamp playlist show Summer
+  thrum playlist add Summer spotify:track:<id> https://open.spotify.com/track/<id>
+  thrum playlist show Summer
   ```
 
   `playlist add` takes Spotify links instead of a query. When Spotify is on
-  in Omamp and spotify_player is running, it asks spotify_player for each
+  in Thrum and spotify_player is running, it asks spotify_player for each
   track's name, artists, album and length; otherwise it adds the tracks by
   id alone and says so. `playlist show` lists a Spotify entry with its
   link and `[Spotify]`; with `--json` each entry has `"spotify": true` and
@@ -151,17 +151,17 @@ library, so a playlist's Spotify entries are left out of them.
 ## Auto-playlists
 
 ```sh
-omamp autoplaylist create "Loved and forgotten" 'rating:4.. played:>1y sort:random limit:2h'
-omamp autoplaylist set "Loved and forgotten" 'rating:4.5.. played:>1y sort:random limit:2h'
-omamp playlist show "Loved and forgotten"
-omamp playlist reroll "Loved and forgotten"
+thrum autoplaylist create "Loved and forgotten" 'rating:4.. played:>1y sort:random limit:2h'
+thrum autoplaylist set "Loved and forgotten" 'rating:4.5.. played:>1y sort:random limit:2h'
+thrum playlist show "Loved and forgotten"
+thrum playlist reroll "Loved and forgotten"
 ```
 
 The query may use `sort:` and `limit:`. An auto-playlist is read afresh every
 time you open or play it, so it always matches the library.
 
 A random auto-playlist keeps the same pick until you ask for a new one with
-`playlist reroll`. Omamp stores the shuffle's seed with the playlist, so the
+`playlist reroll`. Thrum stores the shuffle's seed with the playlist, so the
 list doesn't change under you while you play it. `--seed n` picks a
 particular shuffle.
 
@@ -171,13 +171,13 @@ instead.
 ## Playlist files
 
 ```sh
-omamp playlist import ~/Playlists/Party.m3u8
-omamp playlist import ~/Playlists               # a whole folder
-omamp playlist export Summer ~/Summer.m3u8 --relative
-omamp playlist export Summer ~/Summer.pls
+thrum playlist import ~/Playlists/Party.m3u8
+thrum playlist import ~/Playlists               # a whole folder
+thrum playlist export Summer ~/Summer.m3u8 --relative
+thrum playlist export Summer ~/Summer.pls
 ```
 
-Import reads M3U, M3U8 and PLS. For each entry, Omamp looks for the song:
+Import reads M3U, M3U8 and PLS. For each entry, Thrum looks for the song:
 
 1. by its path, first exactly and then ignoring case;
 2. by the artist and title in its `#EXTINF` line (or PLS title), within three
@@ -185,7 +185,7 @@ Import reads M3U, M3U8 and PLS. For each entry, Omamp looks for the song:
 
 Relative paths are read from the playlist's own folder, `file://` URLs become
 paths, and backslashes in relative paths become slashes. A plain `.m3u` may
-be UTF-8 or Latin-1; Omamp uses UTF-8 when the bytes are valid UTF-8. Entries
+be UTF-8 or Latin-1; Thrum uses UTF-8 when the bytes are valid UTF-8. Entries
 that match nothing, including streams, are kept as unmatched entries, and the
 import reports them.
 
@@ -201,11 +201,11 @@ now. The file is written beside the target and renamed into place.
 ## Collections
 
 ```sh
-omamp collection list
-omamp collection create Jazz 'genre:jazz'
-omamp collection show Jazz
-omamp collection remove Jazz
-omamp collection restore-defaults
+thrum collection list
+thrum collection create Jazz 'genre:jazz'
+thrum collection show Jazz
+thrum collection remove Jazz
+thrum collection restore-defaults
 ```
 
 Each collection also stores the columns shown, the tree nodes, the sort and
@@ -225,18 +225,18 @@ played and adds a row to the play history. A skip adds one to the skip count
 and a history row marked as a skip.
 
 ```sh
-omamp stats --top artists
-omamp stats --top albums --since 30d
-omamp stats --top tracks --since 2026-01-01 --limit 50
-omamp stats --top years
-omamp stats --top genres --json
-omamp stats --recent
-omamp stats --never
+thrum stats --top artists
+thrum stats --top albums --since 30d
+thrum stats --top tracks --since 2026-01-01 --limit 50
+thrum stats --top years
+thrum stats --top genres --json
+thrum stats --recent
+thrum stats --never
 ```
 
 Without `--since`, the totals come from each song's play count, which
 includes counts read from tags or imported from MediaMonkey. With `--since`,
-they come from the play history, so only plays Omamp recorded (or imported
+they come from the play history, so only plays Thrum recorded (or imported
 with a date) count. `--since` takes an age (`12h`, `30d`, `2w`, `6m`, `1y`)
 or a date (`2026`, `2026-06`, `2026-06-30`).
 
@@ -246,10 +246,10 @@ Auto-DJ keeps the queue topped up with songs from a source. It avoids playing
 the same artist twice in a row, and songs heard in the last week.
 
 ```sh
-omamp autodj --count 20
-omamp autodj --source collection:Music --count 20 --seed 7
-omamp autodj --source 'playlist:Road trips/Summer'
-omamp autodj --source 'query:rating:4.. genre:jazz' --separation 3 --days 14
+thrum autodj --count 20
+thrum autodj --source collection:Music --count 20 --seed 7
+thrum autodj --source 'playlist:Road trips/Summer'
+thrum autodj --source 'query:rating:4.. genre:jazz' --separation 3 --days 14
 ```
 
 The source is `library`, `collection:<name>`, `playlist:<name>` or
@@ -291,7 +291,7 @@ It has three presets:
 | dj | also skip, seek, change the volume, and remove or reorder queued songs |
 | display | nothing; the window shows what is playing |
 
-An optional PIN guards leaving party mode. Omamp stores only a salted hash of
+An optional PIN guards leaving party mode. Thrum stores only a salted hash of
 it. The settings live in the library under `party_mode`.
 
 In the window, **Party mode…** in the palette chooses the preset, an

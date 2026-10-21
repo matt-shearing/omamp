@@ -161,9 +161,9 @@ bool isRadioPath(const QString &path) { return path.startsWith(QLatin1String("ra
 
 QString keyFromPath(const QString &path) { return isRadioPath(path) ? path.mid(8) : QString(); }
 
-QString nightrideBase() { return env("OMAMP_NIGHTRIDE_URL", QStringLiteral("https://nightride.fm")); }
+QString nightrideBase() { return env("THRUM_NIGHTRIDE_URL", QStringLiteral("https://nightride.fm")); }
 QString nightrideFeedUrl() { return nightrideBase() + QStringLiteral("/meta"); }
-QString nightrideStreamBase() { return env("OMAMP_NIGHTRIDE_STREAM_URL", QStringLiteral("https://stream.nightride.fm")); }
+QString nightrideStreamBase() { return env("THRUM_NIGHTRIDE_STREAM_URL", QStringLiteral("https://stream.nightride.fm")); }
 
 QList<Station> builtinStations() {
     struct Def {
@@ -171,7 +171,7 @@ QList<Station> builtinStations() {
     };
     // Names as the site writes them, in title case; genres from the site
     // (Nightride FM) and from the channels' own descriptions (Rekt). The
-    // colours are Omamp's, chosen to tell the channels apart at a glance.
+    // colours are Thrum's, chosen to tell the channels apart at a glance.
     static const Def defs[] = {
         {"nightride", "nightride", "Nightride FM", "Synthwave / Retrowave / Outrun", "#e23e8f"},
         {"chillsynth", "nightride", "Chillsynth FM", "Chillsynth / Chillwave / Instrumental", "#2fb8b0"},
@@ -842,7 +842,7 @@ bool Stations::exportFile(const QString &file, const QString &which, QString *er
 namespace Browser {
 
 QString baseUrl(Net::HttpClient *http) {
-    const QString forced = env("OMAMP_RADIOBROWSER_URL", {});
+    const QString forced = env("THRUM_RADIOBROWSER_URL", {});
     if (!forced.isEmpty())
         return forced;
     QStringList hosts;

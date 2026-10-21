@@ -902,7 +902,7 @@ private slots:
         QCOMPARE(l.field(midnight, "custom1").toString(), QString("Vinyl rip"));
         QCOMPARE(l.field(go, "rating").toInt(), 80);
         QCOMPARE(l.field(go, "play_count").toInt(), 7);
-        QCOMPARE(l.field(heat, "play_count").toInt(), 3); // Omamp's 3 beats MediaMonkey's 1
+        QCOMPARE(l.field(heat, "play_count").toInt(), 3); // Thrum's 3 beats MediaMonkey's 1
         QCOMPARE(value(lib, "SELECT count(*) FROM play_history").toInt(), 3);
         const qint64 folder = Playlists::resolve(lib, "MediaMonkey");
         QVERIFY(folder);
@@ -957,7 +957,7 @@ private slots:
         QVERIFY(!MmImport::undo(lib, r.batch).ok); // already undone
         QVERIFY(MmImport::lastBatch(lib).isEmpty());
 
-        // Overwrite replaces Omamp's rating with MediaMonkey's.
+        // Overwrite replaces Thrum's rating with MediaMonkey's.
         options.overwrite = true;
         r = MmImport::run(lib, mmPath, options);
         QVERIFY(r.ok);
@@ -989,7 +989,7 @@ private slots:
         QVERIFY(r.missingColumns.contains("Songs.SkipCount"));
         QVERIFY(r.missingColumns.contains("Songs.IDMedia"));
         QCOMPARE(r.matchedByPath, 1);
-        QCOMPARE(l.field(l.track("Snow Day"), "rating").toInt(), 40); // Omamp's own rating stays
+        QCOMPARE(l.field(l.track("Snow Day"), "rating").toInt(), 40); // Thrum's own rating stays
         QCOMPARE(l.field(l.track("Snow Day"), "play_count").toInt(), 4);
         QVERIFY(r.notes.join(' ').contains("Played"));
 
@@ -1079,7 +1079,7 @@ private slots:
         QCOMPARE(cli({"stats", "--top", "tracks", "--limit", "2", "--db", db}, nullptr, &errors), 0);
         QVERIFY(errors.contains("Love Song"));
 
-        // MediaMonkey: dry run, apply, undo through `omamp undo`.
+        // MediaMonkey: dry run, apply, undo through `thrum undo`.
         const QString mm = l.dir.filePath("MM.DB");
         QVERIFY(makeMm4(mm, QDateTime::currentSecsSinceEpoch() - 60, 1262347200));
         const QString map = "D:\\Music=" + l.root;
@@ -1094,7 +1094,7 @@ private slots:
         QCOMPARE(cli({"undo", first, "--json", "--db", db}, &j), 0);
         QCOMPARE(j.value("batch").toString(), first);
         QCOMPARE(cli({"import", "mediamonkey", mm, "--map", map, "--apply", "--db", db}, nullptr, &errors), 0);
-        QVERIFY(errors.contains("undo it with: omamp import undo mmimport-"));
+        QVERIFY(errors.contains("undo it with: thrum import undo mmimport-"));
         QCOMPARE(cli({"import", "undo", "--json", "--db", db}, &j), 0);
         QVERIFY(j.value("fields").toInt() > 0);
         QCOMPARE(cli({"import", "undo", "--db", db}, nullptr, &errors), 1);

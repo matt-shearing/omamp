@@ -13,15 +13,15 @@ class Job;
 class Library;
 class QNetworkAccessManager;
 
-// The one way Omamp talks to the web.
+// The one way Thrum talks to the web.
 //
 // Every request names the service it goes to, so each service gets its own
 // polite rate (MusicBrainz one a second, AcoustID three, LRCLIB two,
 // ListenBrainz whatever its X-RateLimit headers say), shared by every thread
-// in the process. Every request carries Omamp's User-Agent. 503 and 429 are
+// in the process. Every request carries Thrum's User-Agent. 503 and 429 are
 // retried with backoff (honouring Retry-After), and a lost network is
 // reported as offline rather than retried forever. GET answers can be kept
-// in a small file cache under ~/.cache/omamp/http for a time the caller
+// in a small file cache under ~/.cache/thrum/http for a time the caller
 // chooses, so asking twice costs nothing and an offline lookup can still
 // answer from what was fetched before.
 //
@@ -36,15 +36,15 @@ enum class Service { MusicBrainz, AcoustId, CoverArt, Lrclib, ListenBrainz, Last
 // "wikidata", "wikipedia".
 QString serviceName(Service service);
 
-// "Omamp/0.3.3 ( https://github.com/matt-shearing/omamp )", as MusicBrainz
+// "Thrum/0.3.3 ( https://github.com/matt-shearing/thrum )", as MusicBrainz
 // and ListenBrainz ask.
 QString userAgent();
 QString version();
 
-// Where a service lives. The environment (OMAMP_MUSICBRAINZ_URL,
-// OMAMP_ACOUSTID_URL, OMAMP_COVERART_URL, OMAMP_LRCLIB_URL,
-// OMAMP_LISTENBRAINZ_URL, OMAMP_LASTFM_URL, OMAMP_WIKIDATA_URL,
-// OMAMP_WIKIPEDIA_URL) wins, then the library setting net.url.<service>,
+// Where a service lives. The environment (THRUM_MUSICBRAINZ_URL,
+// THRUM_ACOUSTID_URL, THRUM_COVERART_URL, THRUM_LRCLIB_URL,
+// THRUM_LISTENBRAINZ_URL, THRUM_LASTFM_URL, THRUM_WIKIDATA_URL,
+// THRUM_WIKIPEDIA_URL) wins, then the library setting net.url.<service>,
 // then the public address. No trailing slash. Wikipedia's address holds
 // "{lang}", which the caller replaces with the language's code.
 QString baseUrl(Service service, const Library *library = nullptr);
@@ -89,7 +89,7 @@ struct Config {
     static void setMaxRetries(int retries);
     static int backoffMs(); // the first wait after a 503 or 429; doubles each time
     static void setBackoffMs(int ms);
-    // True when the user turned the network off for Omamp: OMAMP_OFFLINE=1
+    // True when the user turned the network off for Thrum: THRUM_OFFLINE=1
     // or the library setting net.offline = 1.
     static bool forcedOffline(const Library *library = nullptr);
     static void resetForTests();
@@ -113,7 +113,7 @@ public:
 // Answers kept on disk, one file per request, written atomically.
 class HttpCache {
 public:
-    // Empty means ~/.cache/omamp/http (following XDG_CACHE_HOME).
+    // Empty means ~/.cache/thrum/http (following XDG_CACHE_HOME).
     explicit HttpCache(const QString &dir = {});
     static QString defaultDir();
     QString dir() const { return m_dir; }

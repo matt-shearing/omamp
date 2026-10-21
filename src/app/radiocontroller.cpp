@@ -108,7 +108,7 @@ QByteArray hashOf(const QString &text) {
 
 RadioController::RadioController(const QString &databasePath, QObject *parent)
     : QObject(parent), m_dbPath(databasePath.isEmpty() ? Library::defaultPath() : databasePath),
-      m_cacheDir(QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/omamp/radio") {
+      m_cacheDir(QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/thrum/radio") {
     m_model.nowPlaying = [this](const Radio::Station &s) {
         if (s.key == m_current.key && !m_songTitle.isEmpty())
             return m_songArtist.isEmpty() ? m_songTitle : m_songArtist + QStringLiteral(" – ") + m_songTitle;
@@ -138,7 +138,7 @@ RadioController::RadioController(const QString &databasePath, QObject *parent)
     connect(&m_exportPicker, &FolderPicker::picked, this, [this](const QStringList &folders) {
         if (folders.isEmpty())
             return;
-        const QVariantMap r = exportFile(QDir(folders.first()).filePath("Omamp radio.m3u8"), "all");
+        const QVariantMap r = exportFile(QDir(folders.first()).filePath("Thrum radio.m3u8"), "all");
         emit toast(r.value("ok").toBool() ? tr("Saved %1").arg(r.value("file").toString()) : r.value("error").toString());
     });
     for (FolderPicker *p : {&m_importPicker, &m_exportPicker})
@@ -332,7 +332,7 @@ bool RadioController::tune(const QString &text) {
     if (station.network == QLatin1String("radio-browser") && !Net::Config::forcedOffline(lib)) {
         // radio-browser.info asks clients to say when a station is played.
         const QString uuid = station.key.mid(3);
-        runInThread("omamp-radio-click", [uuid] {
+        runInThread("thrum-radio-click", [uuid] {
             Net::HttpClient http;
             Radio::Browser::countClick(http, Radio::Browser::baseUrl(&http), uuid);
         });
@@ -687,7 +687,7 @@ void RadioController::addUrl(const QString &text, const QString &name, bool play
     if (lower.endsWith(".pls") || lower.endsWith(".m3u") || lower.endsWith(".m3u8")) {
         // A playlist that points at the stream: read it for the address.
         const QString file = parsed.fileName();
-        runInThread("omamp-radio-list", [this, url, name, play, file] {
+        runInThread("thrum-radio-list", [this, url, name, play, file] {
             Net::HttpClient http;
             const Net::Response r = http.get(Net::Service::Other, QUrl(url));
             QString stream, error;
@@ -830,7 +830,7 @@ void RadioController::search(const QString &text) {
         Net::HttpClient http;
         Radio::Browser::Result result;
         if (Net::Config::forcedOffline())
-            result.error = tr("Omamp is set to stay offline");
+            result.error = tr("Thrum is set to stay offline");
         else
             result = Radio::Browser::search(http, Radio::Browser::baseUrl(&http), query, 60);
         QMetaObject::invokeMethod(this, [this, result, gen] {
@@ -853,7 +853,7 @@ void RadioController::search(const QString &text) {
             emit searchChanged();
         });
     });
-    m_searchThread->setObjectName("omamp-radio-search");
+    m_searchThread->setObjectName("thrum-radio-search");
     m_searchThread->start(QThread::LowPriority);
     emit searchChanged();
 }
@@ -905,7 +905,7 @@ void RadioController::fetchArt(const Radio::Station &station) {
         return;
     const QString key = station.key, url = station.artUrl;
     const QString file = QDir(m_cacheDir).filePath("icon-" + QString::fromLatin1(hashOf(key)));
-    runInThread("omamp-radio-art", [this, key, url, file] {
+    runInThread("thrum-radio-art", [this, key, url, file] {
         Net::HttpClient http;
         Net::Request r;
         r.service = Net::Service::Other;
@@ -966,7 +966,7 @@ void RadioController::refreshCatalog(bool force) {
     lib->setSetting("radio.catalogChecked", nowSecs());
     m_catalogRunning = true;
     const QStringList feedIds = m_feed.keys();
-    runInThread("omamp-radio-catalog", [this, feedIds] {
+    runInThread("thrum-radio-catalog", [this, feedIds] {
         Net::HttpClient http;
         const Net::Response r = http.get(Net::Service::Other, QUrl(Radio::nightrideBase() + "/"), 6 * 3600);
         const QList<Radio::CatalogEntry> site =

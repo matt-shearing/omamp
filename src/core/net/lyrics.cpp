@@ -271,7 +271,7 @@ Query queryFor(Library &library, qint64 trackId) {
     q.prepare("SELECT artist, title, album, duration_ms FROM tracks WHERE id = ?");
     q.addBindValue(trackId);
     if (q.exec() && q.next()) {
-        // "A; B" is Omamp's multi-value form; LRCLIB credits "A, B".
+        // "A; B" is Thrum's multi-value form; LRCLIB credits "A, B".
         query.artist = q.value(0).toString().replace("; ", ", ");
         query.title = q.value(1).toString();
         query.album = q.value(2).toString();

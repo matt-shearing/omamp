@@ -35,7 +35,7 @@ void redactingLog(void *avcl, int level, const char *fmt, va_list args) {
 void quietFfmpegOnce() {
     static std::once_flag once;
     std::call_once(once, [] {
-        if (!qEnvironmentVariableIsSet("OMAMP_FFMPEG_LOG"))
+        if (!qEnvironmentVariableIsSet("THRUM_FFMPEG_LOG"))
             av_log_set_level(AV_LOG_FATAL);
         else
             av_log_set_callback(redactingLog);

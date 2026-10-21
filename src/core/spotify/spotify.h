@@ -11,9 +11,9 @@
 #include <atomic>
 #include <memory>
 
-// Spotify, through a program that already speaks to it. Omamp never signs in
+// Spotify, through a program that already speaks to it. Thrum never signs in
 // to Spotify, never sees a password and never keeps a token: the backend
-// program does all of that with its own sign-in, and Omamp runs its command
+// program does all of that with its own sign-in, and Thrum runs its command
 // line. docs/spotify.md explains the choice.
 //
 // Two backends:
@@ -30,7 +30,7 @@
 // the window calls it on a worker thread and the CLI calls it directly.
 namespace Spotify {
 
-// A track, album, artist or playlist as Omamp shows it.
+// A track, album, artist or playlist as Thrum shows it.
 struct Item {
     QString kind; // track, album, artist, playlist
     QString id;   // Spotify's base-62 id, without the spotify:<kind>: prefix
@@ -66,8 +66,8 @@ struct Item {
 
 // A Now Playing entry for a whole playlist, album or artist
 // (spotify://playlist/<id>, with "?shuffle=1" to start it shuffled): Spotify
-// plays it on its device, and Omamp follows whatever track it is on. Used
-// where Omamp may not read the tracks (Spotify's own playlists) or need not.
+// plays it on its device, and Thrum follows whatever track it is on. Used
+// where Thrum may not read the tracks (Spotify's own playlists) or need not.
 QString contextQueuePath(const Item &context, bool shuffle);
 // Whether a queue path asks for a shuffled start.
 bool queuePathShuffles(const QString &path);
@@ -136,7 +136,7 @@ QList<Item> parseContextTracks(const QJsonObject &o);
 // spotify_player talks to Spotify's Web API, which answers "429 Too Many
 // Requests" when a client ID asks too often. spotify_player then waits and
 // retries on its own, so a command that would take a second can take half a
-// minute, and only its log says why. Omamp reads that log (never writes it)
+// minute, and only its log says why. Thrum reads that log (never writes it)
 // to tell "slow because Spotify is rate-limiting" from "broken".
 
 // Whether a message from spotify_player is about a rate limit.
@@ -175,7 +175,7 @@ QString refusalKey(const QString &url);
 
 // What Spotify refused to a client ID, learned from spotify_player's log and
 // kept for the rest of the day (Spotify can change its mind, and a new day
-// tries again). Kept in a small JSON file so Omamp remembers across runs.
+// tries again). Kept in a small JSON file so Thrum remembers across runs.
 class Refusals {
 public:
     explicit Refusals(const QString &file = {});
@@ -218,15 +218,15 @@ private:
 
 // --- Settings ---------------------------------------------------------------
 //
-// ~/.config/omamp/spotify.conf. Switches only: no account, no token.
+// ~/.config/thrum/spotify.conf. Switches only: no account, no token.
 struct Settings {
-    bool enabled = false;          // "Show Spotify in Omamp"
+    bool enabled = false;          // "Show Spotify in Thrum"
     QString backend = "spotify_player";
     bool blendSearch = true;       // Spotify results under the library search
     bool blendPalette = true;      // and in the command palette
-    bool startDaemon = true;       // start spotify_player when Omamp needs it
+    bool startDaemon = true;       // start spotify_player when Thrum needs it
     // Read Spotify's own playlists and artists' top tracks the way
-    // Spotify's own app does (omamp-spotify-session), when it is installed.
+    // Spotify's own app does (thrum-spotify-session), when it is installed.
     bool sessionReads = true;
 
     static QString defaultPath();
@@ -311,7 +311,7 @@ public:
     virtual bool playContext(const Item &context, bool shuffle, QString *error);
     virtual bool resume(QString *error) = 0;
     virtual bool pause(QString *error) = 0;
-    // currentMs is the position Omamp believes, for backends that seek by
+    // currentMs is the position Thrum believes, for backends that seek by
     // an offset.
     virtual bool seekTo(qint64 ms, qint64 currentMs, QString *error) = 0;
     // Saves (or removes) the playing track in Liked Songs.
@@ -341,7 +341,7 @@ public:
     virtual QString account(QString *error);
 
     // The backend's MPRIS name on the session bus, where it announces what
-    // it plays without Omamp asking Spotify's Web API.
+    // it plays without Thrum asking Spotify's Web API.
     virtual QString mprisName() const = 0;
 
     // Where artist pages and playlist tracks come from: the Web API through
@@ -376,7 +376,7 @@ private:
 class SpotifyPlayerBackend : public Backend {
 public:
     // program: the spotify_player to run; empty finds it on PATH (or takes
-    // OMAMP_SPOTIFY_PLAYER).
+    // THRUM_SPOTIFY_PLAYER).
     explicit SpotifyPlayerBackend(const QString &program = {});
     QString id() const override { return "spotify_player"; }
     QString name() const override { return "spotify_player"; }
@@ -442,7 +442,7 @@ public:
     // A Spotify client ID: 32 hexadecimal characters.
     static bool isValidClientId(const QString &id);
     // Sets client_id in app.toml and changes nothing else in it: the file
-    // is copied to app.toml.omamp-backup-<time> first, then the client_id
+    // is copied to app.toml.thrum-backup-<time> first, then the client_id
     // line is replaced (or added above the first [table]), and the new file
     // replaces the old in one step. *backup gets the copy's path.
     static bool writeClientId(const QString &configFolder, const QString &id, QString *backup, QString *error);

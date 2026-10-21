@@ -30,7 +30,7 @@ class ArtworkCache {
 public:
     enum class Kind { Album, Track };
 
-    // cacheDir empty means ~/.cache/omamp/art (following XDG_CACHE_HOME).
+    // cacheDir empty means ~/.cache/thrum/art (following XDG_CACHE_HOME).
     explicit ArtworkCache(Library &library, const QString &cacheDir = {});
 
     static QString defaultCacheDir();

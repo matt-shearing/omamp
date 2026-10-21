@@ -15,11 +15,11 @@ class SubsonicClient;
 //
 // - libsecret: the desktop keyring (gnome-keyring, KWallet's Secret Service),
 //   through the `secret-tool` command, under the attributes
-//   application=omamp remote=<ref>. Used when secret-tool is installed and a
+//   application=thrum remote=<ref>. Used when secret-tool is installed and a
 //   session bus is there.
-// - file: ~/.config/omamp/credentials.json (following XDG_CONFIG_HOME),
+// - file: ~/.config/thrum/credentials.json (following XDG_CONFIG_HOME),
 //   created with mode 0600 inside a 0700 folder. The fallback, and what
-//   OMAMP_SECRET_STORE=file asks for (tests always do). Anyone who can read
+//   THRUM_SECRET_STORE=file asks for (tests always do). Anyone who can read
 //   your home folder as you can read it; the keyring is better.
 namespace Secrets {
 
@@ -98,7 +98,7 @@ RemoteSyncResult sync(Library &library, qint64 id, bool full = false, Job *job =
 QUrl streamUrl(const Library &library, qint64 sourceId, const QString &songId, QString *error);
 
 // A cached copy of a track's (or album's) cover from the server, as a file
-// path under ~/.cache/omamp/subsonic/<source>/, fetched on first use.
+// path under ~/.cache/thrum/subsonic/<source>/, fetched on first use.
 QString coverArt(Library &library, qint64 trackId, int size, QString *error);
 
 // Tell the server about a play, or set a rating (0 to 100 as the library

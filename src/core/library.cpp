@@ -16,12 +16,12 @@
 
 Library::Library(const QString &path)
     : m_path(path.isEmpty() ? defaultPath() : path),
-      m_connection("omamp-library-" + QUuid::createUuid().toString(QUuid::WithoutBraces)) {}
+      m_connection("thrum-library-" + QUuid::createUuid().toString(QUuid::WithoutBraces)) {}
 
 Library::~Library() { close(); }
 
 QString Library::defaultPath() {
-    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/omamp/library.db";
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/thrum/library.db";
 }
 
 int Library::latestVersion() { return migrations().last().version; }
@@ -78,7 +78,7 @@ bool Library::connect(QString *error) {
         const QString version = q.value(0).toString();
         const QStringList parts = version.split('.');
         if (parts.size() >= 2 && (parts[0].toInt() < 3 || (parts[0].toInt() == 3 && parts[1].toInt() < 45))) {
-            *error = QString("SQLite %1 is too old; Omamp needs 3.45 or newer").arg(version);
+            *error = QString("SQLite %1 is too old; Thrum needs 3.45 or newer").arg(version);
             return false;
         }
     }
@@ -95,8 +95,8 @@ bool Library::open(QString *error, int targetVersion) {
         return false;
     }
 
-    // OMAMP_MOUNTINFO lets tests fake the mount table; nothing else sets it.
-    if (!checkDatabaseIsLocal(m_path, VolumeResolver(qEnvironmentVariable("OMAMP_MOUNTINFO", "/proc/self/mountinfo")),
+    // THRUM_MOUNTINFO lets tests fake the mount table; nothing else sets it.
+    if (!checkDatabaseIsLocal(m_path, VolumeResolver(qEnvironmentVariable("THRUM_MOUNTINFO", "/proc/self/mountinfo")),
                               error))
         return false;
 
@@ -152,7 +152,7 @@ bool Library::migrate(int target, QString *error) {
     const int current = schemaVersion();
     if (current > latestVersion()) {
         if (error)
-            *error = QString("%1 is from a newer Omamp (schema %2; this one knows %3)")
+            *error = QString("%1 is from a newer Thrum (schema %2; this one knows %3)")
                          .arg(m_path)
                          .arg(current)
                          .arg(latestVersion());

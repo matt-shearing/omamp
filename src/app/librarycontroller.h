@@ -95,7 +95,7 @@ class LibraryController : public QObject {
     Q_PROPERTY(DevicesController *devices READ devices CONSTANT)
 
 public:
-    // An empty path means the default library (~/.local/share/omamp/library.db).
+    // An empty path means the default library (~/.local/share/thrum/library.db).
     explicit LibraryController(const QString &databasePath = {}, QObject *parent = nullptr);
     ~LibraryController() override;
 
@@ -119,7 +119,7 @@ public:
     Q_INVOKABLE void reloadTree();
     // Starts, stops or re-times the folder watcher from the settings.
     void applyWatchSettings();
-    // Where album pictures are cached; empty means ~/.cache/omamp/art.
+    // Where album pictures are cached; empty means ~/.cache/thrum/art.
     void setArtCacheDir(const QString &dir) { m_artCacheDir = dir; }
     QString artCacheDir() const { return m_artCacheDir; }
     // false: don't start the folder watcher (benchmarks).

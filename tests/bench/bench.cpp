@@ -1,11 +1,11 @@
 // Performance tests for the library core, without a window.
 //
-//   omamp_bench generate <library.db> [--tracks N]   a synthetic library (rows only, no files)
-//   omamp_bench run <library.db> [--runs N]          time opening, search and queries
-//   omamp_bench files <folder> <template-file> [--files N] [--db path] [--latency-us U] [--walk-workers W]
+//   thrum_bench generate <library.db> [--tracks N]   a synthetic library (rows only, no files)
+//   thrum_bench run <library.db> [--runs N]          time opening, search and queries
+//   thrum_bench files <folder> <template-file> [--files N] [--db path] [--latency-us U] [--walk-workers W]
 //                                                     scan and rescan N hard links of one file; with
 //                                                     --latency-us the rescans pay U microseconds a round trip
-//   omamp_bench nas [--files N] [--latency-us U] [--workers 1,4,8,16]
+//   thrum_bench nas [--files N] [--latency-us U] [--workers 1,4,8,16]
 //                                                     the network rescan cost model: walk a tree of N files
 //                                                     held in memory, with U microseconds per listing and stat
 //                                                     scan and rescan N hard links of one file
@@ -515,7 +515,7 @@ int main(int argc, char **argv) {
     if (args.value(0) == "files" && args.size() == 3)
         return files(args[1], args[2], fileCount, dbOption.isEmpty() ? args[1] + "/../files-library.db" : dbOption,
                      latencyUs, walkWorkers);
-    err << "usage: omamp_bench generate <db> [--tracks N] | run <db> [--runs N] | "
+    err << "usage: thrum_bench generate <db> [--tracks N] | run <db> [--runs N] | "
            "files <folder> <template> [--files N] [--db path] [--latency-us U] [--walk-workers W] | "
            "nas [--files N] [--latency-us U] [--workers 1,4,8,16]"
         << Qt::endl;

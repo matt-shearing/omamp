@@ -43,7 +43,7 @@ public:
     // Whether consecutive tracks really join without a gap.
     virtual bool gapless() const = 0;
     // Whether the engine moves past a file it cannot play. The Qt engine
-    // stops on it, as Omamp always has.
+    // stops on it, as Thrum always has.
     virtual bool skipsUnplayable() const = 0;
 
     // Replaces the current file and stops. An empty path unloads.

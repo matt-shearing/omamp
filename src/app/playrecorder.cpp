@@ -119,6 +119,6 @@ void PlayRecorder::startFlush() {
             },
             Qt::QueuedConnection);
     });
-    m_flushThread->setObjectName("omamp-scrobble");
+    m_flushThread->setObjectName("thrum-scrobble");
     m_flushThread->start(QThread::LowPriority);
 }

@@ -12,7 +12,7 @@ LayoutPrefs::LayoutPrefs(const QString &settingsPath, QObject *parent)
     const QString height = s.value("rowHeight", m_rowHeight).toString();
     if (rowHeights().contains(height))
         m_rowHeight = height;
-    // Sections from an older or newer Omamp: unknown ones go, new ones join
+    // Sections from an older or newer Thrum: unknown ones go, new ones join
     // at the end, so the order a person chose survives.
     const QStringList order = s.value("sections").toStringList();
     if (!order.isEmpty()) {

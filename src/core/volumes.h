@@ -34,7 +34,7 @@ struct VolumeInfo {
 // - A local filesystem is known by its UUID (from /dev/disk/by-uuid). A btrfs
 //   subvolume or bind mount adds the mounted directory, since one UUID can be
 //   mounted several times with different roots.
-// - A network share is known by a marker file, .omamp-volume-id, at the
+// - A network share is known by a marker file, .thrum-volume-id, at the
 //   library root. It is written only when the user adds that root, and only
 //   if the share is writable. Otherwise the server and share name stand in.
 // - Anything else (tmpfs, overlay) is known by its mount, which is the best
@@ -47,7 +47,7 @@ public:
     explicit VolumeResolver(const QString &mountInfoPath = "/proc/self/mountinfo",
                             const QString &byUuidDir = "/dev/disk/by-uuid");
 
-    static constexpr const char *markerName = ".omamp-volume-id";
+    static constexpr const char *markerName = ".thrum-volume-id";
 
     QList<Mount> mounts() const;
     // The mount holding an absolute, canonical path (the longest mount point
@@ -80,7 +80,7 @@ private:
     QString m_mountInfoPath, m_byUuidDir;
 };
 
-// One row of the volumes table, for `omamp volume` and the window's volume panel.
+// One row of the volumes table, for `thrum volume` and the window's volume panel.
 struct VolumeRow {
     qint64 id = 0;
     QString key, kind, label, fsType, source, rootPath, mountSubpath;

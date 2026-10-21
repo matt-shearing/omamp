@@ -17,7 +17,7 @@ class Library;
 // profile says to convert with the `ffmpeg` command.
 //
 // A profile names where the music goes, what goes there, how files are named
-// (a mask, docs/masks.md), the format rules, and whether files Omamp didn't
+// (a mask, docs/masks.md), the format rules, and whether files Thrum didn't
 // put there are deleted. Profiles live in the library's settings table
 // (`sync.profiles`), so `--db` picks them as it picks everything else.
 //
@@ -26,11 +26,11 @@ class Library;
 // unchanged), or delete. That is the dry run, and it writes nothing. apply()
 // does what a plan says.
 //
-// The device keeps a manifest, `.omamp-sync.json`, at the top of the target:
-// each file Omamp wrote, the source it came from (path, size, modification
+// The device keeps a manifest, `.thrum-sync.json`, at the top of the target:
+// each file Thrum wrote, the source it came from (path, size, modification
 // time) and the rule it was made with. A file whose source and rule are
 // unchanged is kept, so a second sync of the same list copies nothing. A
-// file Omamp wrote earlier that is no longer in the list is deleted. Other
+// file Thrum wrote earlier that is no longer in the list is deleted. Other
 // files on the device are left alone unless the profile says "delete other
 // files". Hidden files and folders (.stfolder, .stignore, .Trashes…) are
 // never touched.
@@ -100,7 +100,7 @@ struct TargetState {
 TargetState checkTarget(Library &library, const Profile &profile);
 
 // USB drives that are plugged in and Syncthing folders that are set up, so
-// the window and `omamp sync devices` can offer them as targets.
+// the window and `thrum sync devices` can offer them as targets.
 struct Device {
     QString kind; // usb, syncthing
     QString path, label;

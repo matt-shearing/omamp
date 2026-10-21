@@ -132,7 +132,7 @@ struct ApplyOptions {
     bool coverFile = false;   // ... and as cover.jpg when the folder has no picture
     int coverSize = 500;      // 250, 500, 1200 or 0 for the original
     QString sandbox;          // tests: never write outside this folder
-    QString artCacheDir;      // empty: ~/.cache/omamp/art
+    QString artCacheDir;      // empty: ~/.cache/thrum/art
     // Reads identify.write_genres, identify.write_label, identify.cover_embed,
     // identify.cover_file and identify.cover_size.
     static ApplyOptions load(const Library &library);

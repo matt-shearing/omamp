@@ -1,10 +1,10 @@
-# Omamp advanced mode: research report (2026-10-19)
+# Thrum advanced mode: research report (2026-10-19)
 
 **How this was sourced.** The search tool returned thin results. I checked these against the pages: the MusicBrainz and AcoustID limits, ListenBrainz auth and rate limits, the Qt 6 `QMediaPlayer` API, the OpenSubsonic API surface, and the NFS/inotify behaviour. Everything else is my own knowledge, marked **(unverified)**. Check those items against the live docs before building on them.
 
 ## 1. Features worth stealing
 
-| Tool | Feature to copy | Why it matters for Omamp |
+| Tool | Feature to copy | Why it matters for Thrum |
 |---|---|---|
 | **beets** | Plugin pipeline (`fetchart`, `lyrics`, `replaygain`, `chroma`, `duplicates`, `missing`, `smartplaylist`, `mbsync`). Import is a staged, interruptible flow with per-album match confidence. | Model "import" as a candidate-match-then-confirm step. `duplicates` and `missing` should be built-in reports. `smartplaylist` writes M3Us, which is useful for NAS clients. |
 | **Picard** | Cluster, then lookup, then save. AcoustID matching. A file-naming script language. | The cluster/lookup workflow with per-file confidence colours is the best UX in the field. Steal the "unmatched / clusters / albums" three-pane idea. |
@@ -30,7 +30,7 @@
 | Service | Key needed? | Limits and terms |
 |---|---|---|
 | **MusicBrainz** | No key. | Stay at one call per second or less, and set a proper `User-Agent` (app name, version, contact). IP blocking is the penalty. [Rate limiting](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting) and [API](https://wiki.musicbrainz.org/ws/2). Third-party sources mention looser per-User-Agent allowances, but design for 1 req/s. Core data is CC0. For bulk work, use the database dumps or a local mirror instead of the API. |
-| **AcoustID + Chromaprint** | Yes, an application key (the `client` parameter). Submissions also need a per-user key. | Max 3 requests/s. **Free for non-commercial use only**; commercial use needs a separate sign-up via acoustid.biz. Lookup `meta` values include `recordings`, `releasegroups`, `releases`, `tracks`. [Web service](https://acoustid.org/webservice). Omamp should ship an app key if it is open source and non-commercial. |
+| **AcoustID + Chromaprint** | Yes, an application key (the `client` parameter). Submissions also need a per-user key. | Max 3 requests/s. **Free for non-commercial use only**; commercial use needs a separate sign-up via acoustid.biz. Lookup `meta` values include `recordings`, `releasegroups`, `releases`, `tracks`. [Web service](https://acoustid.org/webservice). Thrum should ship an app key if it is open source and non-commercial. |
 | **Cover Art Archive** | No key. | Served by MusicBrainz and Internet Archive. Look up by release MBID or release-group MBID, e.g. `coverartarchive.org/release/<mbid>/front-500`. Keep a polite User-Agent and cache locally **(unverified: no hard published limit)**. |
 | **Discogs** | A personal token or OAuth for most calls. | A third-party client doc reports roughly 60 requests/min authenticated and 25 unauthenticated, with 429 on excess **(secondhand)**. Requires a User-Agent. Images need authentication, and terms restrict bulk storage, so check the [Discogs developer terms](https://www.discogs.com/developers) before caching. |
 | **LRCLIB** | No key, no account. | Open synced-lyrics database. Endpoints `/api/get` (by artist, title, album, duration), `/api/search` and `/api/publish`. Returns both `plainLyrics` and `syncedLyrics` (LRC). Asks for a User-Agent. [Docs](https://lrclib.net/docs) (page text did not load for me, so the details are **unverified**). |
@@ -76,11 +76,11 @@
 **What to do instead:**
 1. **Periodic rescan by fingerprint.** Compare `(size, mtime_ns, path)` against the database, and skip tag reads when they match. Walk only directories whose mtime changed; directory mtime is a cheap change signal on most NAS filesystems, though not guaranteed on all of them.
 2. **Run the scanner on the NAS** (or a broker service there), where the local kernel does see changes. Navidrome does exactly this.
-3. **Use the OpenSubsonic API against Navidrome on the NAS**, so Omamp never scans over the network at all. It exposes `getIndexes`, `getAlbumList2`, `search3`, `stream`, `getCoverArt`, `getLyricsBySongId`, `scrobble`, plus extensions for API-key auth, sonic similarity, transcoding and playback reports. [OpenSubsonic docs](https://opensubsonic.netlify.app/docs/opensubsonic-api/). This is the cleanest long-term route, and it also gives you phones for free.
+3. **Use the OpenSubsonic API against Navidrome on the NAS**, so Thrum never scans over the network at all. It exposes `getIndexes`, `getAlbumList2`, `search3`, `stream`, `getCoverArt`, `getLyricsBySongId`, `scrobble`, plus extensions for API-key auth, sonic similarity, transcoding and playback reports. [OpenSubsonic docs](https://opensubsonic.netlify.app/docs/opensubsonic-api/). This is the cleanest long-term route, and it also gives you phones for free.
 4. **UPnP/DLNA** is a viable fallback but gives poor metadata, no write access and weak gapless playback. I would not prioritise it.
 
 **Volumes that come and go.**
-- Give every library root a stable volume ID: the filesystem UUID for local disks, and for network shares a `(server, share, export-path)` tuple plus a marker file (e.g. `.omamp-volume-id`) written once at the root.
+- Give every library root a stable volume ID: the filesystem UUID for local disks, and for network shares a `(server, share, export-path)` tuple plus a marker file (e.g. `.thrum-volume-id`) written once at the root.
 - Store track paths relative to the volume root. Mark tracks `offline` when the volume is absent instead of deleting them; never "clean missing files" while any volume is unmounted. This is the main MediaMonkey pain point to fix.
 
 **100k+ tracks over the network.**
@@ -106,7 +106,7 @@
 | Undo for tag edits | Journal every write (old value, new value, file, time) in SQLite; undo replays the old values. Store a backup of the original tags before the first edit. |
 | Dry-run for file moves | A preview table (old path, new path, conflicts) before applying; apply as a transaction with a rollback log. Moves across volumes are copy-then-delete, so verify before deleting. |
 | Background jobs | A job queue with progress, cancel and pause. Surface it in one panel and as a notification, not as modal dialogs. |
-| Headless CLI for agents | `omamp-cli` with JSON output (`query`, `scan`, `identify --dry-run`, `apply`). Same core library as the GUI. Define it early, since it forces a clean separation between core and UI. |
+| Headless CLI for agents | `thrum-cli` with JSON output (`query`, `scan`, `identify --dry-run`, `apply`). Same core library as the GUI. Define it early, since it forces a clean separation between core and UI. |
 | DSD / hi-res | TagLib reads DSF/DFF tags, and FFmpeg decodes DSD to PCM. Native DSD output over PipeWire is generally not available, so plan on DoP or PCM conversion **(unverified)**. |
 | Multi-room | Snapcast is simple to feed: write PCM to a pipe or TCP source it reads. A side feature for later. |
 | Mobile sync | Syncthing for file-level copies (keep `.git` and the database out of it). MTP is awkward on Linux (`gvfs-mtp`/`jmtpfs`), so prefer Syncthing or a Subsonic client against Navidrome. |

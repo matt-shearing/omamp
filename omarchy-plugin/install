@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Link the Omamp bar widget into Omarchy's plugin folder and put it on the bar.
+# Link the Thrum bar widget into Omarchy's plugin folder and put it on the bar.
 # Nothing else on the desktop changes, and nothing needs sudo.
 #
 #   omarchy-plugin/install                 link it and add it to the bar
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ID="contra.omamp"
+PLUGIN_ID="contra.thrum"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 SHELL_JSON="$HOME/.config/omarchy/shell.json"
 
@@ -69,4 +69,4 @@ fi
 
 echo
 echo "Restart the shell to load it: omarchy-restart-shell"
-echo "The widget shows only while Omamp is running."
+echo "The widget shows only while Thrum is running."

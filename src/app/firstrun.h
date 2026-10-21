@@ -3,14 +3,14 @@
 #include <QObject>
 #include <QString>
 
-// The first-run setup (SetupWizard.qml) and the one-time changes Omamp makes
+// The first-run setup (SetupWizard.qml) and the one-time changes Thrum makes
 // to an older window.conf. QML sees it as `firstRun`.
 //
 // It looks at window.conf once, before the window loads it:
 //
 // - No window.conf (or an empty one) means a new install. The setup opens on
 //   start until it is finished or skipped.
-// - A window.conf from an older Omamp means someone already uses it. The
+// - A window.conf from an older Thrum means someone already uses it. The
 //   setup is never forced on them; a small banner offers it once instead,
 //   until they run it or close the banner.
 //

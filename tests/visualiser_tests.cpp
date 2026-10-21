@@ -1,13 +1,13 @@
 // The visualisers, and the large now playing bar's visualiser
-// (OMAMP_TESTS=visualiser).
+// (THRUM_TESTS=visualiser).
 //
 // Offscreen, in software, with no audio device and a temporary XDG home.
 // Every style is drawn at several sizes from four sounds pushed through the
 // analyser: silence, a sine, white noise and a decoded FLAC made by ffmpeg.
 //
-// OMAMP_VIS_BENCH=1 also measures each style's CPU on a 1,600 x 60 strip,
+// THRUM_VIS_BENCH=1 also measures each style's CPU on a 1,600 x 60 strip,
 // playing and idle, and behind the whole large bar in the library window,
-// and prints tables. OMAMP_VIS_SHOTS=<folder> saves a picture of each style
+// and prints tables. THRUM_VIS_SHOTS=<folder> saves a picture of each style
 // on that strip.
 #include <QAudioBuffer>
 #include <QAudioFormat>
@@ -82,7 +82,7 @@ Sound synth(const QString &name, int frames) {
 
 // Something like music: a bass line with a kick twice a second, a chord,
 // and a wandering lead, different on each side. Made by ffmpeg as FLAC and
-// decoded by Omamp's own Decoder, as a real track would be.
+// decoded by Thrum's own Decoder, as a real track would be.
 Sound decodedFixture(const QString &dir, QString *error) {
     const QString flac = dir + "/fixture.flac";
     QProcess ff;
@@ -227,7 +227,7 @@ Under contrastUnder(QQuickWindow *window, QQuickItem *text, const QColor &colour
 
 
 // Pink noise with a kick drum twice a second, made by ffmpeg as FLAC and
-// decoded by Omamp's Decoder, then scaled so its loudest sample sits at
+// decoded by Thrum's Decoder, then scaled so its loudest sample sits at
 // `peakDb` dBFS: a loud modern master at -6, a very quiet recording at -30.
 Sound drumsAndNoise(const QString &dir, double peakDb, QString *error) {
     const QString flac = dir + "/drums-noise.flac";
@@ -1293,11 +1293,11 @@ private slots:
         QCOMPARE(appearance->barVisualiserStyle(), QString("stars"));
     }
 
-    // OMAMP_VIS_BENCH=1: the whole process's CPU with the picker open (twelve
+    // THRUM_VIS_BENCH=1: the whole process's CPU with the picker open (twelve
     // previews) and closed, playing the fixture into the analyser's place.
     void cpuPickerOpen() {
-        if (qEnvironmentVariableIntValue("OMAMP_VIS_BENCH") <= 0)
-            QSKIP("OMAMP_VIS_BENCH=1 measures the picker's CPU");
+        if (qEnvironmentVariableIntValue("THRUM_VIS_BENCH") <= 0)
+            QSKIP("THRUM_VIS_BENCH=1 measures the picker's CPU");
         QTemporaryDir dir;
         writeTheme(dir.path(), kNightRide);
         writeConf(dir.filePath("window.conf"), true, "large");
@@ -1336,12 +1336,12 @@ private slots:
         }
     }
 
-    // OMAMP_VIS_BENCH=1: each style behind the whole bar in the library
+    // THRUM_VIS_BENCH=1: each style behind the whole bar in the library
     // window, playing the fixture: the whole process's CPU, which includes
     // the software renderer redrawing the bar's words and buttons over it.
     void cpuBehindTheWholeBar() {
-        if (qEnvironmentVariableIntValue("OMAMP_VIS_BENCH") <= 0)
-            QSKIP("OMAMP_VIS_BENCH=1 measures the CPU behind the whole bar");
+        if (qEnvironmentVariableIntValue("THRUM_VIS_BENCH") <= 0)
+            QSKIP("THRUM_VIS_BENCH=1 measures the CPU behind the whole bar");
         QTemporaryDir dir;
         writeTheme(dir.path(), kNightRide);
         {
@@ -1358,8 +1358,8 @@ private slots:
         QTRY_VERIFY(w.shown("barVisualiserFull"));
         auto *vis = qobject_cast<Visualiser *>(w.find("barVisualiserFull"));
         Appearance *appearance = w.appearance();
-        const int seconds = qMax(1, qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") > 0
-                                        ? qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") : 3);
+        const int seconds = qMax(1, qEnvironmentVariableIntValue("THRUM_VIS_BENCH_SECONDS") > 0
+                                        ? qEnvironmentVariableIntValue("THRUM_VIS_BENCH_SECONDS") : 3);
         // The window's own drawing per frame: the scene graph rendering the
         // bar's dirty area, the visualiser's image included.
         QElapsedTimer renderClock;
@@ -1370,7 +1370,7 @@ private slots:
             if (renderClock.isValid())
                 renderNs += renderClock.nsecsElapsed(), ++renders;
         }, Qt::DirectConnection);
-        const QStringList only = qEnvironmentVariable("OMAMP_VIS_BENCH_STYLES").split(',', Qt::SkipEmptyParts);
+        const QStringList only = qEnvironmentVariable("THRUM_VIS_BENCH_STYLES").split(',', Qt::SkipEmptyParts);
         QTextStream out(stdout);
         out << QString("\nbehind the whole bar, %1 x %2\nstyle        playing: CPU %  fps  paint ms  render ms   idle: CPU %  fps\n")
                    .arg(vis->width()).arg(vis->height());
@@ -1421,13 +1421,13 @@ private slots:
         }
     }
 
-    // OMAMP_VIS_BENCH=1: each style's CPU on a 1,600 x 60 strip, playing
-    // the fixture and idle. OMAMP_VIS_SHOTS=<folder>: a picture of each.
+    // THRUM_VIS_BENCH=1: each style's CPU on a 1,600 x 60 strip, playing
+    // the fixture and idle. THRUM_VIS_SHOTS=<folder>: a picture of each.
     void cpuOnAWideStrip() {
-        const bool bench = qEnvironmentVariableIntValue("OMAMP_VIS_BENCH") > 0;
-        const QString shots = qEnvironmentVariable("OMAMP_VIS_SHOTS");
+        const bool bench = qEnvironmentVariableIntValue("THRUM_VIS_BENCH") > 0;
+        const QString shots = qEnvironmentVariable("THRUM_VIS_SHOTS");
         if (!bench && shots.isEmpty())
-            QSKIP("OMAMP_VIS_BENCH=1 measures the CPU; OMAMP_VIS_SHOTS=<folder> saves pictures");
+            QSKIP("THRUM_VIS_BENCH=1 measures the CPU; THRUM_VIS_SHOTS=<folder> saves pictures");
         QQuickWindow window;
         window.setColor(QColor("#1b1e2b"));
         window.resize(1600, 60);
@@ -1437,8 +1437,8 @@ private slots:
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
         const Sound &music = m_sounds.last();
-        const int seconds = qMax(1, qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") > 0
-                                        ? qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") : 3);
+        const int seconds = qMax(1, qEnvironmentVariableIntValue("THRUM_VIS_BENCH_SECONDS") > 0
+                                        ? qEnvironmentVariableIntValue("THRUM_VIS_BENCH_SECONDS") : 3);
         QTextStream out(stdout);
         if (bench)
             out << "\nstyle        playing: CPU %  fps  paint ms   idle: CPU %  fps\n";
@@ -1489,24 +1489,24 @@ private slots:
         out.flush();
     }
 
-    // OMAMP_VIS_REAL="<file>@<seconds>;…" with OMAMP_VIS_SHOTS=<folder>:
+    // THRUM_VIS_REAL="<file>@<seconds>;…" with THRUM_VIS_SHOTS=<folder>:
     // the large bar, visualiser behind the whole bar, at each moment of each
-    // file, decoded by Omamp's Decoder and pushed through the analyser as
+    // file, decoded by Thrum's Decoder and pushed through the analyser as
     // the player does (6 seconds of run-up), saved as <label>-<n>-<style>.png
-    // with OMAMP_VIS_LABEL, OMAMP_VIS_STYLES (default synthwave),
-    // OMAMP_VIS_THEME (dark or light) and OMAMP_VIS_SENSITIVITY. Prints how
+    // with THRUM_VIS_LABEL, THRUM_VIS_STYLES (default synthwave),
+    // THRUM_VIS_THEME (dark or light) and THRUM_VIS_SENSITIVITY. Prints how
     // full the analyser was. For checking against real music by hand: the
     // files are read, never changed, and nothing is played.
     void realMusicSheet() {
-        const QStringList entries = qEnvironmentVariable("OMAMP_VIS_REAL").split(';', Qt::SkipEmptyParts);
-        const QString shots = qEnvironmentVariable("OMAMP_VIS_SHOTS");
+        const QStringList entries = qEnvironmentVariable("THRUM_VIS_REAL").split(';', Qt::SkipEmptyParts);
+        const QString shots = qEnvironmentVariable("THRUM_VIS_SHOTS");
         if (entries.isEmpty() || shots.isEmpty())
-            QSKIP("OMAMP_VIS_REAL and OMAMP_VIS_SHOTS draw the bar from real files");
+            QSKIP("THRUM_VIS_REAL and THRUM_VIS_SHOTS draw the bar from real files");
         QDir().mkpath(shots);
-        const QString label = qEnvironmentVariable("OMAMP_VIS_LABEL", "shot");
-        const QStringList styles = qEnvironmentVariable("OMAMP_VIS_STYLES", "synthwave").split(',', Qt::SkipEmptyParts);
+        const QString label = qEnvironmentVariable("THRUM_VIS_LABEL", "shot");
+        const QStringList styles = qEnvironmentVariable("THRUM_VIS_STYLES", "synthwave").split(',', Qt::SkipEmptyParts);
         QTemporaryDir dir;
-        writeTheme(dir.path(), qEnvironmentVariable("OMAMP_VIS_THEME") == "light" ? kLightGlass : kNightRide);
+        writeTheme(dir.path(), qEnvironmentVariable("THRUM_VIS_THEME") == "light" ? kLightGlass : kNightRide);
         {
             QSettings conf(dir.filePath("window.conf"), QSettings::IniFormat);
             conf.setValue("window/advanced", true);
@@ -1516,8 +1516,8 @@ private slots:
             conf.setValue("layout/barSize", "large");
             conf.setValue("layout/barPosition", "bottom");
             conf.setValue("appearance/barVisualiser", "full");
-            if (!qEnvironmentVariableIsEmpty("OMAMP_VIS_SENSITIVITY"))
-                conf.setValue("appearance/visualiserSensitivity", qEnvironmentVariable("OMAMP_VIS_SENSITIVITY"));
+            if (!qEnvironmentVariableIsEmpty("THRUM_VIS_SENSITIVITY"))
+                conf.setValue("appearance/visualiserSensitivity", qEnvironmentVariable("THRUM_VIS_SENSITIVITY"));
         }
         Window w(dir);
         QVERIFY(w.load());
@@ -1550,7 +1550,7 @@ private slots:
                 format.setSampleFormat(QAudioFormat::Float);
                 const int chunk = decoder.sampleRate() / 30;
                 QList<float> buffer(chunk * 2);
-                Spectrum spectrum(qEnvironmentVariableIntValue("OMAMP_VIS_BANDS") > 0 ? qEnvironmentVariableIntValue("OMAMP_VIS_BANDS") : 24);
+                Spectrum spectrum(qEnvironmentVariableIntValue("THRUM_VIS_BANDS") > 0 ? qEnvironmentVariableIntValue("THRUM_VIS_BANDS") : 24);
                 spectrum.setSensitivity(w.appearance()->property("visualiserSensitivity").toString());
                 qreal top = 0, sum = 0;
                 int counted = 0;

@@ -19,7 +19,7 @@ class LibraryController;
 // album's folder, the comment tag, credits from the tags) comes first; the
 // web part (About::Client: MusicBrainz → Wikidata → Wikipedia) follows on
 // the same low-priority thread, unless the lookups are switched off or
-// Omamp is offline. A newer show() supersedes an older one; a look-up
+// Thrum is offline. A newer show() supersedes an older one; a look-up
 // already running finishes into the cache and is then dropped.
 class AboutController : public QObject {
     Q_OBJECT

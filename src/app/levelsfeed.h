@@ -13,15 +13,15 @@ class QLocalSocket;
 
 // Shares the analyser with the Omarchy bar plugin (omarchy-plugin/), so the
 // bar can draw a small copy of the visualiser behind the track's name. The
-// bar has only MPRIS, which carries no sound, so Omamp sends the levels.
+// bar has only MPRIS, which carries no sound, so Thrum sends the levels.
 //
-// A Unix socket at $XDG_RUNTIME_DIR/omamp-levels.sock. The plugin connects
+// A Unix socket at $XDG_RUNTIME_DIR/thrum-levels.sock. The plugin connects
 // with Quickshell's Socket and reads one JSON line per frame:
 //
 //   {"style":"synthwave","reduceMotion":false,"active":true,"levels":[0..100 x16]}
 //
 // Nothing is sent and no timer runs while nobody is connected or nothing
-// plays through Omamp (paused, stopped, Spotify). A client gets one frame on
+// plays through Thrum (paused, stopped, Spotify). A client gets one frame on
 // connecting, one when playing stops ("active":false, no levels), one when
 // the style or Reduce motion changes, and up to 20 a second while music
 // plays (10 with Reduce motion); a frame identical to the last is skipped.
@@ -63,7 +63,7 @@ public:
 
     // Where the levels come from; read on each tick.
     void setLevelsSource(std::function<QList<qreal>()> source) { m_source = std::move(source); }
-    // Music is playing through Omamp, so the levels mean something.
+    // Music is playing through Thrum, so the levels mean something.
     void setActive(bool on);
     void setStyle(const QString &style);
     void setReduceMotion(bool on);

@@ -67,7 +67,7 @@ void FolderPicker::pickFolders() {
     // The portal answers on a request object whose path we can predict from
     // our bus name and a token. Subscribe before calling so a fast answer is
     // never missed.
-    const QString token = QString("omamp%1").arg(QRandomGenerator::global()->generate());
+    const QString token = QString("thrum%1").arg(QRandomGenerator::global()->generate());
     QString sender = bus.baseService().mid(1);
     sender.replace('.', '_');
     if (!m_requestPath.isEmpty())

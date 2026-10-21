@@ -6,13 +6,13 @@
 
 class VolumeResolver;
 
-// `omamp scan`, `omamp query`, `omamp stats`: the library without a window,
+// `thrum scan`, `thrum query`, `thrum stats`: the library without a window,
 // for scripts and agents. Every command takes --json, prints results on
 // stdout and errors on stderr, and exits 0 or 1.
 namespace Cli {
 
 // True when the first argument names a command. Anything else (no argument,
-// files, folders) opens the window as before; `omamp open <file>` opens a
+// files, folders) opens the window as before; `thrum open <file>` opens a
 // file whose name happens to be a command word.
 bool isCommand(const QString &first);
 
@@ -20,17 +20,17 @@ bool isCommand(const QString &first);
 // volume resolver are injectable so tests can run commands in-process.
 int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver = nullptr);
 
-// `omamp volume`, `omamp nas` and `omamp remote` (clinas.cpp); run() hands
+// `thrum volume`, `thrum nas` and `thrum remote` (clinas.cpp); run() hands
 // these over.
 int runNas(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver = nullptr);
-// `omamp sync` and `omamp report` (clisync.cpp).
+// `thrum sync` and `thrum report` (clisync.cpp).
 int runSync(const QStringList &arguments, QTextStream &out, QTextStream &err, const VolumeResolver *resolver = nullptr);
-// `omamp spotify` (clispotify.cpp).
+// `thrum spotify` (clispotify.cpp).
 int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err);
 extern const char *spotifyUsage;
 // The name, artists, album and length of Spotify tracks named by
-// spotify://track/<id> paths, for `omamp playlist add`. Asks spotify_player
-// only when Spotify is switched on in Omamp and spotify_player is signed in
+// spotify://track/<id> paths, for `thrum playlist add`. Asks spotify_player
+// only when Spotify is switched on in Thrum and spotify_player is signed in
 // and running; otherwise (and for any it can't find) the result holds just
 // the path. *note says why names are missing, when they are.
 struct SpotifyTrackInfo {
@@ -38,10 +38,10 @@ struct SpotifyTrackInfo {
     qint64 durationMs = 0;
 };
 QList<SpotifyTrackInfo> lookUpSpotifyTracks(const QStringList &paths, QString *note);
-// `omamp radio` (cliradio.cpp).
+// `thrum radio` (cliradio.cpp).
 int runRadio(const QStringList &arguments, QTextStream &out, QTextStream &err);
-// How `omamp radio play` reaches the player: hands radio://<key> to the
-// running Omamp over MPRIS, or starts it. Tests put a fake in its place.
+// How `thrum radio play` reaches the player: hands radio://<key> to the
+// running Thrum over MPRIS, or starts it. Tests put a fake in its place.
 // how says which ("running", "started") or why it failed.
 using RadioLauncher = std::function<bool(const QString &uri, QString *how)>;
 void setRadioLauncher(RadioLauncher launcher);

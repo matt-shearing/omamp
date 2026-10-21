@@ -38,7 +38,7 @@ class Appearance : public QObject {
     Q_PROPERTY(QString barVisualiser READ barVisualiser WRITE setBarVisualiser NOTIFY changed)
     Q_PROPERTY(QString barVisualiserStyle READ barVisualiserStyle WRITE setBarVisualiserStyle NOTIFY changed)
     Q_PROPERTY(QString barStyle READ barStyle NOTIFY changed)
-    // While no sound reaches Omamp (paused, stopped, Spotify): "calm" keeps
+    // While no sound reaches Thrum (paused, stopped, Spotify): "calm" keeps
     // a slow idle animation in the large bar, "hide" hides its visualiser.
     Q_PROPERTY(QString idleVisualiser READ idleVisualiser WRITE setIdleVisualiser NOTIFY changed)
     // Slower, calmer visualisers with no beat flashes.

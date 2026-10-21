@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Omamp
+Name=Thrum
 GenericName=Music Player
 Comment=Play your music, Winamp style, in your Omarchy theme
-Exec=omamp %F
-Icon=omamp
+Exec=thrum %F
+Icon=thrum
 Terminal=false
 Categories=AudioVideo;Audio;Player;
 MimeType=audio/mpeg;audio/flac;audio/ogg;audio/opus;audio/mp4;audio/aac;audio/x-wav;inode/directory;
 Keywords=music;audio;mp3;flac;winamp;
-StartupWMClass=omamp
+StartupWMClass=thrum

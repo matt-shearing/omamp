@@ -1,11 +1,11 @@
 // Mixed playlists and choosing several Spotify rows at once.
 //
-// An Omamp playlist can hold Spotify tracks beside local files: storing,
+// A Thrum playlist can hold Spotify tracks beside local files: storing,
 // moving and removing them; playing a mixed playlist, with Spotify's tracks
 // handed to the (fake) Spotify device and back; leaving them out, once
 // said, while Spotify is off; M3U files and the command line. In the real
 // window, offscreen: Shift, Ctrl and Ctrl+A in a Spotify list by keyboard
-// and mouse, adding a range to an Omamp playlist from the menu, and
+// and mouse, adding a range to a Thrum playlist from the menu, and
 // dragging Spotify tracks onto a playlist in the tree.
 //
 // Everything runs against the fake spotify_player (tests/fake-spotify) in
@@ -350,7 +350,7 @@ private slots:
         QCOMPARE(handItems[1].path, QString("spotify://track/7OqU7GsRSBR5QIa6RHgbtA"));
     }
 
-    // `omamp playlist add <playlist> spotify:track:<id>` and `show`.
+    // `thrum playlist add <playlist> spotify:track:<id>` and `show`.
     void commandLineAddsAndShowsSpotifyTracks() {
         FakeSpotify fake;
         QTemporaryDir dir;
@@ -361,7 +361,7 @@ private slots:
         QCOMPARE(cli({"playlist", "add", "Mix", "--ids", "1", "--json", "--db", db}, &j), 0);
         const QString pixel = fake.id("track:Pixel Rain"), velvet = fake.id("track:Velvet Signal");
 
-        // Spotify off in Omamp: the tracks go in by id, and it says so.
+        // Spotify off in Thrum: the tracks go in by id, and it says so.
         QString text, errors;
         QCOMPARE(cli({"playlist", "add", "Mix", "spotify:track:" + pixel, "--db", db}, nullptr, &text, &errors), 0);
         QVERIFY(text.contains("Added 1 Spotify tracks to Mix"));
@@ -407,9 +407,9 @@ private slots:
 
     // --- Playing a mixed playlist ----------------------------------------------
 
-    // Local, Spotify, local: the local tracks play on Omamp's engine, the
+    // Local, Spotify, local: the local tracks play on Thrum's engine, the
     // Spotify one is handed to the Spotify device and back. The entry's
-    // stored name is enough: Omamp hasn't seen it in a Spotify list.
+    // stored name is enough: Thrum hasn't seen it in a Spotify list.
     void aMixedPlaylistHandsOffAndBack() {
         FakeSpotify fake;
         QTemporaryDir dir;
@@ -466,7 +466,7 @@ private slots:
         QCOMPARE(engine->state(), AudioEngine::Stopped);
         QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 5000);
 
-        // Spotify reaches the end: back on Omamp's engine for Heatwave.
+        // Spotify reaches the end: back on Thrum's engine for Heatwave.
         fake.setPlayback(pixel, 219000, false);
         QTRY_COMPARE_WITH_TIMEOUT(player.currentIndex(), 2, 5000);
         QCOMPARE(engine->state(), AudioEngine::Playing);
@@ -600,9 +600,9 @@ private slots:
         w.window->close();
     }
 
-    // A range added to an Omamp playlist from Add to playlist ▸, and the
+    // A range added to a Thrum playlist from Add to playlist ▸, and the
     // menu's two groups.
-    void addsARangeToAnOmampPlaylist() {
+    void addsARangeToAnThrumPlaylist() {
         Window w;
         QVERIFY(w.load());
         QTRY_VERIFY(w.library->ready());
@@ -625,8 +625,8 @@ private slots:
         QObject *menu = w.find("spotifyAddMenu");
         QVERIFY(menu);
         QTRY_VERIFY(menu->property("opened").toBool());
-        QVERIFY(Window::entry(menu, "Omamp playlists"));
-        QVERIFY(Window::entry(menu, "New Omamp playlist…"));
+        QVERIFY(Window::entry(menu, "Thrum playlists"));
+        QVERIFY(Window::entry(menu, "New Thrum playlist…"));
         QVERIFY(Window::entry(menu, "Spotify playlists"));
         // spotify_player can make playlists, so the Spotify group offers it.
         QObject *newSpotify = Window::entry(menu, "New Spotify playlist…");

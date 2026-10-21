@@ -19,17 +19,17 @@
 
 namespace WebCli {
 
-const char *usage = R"(       omamp identify <query> [--dry-run | --apply] [--release <mbid>] [--min-score 0.8]
+const char *usage = R"(       thrum identify <query> [--dry-run | --apply] [--release <mbid>] [--min-score 0.8]
                                          match tracks to MusicBrainz releases (Picard's way)
                                          and show or write the tags and front cover
-       omamp fetch-art <query> | --missing [--embed] [--save-cover] [--dry-run]
+       thrum fetch-art <query> | --missing [--embed] [--save-cover] [--dry-run]
                                          front covers from the Cover Art Archive
-       omamp lyrics <query> [--fetch] [--write lrc|tag] [--dry-run]
+       thrum lyrics <query> [--fetch] [--write lrc|tag] [--dry-run]
                                          lyrics on disk, cached, or from LRCLIB
-       omamp scrobble status | flush | login listenbrainz --token <t> | login lastfm [--complete]
+       thrum scrobble status | flush | login listenbrainz --token <t> | login lastfm [--complete]
                        | logout listenbrainz|lastfm
                                          the ListenBrainz and Last.fm queue
-       omamp net status | set <key> <value> | unset <key> | clear-cache
+       thrum net status | set <key> <value> | unset <key> | clear-cache
                                          web settings, keys and the response cache
 )";
 
@@ -37,7 +37,7 @@ namespace {
 
 const QStringList commandNames = {"identify", "fetch-art", "lyrics", "scrobble", "net"};
 
-// Settings `omamp net set` may change. Secrets are never printed back.
+// Settings `thrum net set` may change. Secrets are never printed back.
 const QStringList settablePrefixes = {"acoustid.", "identify.", "coverart.", "lyrics.", "scrobble.",
                                       "listenbrainz.", "lastfm.", "net."};
 const QStringList secretKeys = {"acoustid.key", "listenbrainz.token", "lastfm.api_secret", "lastfm.session_key",
@@ -59,7 +59,7 @@ int failWith(const Options &o, QTextStream &out, QTextStream &err, const QString
     if (o.json)
         out << json({{"ok", false}, {"error", message}}) << Qt::flush;
     else
-        err << "omamp: " << message << Qt::endl;
+        err << "thrum: " << message << Qt::endl;
     return 1;
 }
 
@@ -76,7 +76,7 @@ QString shown(const QString &field, const QString &value) {
 void printChanges(const TagBatchResult &r, QTextStream &out, QTextStream &err, const QString &indent) {
     for (const TagFileResult &f : r.files) {
         if (!f.ok) {
-            err << "omamp: " << (f.path.isEmpty() ? QString("track %1").arg(f.trackId) : f.path) << ": " << f.error
+            err << "thrum: " << (f.path.isEmpty() ? QString("track %1").arg(f.trackId) : f.path) << ": " << f.error
                 << Qt::endl;
             continue;
         }
@@ -117,7 +117,7 @@ QString releaseLine(const Identify::Candidate &c) {
 int identify(Library &library, Net::HttpClient &http, const Options &o, const VolumeResolver &resolver,
              QTextStream &out, QTextStream &err) {
     if (o.rest.join(' ').trimmed().isEmpty())
-        return failWith(o, out, err, "identify needs a query, for example: omamp identify 'album:\"night drive\"'");
+        return failWith(o, out, err, "identify needs a query, for example: thrum identify 'album:\"night drive\"'");
     if (o.dryRun && o.apply)
         return failWith(o, out, err, "Choose --dry-run or --apply, not both");
     QString error;
@@ -146,7 +146,7 @@ int identify(Library &library, Net::HttpClient &http, const Options &o, const Vo
         applyOptions.coverSize = o.size;
 
     if (!o.json)
-        err << "omamp: identifying " << ids.size() << " tracks (MusicBrainz allows one request a second)..."
+        err << "thrum: identifying " << ids.size() << " tracks (MusicBrainz allows one request a second)..."
             << Qt::endl;
     Job job("identify");
     http.setJob(&job);
@@ -211,13 +211,13 @@ int identify(Library &library, Net::HttpClient &http, const Options &o, const Vo
                 if (!r.cover.isEmpty())
                     out << "; cover: " << r.cover;
                 if (!r.tags.batch.isEmpty())
-                    out << "; undo with: omamp undo " << r.tags.batch;
+                    out << "; undo with: thrum undo " << r.tags.batch;
                 out << '\n';
             } else if (applyOptions.coverEmbed || applyOptions.coverFile) {
                 out << "    (the front cover is fetched from the Cover Art Archive on --apply)\n";
             }
             if (!r.error.isEmpty())
-                err << "omamp: " << r.error << Qt::endl;
+                err << "thrum: " << r.error << Qt::endl;
         }
         clustersJson << cj;
     }
@@ -308,7 +308,7 @@ int fetchArt(Library &library, Net::HttpClient &http, const Options &o, const Vo
 int lyrics(Library &library, Net::HttpClient &http, const Options &o, const VolumeResolver &resolver,
            QTextStream &out, QTextStream &err) {
     if (o.rest.join(' ').trimmed().isEmpty())
-        return failWith(o, out, err, "lyrics needs a query, for example: omamp lyrics 'title:\"coastline\"' --fetch");
+        return failWith(o, out, err, "lyrics needs a query, for example: thrum lyrics 'title:\"coastline\"' --fetch");
     if (!o.write.isEmpty() && o.write != "lrc" && o.write != "tag")
         return failWith(o, out, err, "--write takes lrc (a .lrc file beside the track) or tag (inside the file)");
     QString error;
@@ -367,7 +367,7 @@ int lyrics(Library &library, Net::HttpClient &http, const Options &o, const Volu
                        .arg(w.tags.failed)
                        .arg(w.skipped.size());
             if (!w.tags.batch.isEmpty())
-                out << "; undo with: omamp undo " << w.tags.batch;
+                out << "; undo with: thrum undo " << w.tags.batch;
             out << '\n';
         }
     }
@@ -418,7 +418,7 @@ int scrobble(Library &library, Net::HttpClient &http, const Options &o, QTextStr
         } else {
             out << QString("Sent %1, failed %2, %3 still waiting").arg(r.sent).arg(r.failed).arg(r.remaining) << '\n';
             for (const QString &e : r.errors)
-                err << "omamp: " << e << Qt::endl;
+                err << "thrum: " << e << Qt::endl;
         }
         return r.errors.isEmpty() ? 0 : 1;
     }
@@ -459,7 +459,7 @@ int scrobble(Library &library, Net::HttpClient &http, const Options &o, QTextStr
         if (key.isEmpty() || secret.isEmpty())
             return failWith(o, out, err,
                             "Last.fm needs an API key and secret first (https://www.last.fm/api/account/create): "
-                            "omamp net set lastfm.api_key <key> and omamp net set lastfm.api_secret <secret>");
+                            "thrum net set lastfm.api_key <key> and thrum net set lastfm.api_secret <secret>");
         if (!o.complete) {
             QString token, error;
             if (!Scrobble::LastFm::getToken(http, key, secret, &token, &error))
@@ -469,13 +469,13 @@ int scrobble(Library &library, Net::HttpClient &http, const Options &o, QTextStr
             if (o.json)
                 out << json({{"ok", true}, {"service", service}, {"auth_url", url}}) << Qt::flush;
             else
-                out << "Open this page, allow Omamp, then run `omamp scrobble login lastfm --complete`:\n  " << url
+                out << "Open this page, allow Thrum, then run `thrum scrobble login lastfm --complete`:\n  " << url
                     << '\n';
             return 0;
         }
         const QString token = library.setting("lastfm.pending_token").toString();
         if (token.isEmpty())
-            return failWith(o, out, err, "Run `omamp scrobble login lastfm` first");
+            return failWith(o, out, err, "Run `thrum scrobble login lastfm` first");
         QString session, user, error;
         if (!Scrobble::LastFm::getSession(http, key, secret, token, &session, &user, &error))
             return failWith(o, out, err, error);
@@ -640,7 +640,7 @@ int run(const QStringList &arguments, QTextStream &out, QTextStream &err, const 
     if (!library.open(&error))
         return failWith(o, out, err, error);
     if (!library.lastBackup().isEmpty() && !o.json)
-        err << "omamp: upgraded the library; the old one is saved as " << library.lastBackup() << Qt::endl;
+        err << "thrum: upgraded the library; the old one is saved as " << library.lastBackup() << Qt::endl;
     VolumeResolver system;
     const VolumeResolver &volumes = resolver ? *resolver : system;
     Net::HttpClient http(&library);

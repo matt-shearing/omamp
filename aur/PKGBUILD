@@ -35,7 +35,7 @@ makedepends=('pkgconf' 'cargo')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/matt-shearing/omamp/archive/refs/tags/v$pkgver.tar.gz")
 # Run updpkgsums once the v$pkgver tag is on GitHub.
-sha256sums=('84809ef643f1fcc9f0c63f1341f95b062c4c24670e82df4e3512d29c36bb224a')
+sha256sums=('7ab1162bcfb1acc04e3eb8755f46244d4053c011b81ec40b0dd55f22463003e5')
 
 prepare() {
   cd "$pkgname-$pkgver"

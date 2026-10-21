@@ -32,6 +32,6 @@ pkgbase = thrum
 	replaces = omamp
 	options = !lto
 	source = thrum-0.4.0.tar.gz::https://github.com/matt-shearing/thrum/archive/refs/tags/v0.4.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = bdb54123eae540159eba53c36fbf6b8d38d26d859be9cf5df007185e908aab54
 
 pkgname = thrum

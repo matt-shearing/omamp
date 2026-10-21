@@ -37,7 +37,7 @@ makedepends=('pkgconf' 'cargo')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/matt-shearing/thrum/archive/refs/tags/v$pkgver.tar.gz")
 # Run updpkgsums once the v$pkgver tag is on GitHub.
-sha256sums=('SKIP')
+sha256sums=('bdb54123eae540159eba53c36fbf6b8d38d26d859be9cf5df007185e908aab54')
 
 prepare() {
   cd "$pkgname-$pkgver"

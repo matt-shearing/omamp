@@ -171,10 +171,11 @@ tiling when you leave the player, as a new window would.
 
 ## Visualisers
 
-![The five visualiser styles](visualisers.png)
+![The five original visualiser styles](visualisers.png)
 
-The deck, the strip and the big view share one visualiser style. Click a visualiser, or press `Shift+V`, to move on to
-the next:
+The deck, the strip, the mini player and the big view share one visualiser
+style. Click a visualiser, or press `Shift+V`, to move on to the next. The
+first five follow the analyser as it updates, about 30 times a second:
 
 - **Bars**: the analyser's bars, rising from green through cyan to the
   accent.
@@ -185,8 +186,65 @@ the next:
 - **Oscilloscope**: the sound wave itself, as Winamp drew it.
 - **Fire**: flames fed by the spectrum, a nod to Winamp's AVS and MilkDrop.
 
-All of them are drawn on the CPU with QPainter: a few dozen rectangles, one
-line, or one small picture a frame. Their colours come from the deck style.
+Seven more were made for the large now playing bar's wide, short strip, and
+work everywhere else too. They run at 60 frames a second and ease between
+the analyser's updates:
+
+- **Skyline**: soft rounded bars with the bass in the middle and a
+  reflection that fades below them.
+- **Waveform ribbon**: the left and right channels as two smooth ribbons,
+  thicker where the sound is louder.
+- **Spectrum line**: the spectrum as one smooth, glowing line over a fading
+  shade.
+- **Pulse**: a soft glow in the middle that swells with the bass and
+  brightens on the beat.
+- **LED matrix**: Winamp-era lights, with a peak light above each column.
+- **Synthwave**: a striped sun on the horizon, a city of spectrum bars
+  either side, and a grid rolling towards you faster as the music builds.
+- **Star field**: drifting stars that brighten with their part of the
+  spectrum; the bass pushes them along.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="bar-visualisers-dark.png">
+  <img alt="The large now playing bar with each of the seven new visualisers, then one along the bar's edge and one beside the cover" src="bar-visualisers-light.png">
+</picture>
+
+All of them are drawn on the CPU with QPainter, and their colours come from
+the deck style, so the Omarchy style follows the theme. On a 1,600 × 60
+strip each costs well under a millisecond a frame; see
+[the measurements](plan/progress.md#large-bar-visualisers-21-october-2026).
+
+### In the large now playing bar
+
+When the library uses the large bar (see
+[docs/library.md](library.md#the-large-now-playing-bar)), **Settings >
+Appearance > Visualiser** places a visualiser in it:
+
+| Place | Looks like |
+| --- | --- |
+| Behind the seek bar | A wide band across the middle, from the transport buttons down, faint enough to read the position through. The default |
+| Along the edge | A thin strip across the whole bar, on the edge that faces the library. The bar grows to make room |
+| Beside the cover | A small panel after the title and artist, when the window is at least 1,000 pixels wide |
+| Off | No visualiser |
+
+![The library with the synthwave visualiser behind the large bar's seek bar](big-bar-visualiser-dark.png)
+
+The bar shares the player's style unless **Style in the bar** picks another.
+Click the bar's visualiser, or press `Shift+V` while the library shows, to
+move the bar's style on; with no style of its own, that moves the shared
+style. The palette (`Ctrl+K`) has **Large bar visualiser: Along the edge**
+and the rest.
+
+### Paused, stopped, or Spotify
+
+Spotify's sound never reaches Omamp, so there is nothing to analyse while a
+Spotify track plays; the same goes for a paused or stopped player. The
+seven new styles then show a slow, calm animation at 30 frames a second.
+**Hide the large bar's visualiser** under **While nothing plays through
+Omamp** hides the bar's instead.
+
+**Reduce motion** slows every new style down, drops the beat flashes, runs
+at 30 frames a second, and shows a still picture while idle.
 
 ## Deck styles
 
@@ -201,8 +259,9 @@ view look. The library in advanced mode always stays in the Omarchy theme.
 
 ![The Classic style](deck-classic.png) ![The Silver style](deck-2000s.png)
 
-The page also turns the cover on the deck on or off, picks the visualiser,
-chooses the big view's background, and turns its lyrics on or off. The
+The page also turns the cover on the deck on or off, picks the visualiser
+and the large bar's, chooses the big view's background, and turns its
+lyrics on or off. The
 palette (`Ctrl+K`) has **Deck style: Classic** and the rest.
 
 These settings live in `~/.config/omamp/window.conf`, under `[appearance]`

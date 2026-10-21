@@ -175,7 +175,9 @@ the cover, the title and artist with the rating (or Like, for a Spotify
 track) on the left; shuffle, previous, a big play button, next and repeat in
 the middle, with the position under them; and lyrics, Now Playing, the
 sidebar, the mini player and the volume on the right. It takes its colours
-from the deck style.
+from the deck style, and shows a visualiser behind the seek bar, along its
+edge or beside the cover
+([docs/now-playing.md](now-playing.md#in-the-large-now-playing-bar)).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="big-bar-bottom-dark.png">

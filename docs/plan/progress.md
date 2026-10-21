@@ -5537,3 +5537,181 @@ artist picture.
   first sight, one request per album.
 - **Up next** follows list order, as the big view does, even with shuffle on.
 - **Translations**: the new strings are English only.
+
+## Large bar visualisers (21 October 2026)
+
+Matt asked for visualisations on the large now playing bar as options,
+"similar to the compact", and for a few cool new ones. The large bar now
+has a visualiser in one of three places, with its own style or the
+player's, and there are seven new styles made for a wide, short strip. User
+documentation is in [docs/now-playing.md](../now-playing.md#visualisers).
+
+### What was built
+
+```
+src/app/visualiser.{h,cpp}        seven new styles, a 60 fps clock, idle and reduced motion
+src/app/appearance.{h,cpp}        barVisualiser, barVisualiserStyle, barStyle, idleVisualiser, reduceMotion
+src/app/BarVisualiser.qml         the bar's visualiser: its style, its click, hidden while idle if asked
+src/app/BarVisualiserSettings.qml Settings > Appearance > Visualiser: the bar, idle, Reduce motion
+src/app/BigBar.qml                the three places
+src/app/Analyser.qml              idle, reduceMotion and the stereo waveform for every visualiser
+src/app/NowPlayingModes.qml       Shift+V picks the bar's style in the library; palette actions
+src/engine/spectrum.*, player.*   stereoWaveform (left then right); Player.playsElsewhere
+tests/visualiser_tests.cpp        OMAMP_TESTS=visualiser
+```
+
+- **Places.** *Behind the seek bar* (the default): a band across the middle
+  column from the centre of the transport buttons down, at 60 % opacity, so
+  the position and times stay readable. *Along the edge*: a 22 px strip the
+  width of the bar on the edge that faces the library (the top when the bar
+  is at the bottom); the bar grows by 24 px. *Beside the cover*: a 240 × 64
+  panel after the title, shown when the bar is at least 1,000 px wide.
+  *Off*. Kept in `window.conf` as `appearance/barVisualiser`.
+- **Style.** `appearance/barVisualiserStyle` is empty to share the player's
+  style, or a style of its own; `appearance.barStyle` is the one in effect.
+  A click on the bar's visualiser calls `nextBarVisualiser()`. `Shift+V`
+  calls `cycleVisualiser(inBar)`, where `inBar` means the library shows with
+  the large bar and neither the big view nor a compact player: then the
+  bar's own style moves on, or the shared one when it has none.
+- **New styles** (`Appearance::visualisers()` gained them after the first
+  five, so the deck, strip, mini player, big view and menus offer them too):
+  - *Skyline*: rounded bars, bass in the middle and mirrored outwards,
+    standing on a floor line with a fading reflection.
+  - *Waveform ribbon*: the left and right waveforms, eased and auto-gained,
+    as two ribbons whose thickness follows loudness.
+  - *Spectrum line*: Catmull-Rom through the eased bands, glow from faint
+    copies above and below, a gradient shade under it.
+  - *Pulse*: two stretched glow images (the middle and top colours) whose
+    opacity and width follow the bass and the whole spectrum, with a kick
+    when the bass jumps above its recent average.
+  - *LED matrix*: unlit cells drawn once into an image, lit ones coloured by
+    row, peak lights that fall slowly.
+  - *Synthwave*: a striped half-sun on the horizon, a city of spectrum bars
+    either side, and floor rows rolling forward faster with the music. Below
+    32 px the horizon drops and the floor goes, leaving the sun and city.
+  - *Star field*: stars that each follow one band, drift with the energy,
+    and get pushed with short trails on a kick.
+- **Clock.** The new styles repaint on a 16 ms timer and ease towards each
+  analyser update (attack and release are frame-rate independent), so they
+  move at 60 fps although the analyser updates at 30. The timer runs only
+  while the item is visible, in a window and larger than 2 px. The first
+  five styles are unchanged and repaint on data as before.
+- **Idle.** `Analyser.qml` sets `idle` when the player is not playing or
+  `backend.playsElsewhere` (the current entry is `spotify://`, whose sound
+  never reaches the PCM tap). Idle, the bands ease towards a slow, low wave
+  and the timer drops to 30 fps. `appearance/idleVisualiser` = `hide`
+  hides the large bar's visualiser instead; elsewhere the calm animation
+  stays.
+- **Reduce motion** (`appearance/reduceMotion`, new, in Settings > Appearance
+  and the palette): 30 fps, half the speed, slower easing, no kicks, and
+  idle stops the timer on one still frame.
+- **No allocation per frame.** Gradients, the LED grid, the sun, the
+  synthwave backdrop and the glow images are made when the size, colours or
+  style change; the polygons and point lists are members reused each frame.
+  Wide antialiased strokes and curved fills cost several times what thin
+  cosmetic lines and plain rectangles do in software, so the ribbon and the
+  line's shade are filled as pixel columns and the glows are thin lines.
+
+### Tests
+
+`tests/visualiser_tests.cpp`, offscreen in software with
+`OMAMP_NO_AUDIO_DEVICE`, under a temporary `XDG_*` home:
+
+- the stereo waveform keeps the channels apart;
+- every one of the twelve styles at 1,600 × 60, 400 × 120, 140 × 36 and
+  1,200 × 200, from silence, a sine, white noise and a FLAC made by ffmpeg and
+  decoded by Omamp's `Decoder`, fed through `Spectrum` as the player does:
+  each paints, draws more than one colour when there is sound, and logs no
+  warning;
+- idle keeps the clock at 30 fps; idle with reduced motion stops it; hidden
+  stops it; the first five styles never start it;
+- `Analyser.qml` goes idle when paused or when a Spotify entry plays
+  elsewhere; `BarVisualiser.qml` takes the bar's style and hides while idle
+  when asked;
+- the settings persist, bad values are refused, sharing and cycling work
+  round the end of the list;
+- in Main.qml with the large bar: the default place spans the middle of
+  the bar; `Shift+V` with a shared style and with the bar's own; a click;
+  along the edge at the bottom and the top, with the bar taller; beside the
+  cover; hidden while idle; off; the palette actions; the Settings page's
+  buttons, saved to `window.conf`.
+
+`nowplaying_tests` now wraps from Star field back to Bars.
+
+`bin/test` with JOBS=4: 32 Totals lines, 460 passed, 0 failed, 7 skipped (the
+existing opt-in benchmarks and live web test, and the new opt-in CPU
+measurement).
+
+### CPU
+
+`OMAMP_VIS_BENCH=1 OMAMP_TESTS=visualiser build/tests/omamp_tests cpuOnAWideStrip`
+runs each style in a 1,600 × 60 window for three seconds, fed the decoded
+fixture through `Spectrum` every 33 ms, then idle. Offscreen, software
+renderer, Ryzen 9 7950X3D with other work running. CPU is the whole test
+process (analyser, timers and the window's own rendering included) as a
+share of one core; paint is the time inside `paint()` per frame.
+
+| Style | Playing: CPU | fps | paint per frame | Idle: CPU | fps |
+|---|---:|---:|---:|---:|---:|
+| Bars | 1.2 % | 31 | 0.03 ms | 0.5 % | 31 |
+| Bars with peaks | 1.3 % | 31 | 0.03 ms | 0.5 % | 31 |
+| Mirrored spectrum | 1.3 % | 31 | 0.06 ms | 0.5 % | 31 |
+| Oscilloscope | 5.5 % | 31 | 1.16 ms | 4.8 % | 31 |
+| Fire | 1.7 % | 31 | 0.10 ms | 0.8 % | 31 |
+| Skyline | 2.9 % | 63 | 0.26 ms | 1.0 % | 30 |
+| Waveform ribbon | 4.8 % | 62 | 0.56 ms | 1.9 % | 30 |
+| Spectrum line | 5.4 % | 63 | 0.66 ms | 2.2 % | 30 |
+| Pulse | 2.8 % | 63 | 0.12 ms | 1.0 % | 30 |
+| LED matrix | 1.8 % | 62 | 0.07 ms | 0.5 % | 30 |
+| Synthwave | 2.4 % | 63 | 0.14 ms | 0.9 % | 30 |
+| Star field | 1.7 % | 62 | 0.03 ms | 0.4 % | 30 |
+
+First versions of the ribbon (filled curved paths) and the line (wide
+antialiased strokes) cost 1.7 and 2.4 ms a frame (14 % and 19 % of a core);
+synthwave cost 0.9 ms until its haze and floor lines became one cached
+image.
+
+### Screenshots
+
+`docs/bar-visualisers-{light,dark}.png` are contact sheets of the large bar
+with each new style behind the seek bar, then the ribbon along the edge and
+the LED matrix beside the cover; `docs/big-bar-visualiser-dark.png` is the
+whole library window with Synthwave. They come from `tests/make-demo-library`
+with `DEMO_SECONDS=60`, playing Neon Coast's Night Drive on the native
+engine into a buffer (`OMAMP_NO_AUDIO_DEVICE`), so the PCM tap feeds the
+analyser. Captured offscreen in software with `OMAMP_SCREENSHOT`, in a
+private mount and network namespace with a throwaway home: light is a copy
+of the desktop's current theme (OneQode Light Glass), dark is Night Ride.
+Looking at them led to the band behind the seek bar growing from 35 px (too
+short to read any style) to start at the transport buttons' centre, a
+taller edge strip, a thin-strip layout for Synthwave, brighter stars in
+light themes, and dropping the spectrum line's peak dots, which looked like
+dust.
+
+### Decisions
+
+- **One list of styles.** The new styles join `Appearance::visualisers()`
+  rather than a separate bar-only list, so they work on the deck, the strip,
+  the mini player and the big view, and the menus and palette list them.
+- **Shared by default, separable.** The bar follows the player's style until
+  it is given its own, as asked.
+- **Behind the seek bar is the default.** It adds no height and leaves the
+  cover and buttons where they were.
+- **Idle means no PCM.** Spotify's sound never passes through Omamp, so the
+  analyser hears silence while a Spotify track plays; `playsElsewhere`
+  tells the visualiser to show its idle animation instead of a flat line.
+- **Hide while idle applies to the bar only.** The deck and the strip frame
+  the visualiser in a readout, where an empty space would look broken.
+- **Main.qml is untouched.** The bar, its settings and the shortcut logic
+  live in new files and in NowPlayingModes.qml.
+
+### Known gaps
+
+- **Not seen on a real screen.** Everything ran offscreen in software; the
+  60 fps figure is the timer's rate, not measured on the GPU renderer.
+- **Tuned on made-up tones.** The demo library and the fixture fill only the
+  lower two thirds of the spectrum; real music will light the right-hand
+  side of every style more.
+- **The time labels sit over the band** behind the seek bar; with the LED
+  matrix they are a little harder to read.
+- **Translations**: the new strings are English only.

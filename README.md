@@ -86,7 +86,8 @@ The library is laid out the way you like it. A small cover starts each row
 of every track list; rows come compact, comfortable or large, and columns
 move when you drag their headers. The sidebar's sections fold, hide and
 change order. The now playing bar can be the slim strip or a large bar like
-Spotify's, at the top or the bottom. **Settings → Appearance → Layout** has
+Spotify's, at the top or the bottom, with a visualiser behind its seek bar,
+along its edge or beside the cover, in any of twelve styles. **Settings → Appearance → Layout** has
 all of it, and **Reset layout** puts it back. See
 [docs/library.md](docs/library.md#the-art-column).
 

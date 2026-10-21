@@ -88,7 +88,8 @@ move when you drag their headers. The sidebar's sections fold, hide and
 change order. The now playing bar can be the slim strip or a large bar like
 Spotify's, at the top or the bottom, with a visualiser behind its seek bar,
 along its edge or beside the cover, in any of twelve styles. **Settings → Appearance → Layout** has
-all of it, and **Reset layout** puts it back. See
+all of it, and **Reset layout** puts it back. The sidebar is on unless you
+switch it off. See
 [docs/library.md](docs/library.md#the-art-column).
 
 <picture>
@@ -225,8 +226,11 @@ For now, build it from source on Arch or Omarchy.
 
 ## Quick start
 
-1. **Open Omamp.** The first time, it adds `~/Music` to the deck. Drop files or
-   folders on the window, or press `O` to add a folder.
+1. **Open Omamp.** The first time, a short setup walks you through where
+   Omamp starts, the player's look and visualiser, the library's layout and
+   your music. Each choice shows in the window as you pick it, and **Help →
+   Run setup again…** brings it back later. Omamp also adds `~/Music` to the
+   deck. Drop files or folders on the window, or press `O` to add a folder.
 2. **Open the library** with `Tab`, **View → Library**, or the **Library**
    button on the deck. Choose **Add folder…** to add your music folders. The
    scan runs in the background, with its progress and a Cancel button in the

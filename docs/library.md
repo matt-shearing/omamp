@@ -119,7 +119,8 @@ rows show bigger covers.
 
 ### The sidebar
 
-The sidebar sits on the right, as in Spotify's desktop app. Press `I`, click
+The sidebar sits on the right, as in Spotify's desktop app, and is on until
+you switch it off. Press `I`, click
 **Sidebar**, or use **View → Sidebar** to show or hide it, and drag its edge
 to change its width. It has these sections:
 
@@ -184,12 +185,53 @@ edge or beside the cover
   <img alt="The library with the large now playing bar at the bottom of the window" src="big-bar-bottom-light.png">
 </picture>
 
+### First-run setup
+
+The first time Omamp opens, a small panel at the bottom of the window walks
+through five steps. Each choice shows in the window behind it at once:
+
+1. **Start**: the player (the Winamp-style deck) or the library.
+2. **Look**: the player style (Omarchy, which follows your theme; Classic;
+   Silver) and the visualiser, each with a moving preview. New visualisers
+   appear here as they are added.
+3. **Layout**: three starting points for the library. **Classic** has the
+   tree, the column browser and the list, with the slim strip on top.
+   **Spotify-like** has covers in the list, the sidebar and a large bar at the
+   bottom. **Minimal** has the tree and the list. Switches below them turn
+   the covers, the sidebar, the large bar and its place on and off.
+4. **Your music**: add a music folder, and switch on Spotify (you sign in on
+   the Spotify page after Finish). It also says that internet radio, with
+   Nightride FM, is ready, and where to add a Navidrome server.
+5. **Done**: `Tab`, `Ctrl+K`, `?` and `F10`, and a reminder that the View
+   menu has everything you chose.
+
+`Enter` moves to the next step. `Esc` or **Skip setup** asks first, then puts
+everything back as it was when the setup opened. **Help → Run setup again…**
+or **Run setup again…** in the command palette opens it at any time.
+
+If you used Omamp before the setup existed, it doesn't open by itself. A
+small banner offers it once instead, and its ✕ hides it for good. Your
+settings stay as they are unless you run the setup and change them. The
+sidebar is switched on once for everyone, because it is now on by default;
+after that it stays as you leave it. The setup keeps its own state under
+`[setup]` in `~/.config/omamp/window.conf`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="setup-look-dark.png">
+  <img alt="The setup's Look step over the player: three player styles and five moving visualiser previews" src="setup-look-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="setup-layout-dark.png">
+  <img alt="The setup's Layout step over the library, with the Spotify-like preset chosen: the sidebar on the right and the large bar at the bottom" src="setup-layout-light.png">
+</picture>
+
 ### Layout settings
 
 **Settings → Appearance → Layout** collects all of these: the Art column and
 the row height, the sidebar, what it follows, its sections and the online
 look-ups, and the bar's size and place. **Reset layout** puts the columns,
-the sidebar and the bar back as they start. Everything is kept in
+the sidebar and the bar back as they start, with the sidebar on. Everything is kept in
 `~/.config/omamp/window.conf`, under `[layout]` and `[window]`.
 
 It stays quick with big libraries. With 200,000 tracks, the library opens

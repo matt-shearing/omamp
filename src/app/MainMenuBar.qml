@@ -519,6 +519,7 @@ MenuBar {
         title: qsTr("&Help")
         Entry { text: qsTr("Keyboard shortcuts"); command: "shortcuts"; keys: "?" }
         Entry { text: qsTr("Command palette…"); command: "palette"; keys: "Ctrl+K" }
+        Entry { objectName: "menuRunSetup"; text: qsTr("Run setup again…"); command: "setup" }
         Line {}
         Entry { text: qsTr("Omamp on GitHub"); command: "open-website" }
         Entry { text: qsTr("Importing from MediaMonkey (guide)"); command: "open-mediamonkey-guide" }

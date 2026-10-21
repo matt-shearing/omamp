@@ -17,6 +17,7 @@
 #include "artprovider.h"
 #include "cli.h"
 #include "devhooks.h"
+#include "firstrun.h"
 #include "handoffengine.h"
 #include "librarycontroller.h"
 #include "mpris.h"
@@ -158,6 +159,9 @@ int main(int argc, char *argv[]) {
     QObject::connect(&library, &LibraryController::revisionChanged, &nowPlaying, &NowPlaying::refreshSoon);
     const QString windowConf =
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/omamp/window.conf";
+    // Before anything reads window.conf: a new install gets the setup, an
+    // older one the sidebar switched on once (firstrun.h).
+    FirstRun firstRun(windowConf);
     Appearance appearance(windowConf, &theme);
     qmlRegisterType<Visualiser>("Omamp", 1, 0, "Visualiser");
 
@@ -173,6 +177,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("library", &library);
     engine.rootContext()->setContextProperty("nowPlayingArt", &nowPlaying);
     engine.rootContext()->setContextProperty("appearance", &appearance);
+    engine.rootContext()->setContextProperty("firstRun", &firstRun);
     engine.rootContext()->setContextProperty("spotify", &spotify);
     engine.rootContext()->setContextProperty("radio", &radio);
     engine.rootContext()->setContextProperty("startMode", startMode);

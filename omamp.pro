@@ -43,6 +43,7 @@ HEADERS += \
     src/app/radiocontroller.h \
     src/app/windowplacement.h \
     src/app/layoutprefs.h \
+    src/app/firstrun.h \
     src/app/aboutcontroller.h
 
 SOURCES += \
@@ -81,6 +82,7 @@ SOURCES += \
     src/app/radiocontroller.cpp \
     src/app/windowplacement.cpp \
     src/app/layoutprefs.cpp \
+    src/app/firstrun.cpp \
     src/app/aboutcontroller.cpp
 
 RESOURCES += src/app/resources.qrc

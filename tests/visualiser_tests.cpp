@@ -6,10 +6,13 @@
 // analyser: silence, a sine, white noise and a decoded FLAC made by ffmpeg.
 //
 // OMAMP_VIS_BENCH=1 also measures each style's CPU on a 1,600 x 60 strip,
-// playing and idle, and prints a table. OMAMP_VIS_SHOTS=<folder> saves a
-// picture of each style on that strip.
+// playing and idle, and behind the whole large bar in the library window,
+// and prints tables. OMAMP_VIS_SHOTS=<folder> saves a picture of each style
+// on that strip.
 #include <QAudioBuffer>
 #include <QAudioFormat>
+#include <QDir>
+#include <QFile>
 #include <QImage>
 #include <QPainter>
 #include <QProcess>
@@ -151,6 +154,56 @@ void nightColours(Visualiser *vis) {
     vis->setMid(QColor("#5ec4ff"));
     vis->setHigh(QColor("#ff6ac1"));
     vis->setPeak(QColor("#e8e8ff"));
+}
+
+
+// WCAG's relative luminance and contrast ratio.
+double luminance(QColor c) {
+    auto channel = [](double v) { return v <= 0.03928 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * channel(c.redF()) + 0.7152 * channel(c.greenF()) + 0.0722 * channel(c.blueF());
+}
+double contrast(QColor a, QColor b) {
+    double x = luminance(a), y = luminance(b);
+    if (x < y)
+        std::swap(x, y);
+    return (x + 0.05) / (y + 0.05);
+}
+
+// Night Ride, and a light theme like OneQode Light Glass, as colors.toml.
+const char *kNightRide = R"(mode = "dark"
+accent = "#ff0080"
+selection = "#282d3c"
+muted = "#6a7080"
+background = "#191c2a"
+dark_background = "#12141f"
+darker_background = "#0c0e16"
+lighter_background = "#282d3c"
+foreground = "#e6ebf5"
+light_foreground = "#a0a8b8"
+bright_foreground = "#f4f6fb"
+green = "#50ffb4"
+cyan = "#00c8ff"
+)";
+const char *kLightGlass = R"(mode = "light"
+accent = "#00b4c8"
+selection = "#d8e0e8"
+muted = "#8090a0"
+background = "#fafcff"
+dark_background = "#f0f4f8"
+darker_background = "#e8f0f5"
+lighter_background = "#ffffff"
+foreground = "#232d37"
+light_foreground = "#5a6570"
+bright_foreground = "#14181c"
+green = "#2aa198"
+cyan = "#00b4c8"
+)";
+
+void writeTheme(const QString &dir, const char *colours) {
+    QDir().mkpath(dir + "/theme/theme");
+    QFile f(dir + "/theme/theme/colors.toml");
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(colours);
 }
 
 } // namespace
@@ -537,6 +590,287 @@ private slots:
         QCOMPARE(appearance->idleVisualiser(), QString("hide"));
         QTRY_COMPARE(QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value("appearance/barVisualiser").toString(),
                      QString("edge"));
+    }
+
+    // Behind the whole bar: the fade mask is clear at the ends and at the
+    // quiet edge, full in the middle, dimmed under the quiet areas, and
+    // flips with the edge; every style draws at the bar's sizes from every
+    // sound with the fade, at the top and the bottom, without a warning.
+    void fullBarFadeAndEveryStyle() {
+        QQuickWindow window;
+        window.resize(1600, 140);
+        auto *vis = new Visualiser(window.contentItem());
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        vis->setSize(QSizeF(1598, 110));
+        vis->setStyle("synthwave");
+        QCOMPARE(vis->fadeAt(800, 60), 1.0); // no fade until asked
+        vis->setFade(true);
+        vis->setCentre(840);
+        const QRectF words(110, 20, 220, 60);
+        vis->setQuietAreas({QVariant(words)});
+        // The ends fade to nothing; the middle is the style's strength.
+        QVERIFY(vis->fadeAt(0, 80) < 0.02);
+        QVERIFY(vis->fadeAt(1597, 80) < 0.02);
+        const qreal strength = Visualiser::fadeStrength("synthwave");
+        QVERIFY(vis->fadeAt(800, 90) > strength * 0.9);
+        // The quiet edge (top, under the library) is fainter than the far
+        // one, except around the centrepiece.
+        QVERIFY(vis->fadeAt(1250, 2) < vis->fadeAt(1250, 90) * 0.4);
+        QVERIFY(vis->fadeAt(840, 20) > strength * 0.8);
+        // Under the words it is dimmed, and soft round them.
+        QVERIFY(vis->fadeAt(220, 50) < vis->fadeAt(220, 105) * 0.5 || vis->fadeAt(220, 50) < 0.15);
+        QVERIFY(vis->fadeAt(400, 90) > vis->fadeAt(300, 50));
+        // Flipped for a bar at the top.
+        vis->setQuietEdge("bottom");
+        QVERIFY(vis->fadeAt(1250, 108) < vis->fadeAt(1250, 15) * 0.4);
+        // A dense style is held back further than a scene.
+        QVERIFY(Visualiser::fadeStrength("bars") < Visualiser::fadeStrength("synthwave"));
+        // Not behind anything (the big view): full strength in the middle.
+        vis->setBehind(false);
+        QVERIFY(vis->fadeAt(840, 90) > 0.97);
+        vis->setBehind(true);
+
+        g_warnings.clear();
+        g_previous = qInstallMessageHandler(catchWarnings);
+        const QList<QSizeF> sizes = {{1598, 110}, {1198, 110}, {1598, 128}, {798, 100}};
+        for (const QString &style : Appearance::visualisers()) {
+            vis->setStyle(style);
+            for (const QString &edge : {QStringLiteral("top"), QStringLiteral("bottom")}) {
+                vis->setQuietEdge(edge);
+                for (const QSizeF &size : sizes) {
+                    vis->setSize(size);
+                    vis->setCentre(size.width() * 0.52);
+                    for (const Sound &sound : std::as_const(m_sounds)) {
+                        Spectrum spectrum;
+                        int at = 0;
+                        const int before = vis->frames();
+                        for (int i = 0; i < 12; ++i) {
+                            feed(spectrum, vis, sound, at);
+                            if (vis->animated())
+                                vis->advance(1.0 / 30);
+                        }
+                        const QImage shot = window.grabWindow().copy(QRect(QPoint(0, 0), size.toSize()));
+                        const QString what =
+                            QString("%1 %2 %3x%4 %5").arg(style, edge).arg(size.width()).arg(size.height()).arg(sound.name);
+                        QVERIFY2(vis->frames() > before, qPrintable(what + ": nothing painted"));
+                        if (sound.name != "silence")
+                            QVERIFY2(colours(shot) > 2, qPrintable(what + ": one colour"));
+                        // The ends stay clear: the window's own colour.
+                        QVERIFY2(shot.pixel(0, int(size.height() / 2)) == window.color().rgb(), qPrintable(what));
+                    }
+                }
+            }
+        }
+        qInstallMessageHandler(g_previous);
+        QVERIFY2(g_warnings.isEmpty(), qPrintable(g_warnings.join("\n")));
+    }
+
+    // Settings: the new place persists, and so does the big view's fade.
+    void fullBarSettingsPersist() {
+        QTemporaryDir dir;
+        const QString conf = dir.filePath("window.conf");
+        {
+            Appearance a(conf);
+            QVERIFY(Appearance::barPlacements().contains("full"));
+            QVERIFY(!a.bigVisualiserFade());
+            a.setBarVisualiser("full");
+            a.setBigVisualiserFade(true);
+            QCOMPARE(a.barPlacementName("full"), QString("Behind the whole bar"));
+        }
+        Appearance again(conf);
+        QCOMPARE(again.barVisualiser(), QString("full"));
+        QVERIFY(again.bigVisualiserFade());
+    }
+
+    // In the library window, light and dark, with the bar at the bottom and
+    // the top: the visualiser covers the whole bar, centres on the play
+    // button, and the words over it keep their contrast with every style
+    // while it plays the fixture.
+    void fullBarInTheWindow_data() {
+        QTest::addColumn<QString>("theme");
+        QTest::addColumn<QString>("position");
+        QTest::newRow("dark bottom") << "dark" << "bottom";
+        QTest::newRow("dark top") << "dark" << "top";
+        QTest::newRow("light bottom") << "light" << "bottom";
+        QTest::newRow("light top") << "light" << "top";
+    }
+    void fullBarInTheWindow() {
+        QFETCH(QString, theme);
+        QFETCH(QString, position);
+        QTemporaryDir dir;
+        writeTheme(dir.path(), theme == "light" ? kLightGlass : kNightRide);
+        {
+            QSettings conf(dir.filePath("window.conf"), QSettings::IniFormat);
+            conf.setValue("window/advanced", true);
+            conf.setValue("window/libraryHintDone", true);
+            conf.setValue("window/advancedWidth", 1600);
+            conf.setValue("window/advancedHeight", 900);
+            conf.setValue("layout/barSize", "large");
+            conf.setValue("layout/barPosition", position);
+            conf.setValue("appearance/barVisualiser", "behind");
+        }
+        Window w(dir);
+        QVERIFY(w.load());
+        Appearance *appearance = w.appearance();
+        QTRY_VERIFY(w.find("bigBar"));
+        const qreal plain = w.find("bigBar")->height();
+        QVERIFY(!w.shown("barVisualiserFull"));
+        appearance->setBarVisualiser("full");
+        QTRY_VERIFY(w.shown("barVisualiserFull"));
+        QVERIFY(!w.shown("barVisualiserBehind"));
+        auto *bar = w.find("bigBar");
+        QTRY_COMPARE(bar->height(), plain + 16);
+        auto *vis = qobject_cast<Visualiser *>(w.find("barVisualiserFull"));
+        QVERIFY(vis && vis->fade());
+        // Edge to edge, under everything.
+        QVERIFY(vis->x() <= 1 && vis->width() >= bar->width() - 2);
+        QVERIFY(vis->y() <= 1 && vis->height() >= bar->height() - 2);
+        // Fading towards the library.
+        QCOMPARE(vis->quietEdge(), position == "bottom" ? QString("top") : QString("bottom"));
+        // Centred on the play button.
+        QQuickItem *play = w.find("bigBarPlay");
+        const qreal playCentre = play->mapToItem(vis, QPointF(play->width() / 2, 0)).x();
+        QTRY_VERIFY(qAbs(vis->centre() - playCentre) < 1);
+        QCOMPARE(vis->quietAreas().size(), 4);
+        // The title's area is one of the quiet ones.
+        QQuickItem *title = w.find("bigBarTitle");
+        const QPointF titleAt = title->mapToItem(vis, QPointF(title->width() / 2, title->height() / 2));
+        QVERIFY(vis->fadeAt(titleAt.x(), titleAt.y()) < 0.3);
+        // A click on the bar's empty space doesn't change the style.
+        const QString before = appearance->barStyle();
+        QTest::mouseClick(w.window, Qt::LeftButton, {}, vis->mapToScene(QPointF(vis->width() * 0.62, vis->height() - 4)).toPoint());
+        QCOMPARE(appearance->barStyle(), before);
+
+        // Playing (as far as the visualiser knows): the fixture, every style.
+        vis->setIdle(false);
+        const QVariantMap skin = appearance->deck();
+        const QColor text(skin.value("text").toString()), label(skin.value("label").toString());
+        QStringList hide = {"bigBarTitle"};
+        double worst = 100;
+        QString worstStyle;
+        for (const QString &style : Appearance::visualisers()) {
+            appearance->setBarVisualiserStyle(style);
+            QCOMPARE(vis->style(), style);
+            Spectrum spectrum;
+            int at = 0;
+            for (int i = 0; i < 30; ++i) {
+                feed(spectrum, vis, m_sounds.last(), at);
+                if (vis->animated())
+                    vis->advance(1.0 / 30);
+            }
+            // The background under the title, with the title hidden, against
+            // the title's colour.
+            title->setOpacity(0);
+            const QImage shot = w.window->grabWindow();
+            title->setOpacity(1);
+            const QRect area = title->mapRectToScene(QRectF(0, 0, qMin(title->width(), 200.0), title->height()))
+                                   .toAlignedRect()
+                                   .intersected(shot.rect());
+            QVERIFY(!area.isEmpty());
+            int poor = 0, total = 0;
+            for (int y = area.top(); y <= area.bottom(); ++y)
+                for (int x = area.left(); x <= area.right(); ++x) {
+                    const double c = contrast(text, QColor(shot.pixel(x, y)));
+                    worst = qMin(worst, c);
+                    if (worst == c)
+                        worstStyle = style;
+                    poor += c < 4.5;
+                    ++total;
+                }
+            QVERIFY2(poor <= total / 50, qPrintable(QString("%1: %2 of %3 pixels under the title below 4.5:1")
+                                                         .arg(style).arg(poor).arg(total)));
+        }
+        qInfo("worst contrast under the title: %.2f:1 (%s)", worst, qPrintable(worstStyle));
+        QVERIFY2(worst >= 3.0, qPrintable(QString("%1: the title falls to %2:1").arg(worstStyle).arg(worst)));
+        Q_UNUSED(label);
+        // Idle and asked to hide: gone; off: gone.
+        vis->setIdle(true);
+        appearance->setIdleVisualiser("hide");
+        QTRY_VERIFY(!w.shown("barVisualiserFull"));
+        appearance->setIdleVisualiser("calm");
+        appearance->setBarVisualiser("off");
+        QTRY_VERIFY(!w.shown("barVisualiserFull"));
+        QTRY_COMPARE(bar->height(), plain);
+        // Settings has the place.
+        QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("settings-appearance")));
+        QTRY_VERIFY(w.window->findChild<QObject *>("barVisualiserSettings"));
+        QObject *full = w.find("barVisualiser_full");
+        QVERIFY(full);
+        QMetaObject::invokeMethod(full, "clicked");
+        QCOMPARE(appearance->barVisualiser(), QString("full"));
+        QTRY_COMPARE(QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value("appearance/barVisualiser").toString(),
+                     QString("full"));
+        // And the palette.
+        QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("bar-visualiser:behind")));
+        QCOMPARE(appearance->barVisualiser(), QString("behind"));
+        QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("bar-visualiser:full")));
+        QCOMPARE(appearance->barVisualiser(), QString("full"));
+    }
+
+    // OMAMP_VIS_BENCH=1: each style behind the whole bar in the library
+    // window, playing the fixture: the whole process's CPU, which includes
+    // the software renderer redrawing the bar's words and buttons over it.
+    void cpuBehindTheWholeBar() {
+        if (qEnvironmentVariableIntValue("OMAMP_VIS_BENCH") <= 0)
+            QSKIP("OMAMP_VIS_BENCH=1 measures the CPU behind the whole bar");
+        QTemporaryDir dir;
+        writeTheme(dir.path(), kNightRide);
+        {
+            QSettings conf(dir.filePath("window.conf"), QSettings::IniFormat);
+            conf.setValue("window/advanced", true);
+            conf.setValue("window/libraryHintDone", true);
+            conf.setValue("window/advancedWidth", 1600);
+            conf.setValue("window/advancedHeight", 900);
+            conf.setValue("layout/barSize", "large");
+            conf.setValue("appearance/barVisualiser", "full");
+        }
+        Window w(dir);
+        QVERIFY(w.load());
+        QTRY_VERIFY(w.shown("barVisualiserFull"));
+        auto *vis = qobject_cast<Visualiser *>(w.find("barVisualiserFull"));
+        Appearance *appearance = w.appearance();
+        const int seconds = qMax(1, qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") > 0
+                                        ? qEnvironmentVariableIntValue("OMAMP_VIS_BENCH_SECONDS") : 3);
+        QTextStream out(stdout);
+        out << QString("\nbehind the whole bar, %1 x %2\nstyle        playing: CPU %  fps  paint ms   idle: CPU %  fps\n")
+                   .arg(vis->width()).arg(vis->height());
+        for (const QString &style : Appearance::visualisers()) {
+            appearance->setBarVisualiserStyle(style);
+            QString line = style.leftJustified(12);
+            for (bool idle : {false, true}) {
+                vis->setIdle(idle);
+                Spectrum spectrum;
+                int at = 0;
+                QTimer data;
+                data.setInterval(33);
+                QObject::connect(&data, &QTimer::timeout, vis, [&] {
+                    if (idle) {
+                        spectrum.decay();
+                        vis->setLevels(spectrum.levels());
+                    } else {
+                        feed(spectrum, vis, m_sounds.last(), at);
+                    }
+                });
+                data.start();
+                QTest::qWait(400);
+                vis->resetPaintStats();
+                const int frames = vis->frames();
+                const double cpu = processCpuSeconds();
+                QElapsedTimer wall;
+                wall.start();
+                QTest::qWait(seconds * 1000);
+                const double elapsed = wall.nsecsElapsed() / 1e9;
+                const double used = processCpuSeconds() - cpu;
+                const int painted = vis->frames() - frames;
+                data.stop();
+                line += QString("  %1 %2").arg(100 * used / elapsed, 8, 'f', 1).arg(painted / elapsed, 5, 'f', 0);
+                if (!idle)
+                    line += QString(" %1  ").arg(painted ? vis->paintNanos() / 1e6 / painted : 0.0, 8, 'f', 2);
+            }
+            out << line << "\n";
+            out.flush();
+        }
     }
 
     // OMAMP_VIS_BENCH=1: each style's CPU on a 1,600 x 60 strip, playing

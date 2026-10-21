@@ -381,8 +381,15 @@ Rectangle {
         id: visualiser
         objectName: "bigVisualiser"
         skin: view.skin
-        anchors { left: parent.left; right: parent.right; bottom: footer.top; leftMargin: view.margin; rightMargin: view.margin }
-        height: view.height > 420 ? Math.max(48, Math.min(170, Math.round(view.height * 0.16))) : 0
+        // Edge to edge when asked (Settings > Appearance), fading out to the
+        // sides and the top, and a little taller to make up for the fade.
+        readonly property bool bleed: appearance.bigVisualiserFade
+        anchors { left: parent.left; right: parent.right; bottom: footer.top
+                  leftMargin: bleed ? 0 : view.margin; rightMargin: bleed ? 0 : view.margin }
+        height: view.height > 420 ? Math.round(Math.max(48, Math.min(170, view.height * 0.16)) * (bleed ? 1.3 : 1)) : 0
+        fade: bleed
+        behind: false
+        quietEdge: "top"
         visible: height > 0
         spacing: view.width > 900 ? 4 : 2
     }

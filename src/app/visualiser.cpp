@@ -27,6 +27,7 @@ void Visualiser::setStyle(const QString &style) {
     m_style = style;
     m_heat.fill(0);
     invalidateCaches();
+    m_maskValid = false;
     emit styleChanged();
     updateClock();
     update();
@@ -76,6 +77,56 @@ void Visualiser::setReduceMotion(bool on) {
     update();
 }
 
+void Visualiser::setFade(bool on) {
+    if (on == m_fade)
+        return;
+    m_fade = on;
+    m_maskValid = false;
+    emit fadeChanged();
+    update();
+}
+
+void Visualiser::setQuietEdge(const QString &edge) {
+    const QString e = edge == "bottom" ? QStringLiteral("bottom") : QStringLiteral("top");
+    if (e == m_quietEdge)
+        return;
+    m_quietEdge = e;
+    m_maskValid = false;
+    emit fadeChanged();
+    update();
+}
+
+void Visualiser::setQuietAreas(const QVariantList &areas) {
+    if (areas == m_quietAreas)
+        return;
+    m_quietAreas = areas;
+    m_maskValid = false;
+    emit fadeChanged();
+    update();
+}
+
+void Visualiser::setBehind(bool on) {
+    if (on == m_behind)
+        return;
+    m_behind = on;
+    m_maskValid = false;
+    emit fadeChanged();
+    update();
+}
+
+void Visualiser::setCentre(qreal x) {
+    if (qFuzzyCompare(x + 2, m_centre + 2))
+        return;
+    m_centre = x;
+    // The synthwave backdrop and the fade are drawn around the centre.
+    invalidateCaches();
+    m_maskValid = false;
+    emit fadeChanged();
+    update();
+}
+
+qreal Visualiser::centreX() const { return m_centre >= 0 ? qBound(0.0, m_centre, width()) : width() / 2; }
+
 void Visualiser::itemChange(ItemChange change, const ItemChangeData &value) {
     QQuickPaintedItem::itemChange(change, value);
     if (change == ItemVisibleHasChanged || change == ItemSceneChange)
@@ -86,6 +137,7 @@ void Visualiser::geometryChange(const QRectF &newGeometry, const QRectF &oldGeom
     QQuickPaintedItem::geometryChange(newGeometry, oldGeometry);
     if (newGeometry.size() != oldGeometry.size()) {
         invalidateCaches();
+        m_maskValid = false;
         updateClock();
     }
 }
@@ -292,18 +344,47 @@ void Visualiser::paint(QPainter *painter) {
         paintFire(painter);
     else
         paintBars(painter, m_style != "bars");
+    if (m_fade) {
+        // Everything drawn so far keeps only as much of itself as the mask
+        // allows: one pass over the item, with the mask made ahead.
+        ensureMask();
+        painter->save();
+        painter->resetTransform();
+        painter->setOpacity(1);
+        painter->setCompositionMode(QPainter::CompositionMode_DestinationIn);
+        painter->drawImage(QRectF(0, 0, width(), height()), m_mask);
+        painter->restore();
+    }
     m_paintNs += timer.nsecsElapsed();
     ++m_frames;
     emit framesChanged();
 }
 
+// A list's value at a position 0..1, straight between its entries.
+static qreal sampleAt(const QList<qreal> &values, qreal pos) {
+    const int n = values.size();
+    if (n == 0)
+        return 0;
+    const qreal f = qBound(0.0, pos, 1.0) * (n - 1);
+    const int i = int(f);
+    return i + 1 >= n ? values[n - 1] : values[i] + (values[i + 1] - values[i]) * (f - i);
+}
+
+// How many columns the bar styles draw. One per band, except behind other
+// things (fade), where a band per column would make slabs as wide as a
+// button: there the bands are spread over columns about 12 pixels wide.
+static int barColumns(int bands, qreal width, bool fade) {
+    return fade ? qBound(bands, int(width / 12), 160) : bands;
+}
+
 // The gradient spans the whole height, so a quiet bar stays the low colour
 // and only loud ones reach the top colour, as in Winamp.
 void Visualiser::paintBars(QPainter *p, bool caps) {
-    const int n = m_levels.size();
-    if (n == 0)
+    const int bands = m_levels.size();
+    if (bands == 0)
         return;
     const qreal w = width(), h = height();
+    const int n = barColumns(bands, w, m_fade);
     const qreal gap = m_spacing > 0 ? m_spacing : (w / n > 8 ? 2 : 1);
     const qreal bar = (w - gap * (n - 1)) / n;
     QLinearGradient g(0, h, 0, 0);
@@ -313,11 +394,13 @@ void Visualiser::paintBars(QPainter *p, bool caps) {
     p->setPen(Qt::NoPen);
     for (int i = 0; i < n; ++i) {
         const qreal x = i * (bar + gap);
-        const qreal level = qBound(0.0, m_levels[i], 1.0);
+        const qreal pos = n > 1 ? qreal(i) / (n - 1) : 0;
+        const qreal level = qBound(0.0, n == bands ? m_levels[i] : sampleAt(m_levels, pos), 1.0);
         const qreal top = h - qMax(1.0, level * h);
         p->fillRect(QRectF(x, top, bar, h - top), g);
-        if (caps && i < m_peaks.size() && m_peaks[i] > 0.02) {
-            const qreal y = h - m_peaks[i] * h - 2;
+        const qreal peak = n == bands ? m_peaks.value(i) : sampleAt(m_peaks, pos);
+        if (caps && peak > 0.02) {
+            const qreal y = h - peak * h - 2;
             p->fillRect(QRectF(x, qMax(0.0, y), bar, 2), m_peak);
         }
     }
@@ -326,10 +409,11 @@ void Visualiser::paintBars(QPainter *p, bool caps) {
 // The bars grow up and down from the middle line; the lower half is the
 // reflection, fainter.
 void Visualiser::paintMirror(QPainter *p) {
-    const int n = m_levels.size();
-    if (n == 0)
+    const int bands = m_levels.size();
+    if (bands == 0)
         return;
     const qreal w = width(), h = height(), mid = h * 0.58;
+    const int n = barColumns(bands, w / 2, m_fade);
     const qreal gap = m_spacing > 0 ? m_spacing : (w / (2 * n) > 8 ? 2 : 1);
     // Low frequencies in the middle, spreading out to both sides.
     const int columns = n * 2;
@@ -346,7 +430,8 @@ void Visualiser::paintMirror(QPainter *p) {
     p->setPen(Qt::NoPen);
     for (int c = 0; c < columns; ++c) {
         const int band = c < n ? n - 1 - c : c - n;
-        const qreal level = qBound(0.0, m_levels[band], 1.0);
+        const qreal level =
+            qBound(0.0, n == bands ? m_levels[band] : sampleAt(m_levels, n > 1 ? qreal(band) / (n - 1) : 0), 1.0);
         const qreal x = c * (bar + gap);
         const qreal above = qMax(1.0, level * mid);
         const qreal below = qMax(1.0, level * (h - mid));
@@ -460,6 +545,11 @@ void Visualiser::paintFire(QPainter *p) {
 // colours (gradients, the LED grid, the sun, the glow) is drawn once into
 // m_* members here and reused every frame.
 
+static qreal smoothStep(qreal from, qreal to, qreal x) {
+    const qreal t = qBound(0.0, (x - from) / (to - from), 1.0);
+    return t * t * (3 - 2 * t);
+}
+
 static QColor withAlpha(QColor c, qreal a) {
     c.setAlphaF(qBound(0.0, c.alphaF() * a, 1.0));
     return c;
@@ -468,6 +558,9 @@ static QColor withAlpha(QColor c, qreal a) {
 // Where the synthwave horizon sits: low in a thin strip, which has room for
 // the sun and the city but not much floor.
 static qreal synthHorizon(qreal h) { return h < 32 ? h * 0.8 : h * 0.58; }
+
+// Tall enough for the whole scene.
+static bool synthGrand(qreal h) { return h >= 72; }
 
 // A soft round glow in one colour, as a small image stretched when drawn:
 // cheaper than a radial gradient over the whole strip every frame.
@@ -521,45 +614,8 @@ void Visualiser::ensureCaches() {
         haze.setColorAt(0.6, withAlpha(m_mid, 0.10));
         haze.setColorAt(1, withAlpha(m_mid, 0));
         m_skyBrush = QBrush(haze);
-        if (m_style == "synthwave") {
-            // The sun: the upper half of a disc, from the top colour to the
-            // middle one, with the gaps that widen towards the horizon.
-            const int r = qMax(4, int(qMin(synthHorizon(h) * 0.92, w * 0.07)));
-            m_sun = QImage(2 * r, r, QImage::Format_ARGB32_Premultiplied);
-            m_sun.fill(Qt::transparent);
-            QPainter p(&m_sun);
-            p.setRenderHint(QPainter::Antialiasing);
-            QLinearGradient g(0, 0, 0, r);
-            g.setColorAt(0, m_high);
-            g.setColorAt(1, colourAt(0.5));
-            p.setPen(Qt::NoPen);
-            p.setBrush(g);
-            p.drawEllipse(QRectF(0, 0, 2 * r, 2 * r));
-            p.setCompositionMode(QPainter::CompositionMode_Clear);
-            const int stripes = r >= 24 ? 4 : r >= 12 ? 3 : 2;
-            for (int i = 0; i < stripes; ++i) {
-                const qreal y = r * (0.5 + 0.5 * (i + 0.5) / stripes);
-                const qreal thick = qMax(1.0, r * 0.035 * (i + 1));
-                p.fillRect(QRectF(0, y - thick / 2, 2 * r, thick), Qt::transparent);
-            }
-            // The haze and the lines from the vanishing point never move:
-            // drawn once here.
-            const qreal cx = w / 2, horizon = synthHorizon(h);
-            m_backdrop = QImage(qMax(1, int(std::ceil(w))), qMax(1, int(std::ceil(h))), QImage::Format_ARGB32_Premultiplied);
-            m_backdrop.fill(Qt::transparent);
-            QPainter b(&m_backdrop);
-            b.fillRect(QRectF(0, 0, w, h), m_skyBrush);
-            b.setRenderHint(QPainter::Antialiasing);
-            // A strip too thin for a floor gets none.
-            const int spokes = h - horizon < 6 ? -1 : qBound(6, int(w / 60), 40);
-            for (int i = -spokes; i <= spokes; ++i) {
-                const qreal top = cx + i * (w * 0.5 / spokes) * 0.18, bottom = cx + i * (w * 0.5 / spokes) * 1.6;
-                QPen pen(withAlpha(m_mid, 0.40), 1);
-                pen.setCosmetic(true);
-                b.setPen(pen);
-                b.drawLine(QPointF(top, horizon), QPointF(bottom, h));
-            }
-        }
+        if (m_style == "synthwave")
+            makeSynthwaveBackdrop();
     } else if (m_style == "led") {
         const int rows = ledRows(), cols = ledColumns();
         const qreal pitch = h / rows, cell = pitch - qMax(1.0, pitch * 0.22);
@@ -576,32 +632,114 @@ void Visualiser::ensureCaches() {
     }
 }
 
-// Rounded bars with the bass in the middle, spreading out to both sides,
-// standing on a line with their reflection fading below it.
+// ---------------------------------------------------------------------------
+// The fade for drawing behind other things (`fade`).
+
+qreal Visualiser::fadeStrength(const QString &style) {
+    // The scenes and the sparse styles carry the bar; the dense ones would
+    // crowd the words, so they are held back.
+    if (style == "synthwave" || style == "stars")
+        return 0.95;
+    if (style == "pulse")
+        return 0.9;
+    if (style == "line" || style == "scope")
+        return 0.8;
+    if (style == "ribbon")
+        return 0.7;
+    if (style == "skyline" || style == "fire")
+        return 0.6;
+    return 0.45; // bars, peaks, mirror, led
+}
+
+
+// The mask: full strength in the middle, falling smoothly to nothing over
+// the last sixth of the width at each side; strongest towards the edge away
+// from quietEdge and faint at quietEdge; and dimmed under each quiet area,
+// with a soft border so no box shows. Made per pixel once per size, style
+// and set of areas, and reused every frame.
+void Visualiser::ensureMask() {
+    const int w = qMax(1, int(std::ceil(width()))), h = qMax(1, int(std::ceil(height())));
+    if (m_maskValid && m_mask.width() == w && m_mask.height() == h)
+        return;
+    m_maskValid = true;
+    if (m_mask.width() != w || m_mask.height() != h)
+        m_mask = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
+    const qreal strength = m_behind ? fadeStrength(m_style) : 1.0;
+    const qreal side = qBound(24.0, w * 0.17, 300.0);
+    QVector<qreal> across(w), down(h);
+    for (int x = 0; x < w; ++x)
+        across[x] = smoothStep(0, side, qMin(x + 0.5, w - x - 0.5));
+    const bool quietTop = m_quietEdge != "bottom";
+    for (int y = 0; y < h; ++y) {
+        // s runs from 0 at the quiet edge to 1 at the other.
+        const qreal s = quietTop ? (y + 0.5) / h : 1 - (y + 0.5) / h;
+        down[y] = (0.2 + 0.8 * smoothStep(0, 0.55, s)) * (0.75 + 0.25 * smoothStep(0, 0.12, 1 - s));
+    }
+    // Around the centrepiece the picture stays at full strength, however
+    // near the quiet edge: an oval about the centre, soft at its rim.
+    const qreal cx = centreX(), cy = h * 0.55, rx = qMax(40.0, w * 0.11), ry = h * 0.75;
+    QVector<QRectF> areas;
+    for (const QVariant &v : std::as_const(m_quietAreas)) {
+        const QRectF r = v.toRectF();
+        if (r.isValid())
+            areas.append(r);
+    }
+    const qreal feather = qMax(10.0, h * 0.22);
+    for (int y = 0; y < h; ++y) {
+        auto *line = reinterpret_cast<QRgb *>(m_mask.scanLine(y));
+        const qreal py = y + 0.5;
+        for (int x = 0; x < w; ++x) {
+            const qreal px = x + 0.5;
+            const qreal ex = (px - cx) / rx, ey = (py - cy) / ry;
+            const qreal spot = 1 - smoothStep(0.55, 1.0, std::sqrt(ex * ex + ey * ey));
+            qreal a = strength * across[x] * qMax(down[y], spot);
+            for (const QRectF &r : std::as_const(areas)) {
+                const qreal dx = qMax(0.0, qMax(r.left() - px, px - r.right()));
+                const qreal dy = qMax(0.0, qMax(r.top() - py, py - r.bottom()));
+                const qreal d = dx == 0 || dy == 0 ? dx + dy : std::sqrt(dx * dx + dy * dy);
+                a *= 1 - 0.72 * (1 - smoothStep(0, feather, d));
+            }
+            line[x] = qRgba(0, 0, 0, qBound(0, int(a * 255 + 0.5), 255));
+        }
+    }
+}
+
+qreal Visualiser::fadeAt(qreal x, qreal y) {
+    if (!m_fade)
+        return 1;
+    ensureMask();
+    const int px = qBound(0, int(x), m_mask.width() - 1), py = qBound(0, int(y), m_mask.height() - 1);
+    return qAlpha(m_mask.pixel(px, py)) / 255.0;
+}
+
+// Rounded bars with the bass in the middle (or at `centre`), spreading out
+// to both sides, standing on a line with their reflection fading below it.
 void Visualiser::paintSkyline(QPainter *p) {
-    const qreal w = width(), h = height();
+    const qreal w = width(), h = height(), cx = centreX();
     const qreal base = h * (h > 40 ? 0.72 : 0.78);
     int cols = qBound(12, int(w / 11), 128);
     cols -= cols % 2;
     const qreal colW = w / cols, gap = qMax(1.0, colW * 0.28), bar = colW - gap;
     const qreal radius = qMin(bar / 2, 3.5);
-    const int half = cols / 2;
+    // The spectrum runs from the centre out to the further edge, so the
+    // two sides match where they overlap.
+    const qreal span = qMax(colW, qMax(cx, w - cx) - colW / 2);
+    auto tallAt = [&](int c) {
+        const qreal d = qMax(0.0, qAbs(c * colW + colW / 2 - cx) - colW / 2) / span;
+        return qMax(1.5, levelAt(d) * base * 0.96);
+    };
     p->setPen(Qt::NoPen);
     p->setBrush(m_skyBrush);
     // The bars' rounded feet stand below the floor, clipped off.
     p->save();
     p->setClipRect(QRectF(0, 0, w, base));
     for (int c = 0; c < cols; ++c) {
-        const int d = c < half ? half - 1 - c : c - half;
-        const qreal tall = qMax(1.5, levelAt(half > 1 ? qreal(d) / (half - 1) : 0) * base * 0.96);
+        const qreal tall = tallAt(c);
         p->drawRoundedRect(QRectF(c * colW + gap / 2, base - tall, bar, tall + radius), radius, radius);
     }
     p->restore();
-    for (int c = 0; c < cols; ++c) {
-        const int d = c < half ? half - 1 - c : c - half;
-        const qreal tall = qMax(1.5, levelAt(half > 1 ? qreal(d) / (half - 1) : 0) * base * 0.96);
-        p->fillRect(QRectF(c * colW + gap / 2, base + 1, bar, qMin(tall * 0.55, h - base - 1)), m_reflectBrush);
-    }
+    for (int c = 0; c < cols; ++c)
+        p->fillRect(QRectF(c * colW + gap / 2, base + 1, bar, qMin(tallAt(c) * 0.55, h - base - 1)), m_reflectBrush);
     // The floor.
     p->fillRect(QRectF(0, base, w, 1), withAlpha(m_mid, 0.3));
 }
@@ -724,7 +862,7 @@ void Visualiser::paintLine(QPainter *p) {
 // A soft glow in the middle that swells with the bass and brightens on a
 // kick, with a line along the bottom that widens with the whole spectrum.
 void Visualiser::paintPulse(QPainter *p) {
-    const qreal w = width(), h = height(), cx = w / 2;
+    const qreal w = width(), h = height(), cx = centreX();
     const qreal strength = qBound(0.0, 0.14 + 0.6 * m_bass + 0.25 * m_kick, 0.9);
     const qreal spread = qMin(1.0, 0.25 + 0.55 * m_energy + 0.12 * m_kick);
     p->setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -748,7 +886,9 @@ void Visualiser::paintLed(QPainter *p) {
     const qreal pitch = h / rows, cell = pitch - qMax(1.0, pitch * 0.22);
     const qreal x0 = (w - cols * pitch) / 2;
     p->setRenderHint(QPainter::Antialiasing, false);
-    p->drawImage(QPointF(0, 0), m_ledGrid);
+    // Behind other things the unlit cells would only be clutter.
+    if (!m_fade)
+        p->drawImage(QPointF(0, 0), m_ledGrid);
     for (int c = 0; c < cols; ++c) {
         const qreal level = levelAt(cols > 1 ? qreal(c) / (cols - 1) : 0);
         const int lit = qMin(rows, int(level * rows + 0.35));
@@ -763,23 +903,148 @@ void Visualiser::paintLed(QPainter *p) {
     }
 }
 
+// The synthwave scene's still parts, drawn once per size, centre and
+// palette: the sun, the sky, and the lines running to the vanishing point.
+// A strip at least 72 pixels high (the large bar's full width, the big
+// view) gets the whole scene: stars, two ranges of hills either side of
+// the sun, and lines that fade into the distance.
+void Visualiser::makeSynthwaveBackdrop() {
+    const qreal w = width(), h = height(), cx = centreX(), horizon = synthHorizon(h);
+    const bool grand = synthGrand(h);
+    // The sun: the upper half of a disc, from the top colour to the middle
+    // one, with the gaps that widen towards the horizon.
+    const int r = qMax(4, int(grand ? qMin(horizon * 0.86, w * 0.09) : qMin(horizon * 0.92, w * 0.07)));
+    m_sun = QImage(2 * r, r, QImage::Format_ARGB32_Premultiplied);
+    m_sun.fill(Qt::transparent);
+    {
+        QPainter p(&m_sun);
+        p.setRenderHint(QPainter::Antialiasing);
+        QLinearGradient g(0, 0, 0, r);
+        g.setColorAt(0, grand ? blend(m_high, m_peak, 0.25) : m_high);
+        g.setColorAt(grand ? 0.45 : 0.0, m_high);
+        g.setColorAt(1, colourAt(0.5));
+        p.setPen(Qt::NoPen);
+        p.setBrush(g);
+        p.drawEllipse(QRectF(0, 0, 2 * r, 2 * r));
+        p.setCompositionMode(QPainter::CompositionMode_Clear);
+        const int stripes = r >= 40 ? 5 : r >= 24 ? 4 : r >= 12 ? 3 : 2;
+        for (int i = 0; i < stripes; ++i) {
+            const qreal y = r * (0.45 + 0.55 * (i + 0.5) / stripes);
+            const qreal thick = qMax(1.0, r * (grand ? 0.028 : 0.035) * (i + 1));
+            p.fillRect(QRectF(0, y - thick / 2, 2 * r, thick), Qt::transparent);
+        }
+    }
+    m_backdrop = QImage(qMax(1, int(std::ceil(w))), qMax(1, int(std::ceil(h))), QImage::Format_ARGB32_Premultiplied);
+    m_backdrop.fill(Qt::transparent);
+    QPainter b(&m_backdrop);
+    if (grand) {
+        QLinearGradient towers(0, horizon - horizon * 0.55, 0, horizon);
+        towers.setColorAt(0, withAlpha(m_mid, 0.8));
+        towers.setColorAt(1, withAlpha(m_mid, 0.3));
+        m_cityBrush = QBrush(towers);
+        // A sky that warms towards the horizon, and a faintly lit floor.
+        const qreal at = horizon / h;
+        QLinearGradient sky(0, 0, 0, h);
+        sky.setColorAt(0, withAlpha(m_high, 0));
+        sky.setColorAt(at * 0.5, withAlpha(m_high, 0.04));
+        sky.setColorAt(at, withAlpha(m_high, 0.30));
+        sky.setColorAt(qMin(1.0, at + 0.004), withAlpha(m_mid, 0.16));
+        sky.setColorAt(1, withAlpha(m_mid, 0.04));
+        b.fillRect(QRectF(0, 0, w, h), sky);
+        // Stars, fewer and fainter towards the horizon. Their own generator,
+        // so the sky is the same every time it is drawn.
+        quint32 seed = 7;
+        auto rnd = [&seed] {
+            seed = seed * 1664525u + 1013904223u;
+            return ((seed >> 8) & 0xffffff) / qreal(0x1000000);
+        };
+        const int stars = qBound(20, int(w * horizon / 1500), 400);
+        for (int i = 0; i < stars; ++i) {
+            const qreal x = rnd() * w, y = horizon * 0.92 * std::pow(rnd(), 1.5), big = rnd();
+            const qreal size = big > 0.94 ? 2 : 1;
+            b.fillRect(QRectF(x, y, size, size), withAlpha(m_peak, (0.25 + 0.55 * rnd()) * (1 - y / horizon)));
+        }
+        // Two ranges of hills, low near the sun and taller towards the
+        // sides; the nearer range is lower and brighter.
+        b.setRenderHint(QPainter::Antialiasing);
+        for (int range = 0; range < 2; ++range) {
+            const qreal step = w / (range == 0 ? 46 : 70);
+            const qreal top = horizon * (range == 0 ? 0.62 : 0.34);
+            QPolygonF ridge;
+            ridge << QPointF(-step, horizon);
+            for (qreal x = -step; x <= w + step; x += step * (0.6 + 0.8 * rnd())) {
+                const qreal away = smoothStep(r * 1.05, r * 2.6, qAbs(x - cx));
+                const qreal tall = top * (0.25 + 0.75 * rnd()) * (0.15 + 0.85 * away);
+                ridge << QPointF(x, horizon - tall);
+            }
+            ridge << QPointF(w + step, horizon);
+            QLinearGradient fill(0, horizon - top, 0, horizon);
+            fill.setColorAt(0, withAlpha(m_mid, range == 0 ? 0.16 : 0.22));
+            fill.setColorAt(1, withAlpha(m_mid, range == 0 ? 0.04 : 0.06));
+            b.setBrush(fill);
+            QPen edge(withAlpha(m_mid, range == 0 ? 0.35 : 0.55), 1);
+            edge.setCosmetic(true);
+            b.setPen(edge);
+            b.drawPolygon(ridge);
+        }
+    } else {
+        b.fillRect(QRectF(0, 0, w, h), m_skyBrush);
+        b.setRenderHint(QPainter::Antialiasing);
+    }
+    // The lines from the vanishing point, which never move; in the whole
+    // scene they fade into the distance. A strip too thin for a floor gets
+    // none.
+    const qreal reach = qMax(cx, w - cx);
+    const int spokes = h - horizon < 6 ? -1 : qBound(6, int(2 * reach / 60), 48);
+    const qreal spacing = reach / spokes;
+    QPen pen(withAlpha(m_mid, 0.40), grand ? 1.2 : 1);
+    if (grand) {
+        QLinearGradient fade(0, horizon, 0, h);
+        fade.setColorAt(0, withAlpha(m_mid, 0.04));
+        fade.setColorAt(1, withAlpha(m_mid, 0.6));
+        pen.setBrush(fade);
+    } else {
+        pen.setCosmetic(true);
+    }
+    b.setPen(pen);
+    for (int i = -spokes; i <= spokes; ++i)
+        b.drawLine(QPointF(cx + i * spacing * 0.18, horizon), QPointF(cx + i * spacing * 1.6, h));
+}
+
 // Night-drive synthwave: a striped sun sitting on the horizon, a city of
 // spectrum bars either side of it, and a grid rolling towards the viewer,
-// faster with the music.
+// faster with the music. In the whole scene the sun's light shimmers on
+// the floor below it, too.
 void Visualiser::paintSynthwave(QPainter *p) {
-    const qreal w = width(), h = height(), cx = w / 2, horizon = synthHorizon(h);
+    const qreal w = width(), h = height(), cx = centreX(), horizon = synthHorizon(h);
+    const bool grand = synthGrand(h);
     p->drawImage(QPointF(0, 0), m_backdrop);
     const qreal r = m_sun.width() / 2.0;
-    // The city: bars rising from the horizon, the bass nearest the sun.
-    const qreal pitch = qBound(4.0, w / 140, 9.0), bar = pitch * 0.72;
-    const int each = qMax(0, int((cx - r * 1.25) / pitch));
+    // The city: bars rising from the horizon, the bass nearest the sun, the
+    // same height at the same distance on both sides.
+    // In the whole scene the towers stand further apart, a little lower,
+    // and fade towards their feet.
+    const qreal pitch = grand ? qBound(8.0, w / 110, 15.0) : qBound(4.0, w / 140, 9.0);
+    const qreal bar = pitch * (grand ? 0.56 : 0.72);
+    const int left = qMax(0, int((cx - r * 1.25) / pitch)), right = qMax(0, int((w - cx - r * 1.25) / pitch));
+    const int each = qMax(left, right);
     const QColor city = withAlpha(m_mid, 0.55);
+    const qreal reach = horizon * (grand ? 0.55 : 0.85);
     for (int i = 0; i < each; ++i) {
         const qreal level = levelAt(each > 1 ? qreal(i) / (each - 1) : 0);
-        const qreal tall = qMax(1.0, level * horizon * 0.85);
+        const qreal tall = qMax(1.0, level * reach);
         const qreal off = r * 1.25 + i * pitch;
-        p->fillRect(QRectF(cx + off, horizon - tall, bar, tall), city);
-        p->fillRect(QRectF(cx - off - bar, horizon - tall, bar, tall), city);
+        if (grand) {
+            if (i < right)
+                p->fillRect(QRectF(cx + off, horizon - tall, bar, tall), m_cityBrush);
+            if (i < left)
+                p->fillRect(QRectF(cx - off - bar, horizon - tall, bar, tall), m_cityBrush);
+            continue;
+        }
+        if (i < right)
+            p->fillRect(QRectF(cx + off, horizon - tall, bar, tall), city);
+        if (i < left)
+            p->fillRect(QRectF(cx - off - bar, horizon - tall, bar, tall), city);
     }
     // The sun and its glow, which follows the bass.
     p->setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -787,14 +1052,28 @@ void Visualiser::paintSynthwave(QPainter *p) {
     p->drawImage(QRectF(cx - r * 2.6, horizon - r * 1.4, r * 5.2, r * 2.0), m_glowCore);
     p->setOpacity(1);
     p->drawImage(QPointF(cx - r, horizon - r), m_sun);
-    // The ground: rows rolling forward over the lines from the vanishing point.
     const qreal ground = h - horizon;
-    const int rowsN = ground < 6 ? 0 : 6;
+    if (grand) {
+        // The sun's reflection: short bands under it that narrow and fade
+        // towards the viewer and waver with the music.
+        const QColor shine = blend(m_high, m_peak, 0.15);
+        for (int k = 0; k < 6; ++k) {
+            const qreal z = (k + 0.5) / 6;
+            const qreal y = horizon + 2 + ground * 0.8 * z * z + 1.2 * std::sin(m_time * 2.1 + k * 1.3);
+            const qreal half = r * (0.95 - 0.55 * z) * (1 + 0.08 * std::sin(m_time * 3.3 + k * 2.1) + 0.2 * m_bass);
+            p->fillRect(QRectF(cx - half, y, 2 * half, z > 0.5 ? 2 : 1),
+                        withAlpha(shine, (0.55 - 0.4 * z) * (0.6 + 0.6 * m_bass)));
+        }
+    }
+    // The ground: rows rolling forward over the lines from the vanishing point.
+    const int rowsN = ground < 6 ? 0 : grand ? 8 : 6;
     for (int i = 0; i < rowsN; ++i) {
         const qreal z = std::fmod(i + m_scroll * rowsN, qreal(rowsN)) / rowsN;
         const qreal y = horizon + ground * z * z;
-        p->fillRect(QRectF(0, y, w, 1), withAlpha(m_high, 0.15 + 0.6 * z));
+        p->fillRect(QRectF(0, y, w, grand && z > 0.55 ? 2 : 1), withAlpha(m_high, 0.15 + 0.6 * z));
     }
+    if (grand)
+        p->fillRect(QRectF(0, horizon - 1, w, 3), withAlpha(m_high, 0.3));
     p->fillRect(QRectF(0, horizon, w, 1), withAlpha(m_high, 0.85));
 }
 
@@ -811,10 +1090,16 @@ void Visualiser::paintStars(QPainter *p) {
         const qreal glow = qBound(0.0, 0.4 + 0.25 * (0.5 + 0.5 * std::sin(m_time * 2 + s.twinkle)) + 0.75 * band
                                            + 0.35 * m_kick,
                                   1.0);
-        const QColor colour = s.size > 2 ? m_high : band > 0.55 ? m_peak : m_mid;
-        const qreal trail = push * s.speed * 0.05;
+        // Behind other things (fade), the stars keep to the theme's colours
+        // (the peak colour is near black in a light theme) and the bigger
+        // ones get a soft halo, so they read as stars rather than specks;
+        // trails stay short.
+        const QColor colour = s.size > 2 ? m_high : band > 0.55 && !m_fade ? m_peak : m_mid;
+        const qreal trail = push * s.speed * (m_fade ? 0.025 : 0.05);
         if (trail > 2)
             p->fillRect(QRectF(s.x - trail, s.y, trail, qMax(1.0, s.size * 0.6)), withAlpha(colour, glow * 0.25));
+        if (m_fade && s.size > 1)
+            p->fillRect(QRectF(s.x - 1, s.y - 1, s.size + 2, s.size + 2), withAlpha(colour, glow * 0.3));
         p->fillRect(QRectF(s.x, s.y, s.size, s.size), withAlpha(colour, glow));
     }
 }

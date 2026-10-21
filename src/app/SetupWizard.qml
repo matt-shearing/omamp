@@ -47,10 +47,16 @@ Popup {
     // Nothing dimmed: the window behind is the preview.
     Overlay.modal: Rectangle { color: "transparent" }
     width: Math.min(660, parent ? parent.width - 24 : 660)
-    height: Math.min(392, parent ? parent.height - 24 : 392)
+    // As tall as the step needs, scrolling when the window is shorter.
+    readonly property real pageHeight: pages.children[step] ? pages.children[step].implicitHeight : 200
+    height: Math.min(titleRow.implicitHeight + pageHeight + footerRow.implicitHeight
+                     + (confirmingSkip ? skipBar.implicitHeight : 0) + 28,
+                     parent ? parent.height - 24 : 392)
     x: parent ? Math.round((parent.width - width) / 2) : 0
     readonly property bool dockTop: stepId === "layout" && layoutPrefs.barPosition === "bottom"
-    y: !parent ? 0 : dockTop ? 12 : parent.height - height - 12
+    // Below the menu bar when at the top: the overlay covers the whole window.
+    readonly property real menuHeight: window && window.menuBar && window.menuBar.visible ? window.menuBar.height : 0
+    y: !parent ? 0 : dockTop ? menuHeight + 8 : parent.height - height - 12
     Material.roundedScale: theme.radius
     enter: null
     exit: null
@@ -331,6 +337,7 @@ Popup {
 
             // Title and where we are.
             RowLayout {
+                id: titleRow
                 Layout.fillWidth: true
                 Layout.leftMargin: 18; Layout.rightMargin: 18; Layout.topMargin: 14
                 spacing: 10
@@ -361,6 +368,7 @@ Popup {
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                 StackLayout {
+                    id: pages
                     width: scroller.availableWidth
                     currentIndex: wiz.step
 
@@ -412,24 +420,32 @@ Popup {
                         objectName: "setupStepLook"
                         spacing: 6
                         Sub { Layout.leftMargin: 18; text: qsTr("Player style") }
-                        Flow {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            Layout.leftMargin: 18; Layout.rightMargin: 18
-                            spacing: 4
+                            Layout.leftMargin: 10; Layout.rightMargin: 18
+                            spacing: 0
                             Repeater {
                                 model: appearance.deckStyles
-                                RadioButton {
+                                RowLayout {
                                     required property string modelData
-                                    objectName: "setupDeckStyle_" + modelData
-                                    font.pixelSize: 13
-                                    text: {
-                                        const about = { omarchy: qsTr("follows your theme"), classic: qsTr("Winamp's grey and green"),
-                                                        silver: qsTr("2000s silver") }[modelData]
-                                        return about ? qsTr("%1 (%2)").arg(appearance.deckStyleName(modelData)).arg(about)
-                                                     : appearance.deckStyleName(modelData)
+                                    spacing: 2
+                                    RadioButton {
+                                        objectName: "setupDeckStyle_" + modelData
+                                        implicitHeight: 34
+                                        topPadding: 0; bottomPadding: 0
+                                        font.pixelSize: 13
+                                        text: appearance.deckStyleName(modelData)
+                                        checked: appearance.deckStyle === modelData
+                                        onClicked: appearance.deckStyle = modelData
                                     }
-                                    checked: appearance.deckStyle === modelData
-                                    onClicked: appearance.deckStyle = modelData
+                                    Text {
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                        font.pixelSize: 12
+                                        color: theme.c.light_foreground
+                                        text: ({ omarchy: qsTr("follows your Omarchy theme"), classic: qsTr("Winamp's grey and green"),
+                                                 silver: qsTr("brushed silver from the 2000s") })[modelData] || ""
+                                    }
                                 }
                             }
                         }
@@ -590,7 +606,7 @@ Popup {
                         Note {
                             Layout.leftMargin: 18; Layout.rightMargin: 18
                             textFormat: Text.StyledText
-                            text: qsTr("<b>A Navidrome or Subsonic server?</b> Add it whenever you like from Library → Add Navidrome / Subsonic server.")
+                            text: qsTr("<b>A Navidrome or Subsonic server?</b> Add it later from the Library menu.")
                         }
                     }
 
@@ -644,6 +660,7 @@ Popup {
 
             // Skipping asks first.
             Rectangle {
+                id: skipBar
                 objectName: "setupSkipConfirm"
                 visible: wiz.confirmingSkip
                 Layout.fillWidth: true
@@ -668,6 +685,7 @@ Popup {
 
             // Skip, the step dots, Back and Next.
             RowLayout {
+                id: footerRow
                 Layout.fillWidth: true
                 Layout.leftMargin: 10; Layout.rightMargin: 12; Layout.bottomMargin: 4
                 spacing: 6
@@ -687,7 +705,7 @@ Popup {
                         Rectangle {
                             required property int index
                             width: 7; height: 7; radius: 3.5
-                            color: index === wiz.step ? theme.accent : theme.c.lighter_background
+                            color: index === wiz.step ? theme.accent : Qt.alpha(theme.c.foreground, 0.25)
                         }
                     }
                 }

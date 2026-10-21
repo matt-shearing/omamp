@@ -242,7 +242,7 @@ private slots:
             QVERIFY(w.layout()->artColumn());
             QVERIFY(!w.prefsObject()->property("browserVisible").toBool());
             QTRY_VERIFY(w.find("setupPreset_spotify")->property("chosen").toBool());
-            QTRY_VERIFY(w.wizard()->property("y").toReal() < 20);
+            QTRY_VERIFY(w.wizard()->property("y").toReal() < 80);
             QTRY_VERIFY(w.find("bigBar"));
             // The quick switches.
             QVERIFY(w.click("setupBarBottom"));

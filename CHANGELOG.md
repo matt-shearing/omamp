@@ -2,6 +2,18 @@
 
 What changed in each release of Omamp, newest first.
 
+## 0.3.2
+
+- **A short first-run setup.** On a new install, Omamp walks you through where
+  it starts, the player's look and visualiser, the library's layout and your
+  music, with each choice showing in the window as you pick it. **Help → Run
+  setup again…** brings it back. Existing installs get a small banner instead.
+- **The sidebar is on by default.**
+- **Visualisers in the large now playing bar**, behind the seek bar, along its
+  edge or beside the cover, and seven new styles made for a wide, short strip:
+  Skyline, Waveform ribbon, Spectrum line, Pulse, LED matrix, Synthwave and
+  Star field. A new **Reduce motion** setting calms them all.
+
 ## 0.3.1
 
 Fixes and layout options from the first days of real use.

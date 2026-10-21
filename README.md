@@ -7,7 +7,7 @@
 **A Winamp-style music player and MediaMonkey-style library manager for Omarchy and Hyprland.**
 
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
-[![Version 0.3.1](https://img.shields.io/badge/version-0.3.1-informational)](CHANGELOG.md)
+[![Version 0.3.2](https://img.shields.io/badge/version-0.3.2-informational)](CHANGELOG.md)
 [![Arch Linux and Omarchy](https://img.shields.io/badge/Arch%20Linux%20%C2%B7%20Omarchy-1793D1?logo=archlinux&logoColor=white)](https://github.com/basecamp/omarchy)
 [![Qt 6 and C++](https://img.shields.io/badge/Qt%206%20%C2%B7%20C%2B%2B-41CD52?logo=qt&logoColor=white)](https://www.qt.io)
 
@@ -302,7 +302,7 @@ plan and the detailed progress log are in [docs/plan/](docs/plan/).
 
 ## Status and honest limits
 
-Omamp is young (0.3.1) and changes quickly. It has a large automated test
+Omamp is young (0.3.2) and changes quickly. It has a large automated test
 suite (`bin/test`), but the tests run against made-up music, pretend web
 services and simulated network shares. Some things have not been tried for
 real yet:

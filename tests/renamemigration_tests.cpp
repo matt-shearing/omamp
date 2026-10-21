@@ -192,6 +192,12 @@ private slots:
         QVERIFY(QFile::exists(r.data + "/omamp/library.db"));
         QVERIFY(!QFileInfo::exists(r.data + "/thrum"));
         QVERIFY(RenameMigration::pending(r));
+
+        // How main() tells: a process with a file open in Omamp's data folder.
+        QCOMPARE(RenameMigration::processUsing(r.data + "/omamp"), qint64(0));
+        QFile open(r.data + "/omamp/library.db");
+        QVERIFY(open.open(QIODevice::ReadOnly));
+        QCOMPARE(RenameMigration::processUsing(r.data + "/omamp"), QCoreApplication::applicationPid());
     }
 };
 

@@ -12,6 +12,8 @@
 #include <QTextStream>
 #include <QUuid>
 
+#include <unistd.h>
+
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -130,12 +132,21 @@ bool pending(const Roots &roots) {
     return false;
 }
 
-qint64 runningOmampPid() {
+qint64 processUsing(const QString &dir) {
+    const QFileInfo info(dir);
+    const QString prefix = (info.exists() ? info.canonicalFilePath() : info.absoluteFilePath()) + '/';
     const QStringList pids = QDir("/proc").entryList({"[0-9]*"}, QDir::Dirs);
     for (const QString &pid : pids) {
-        QFile comm("/proc/" + pid + "/comm");
-        if (comm.open(QIODevice::ReadOnly) && comm.readAll().trimmed() == oldName)
-            return pid.toLongLong();
+        // Every fd, valid or not, read with readlink(): the links in
+        // /proc/<pid>/fd are not ordinary symlinks to QFileInfo.
+        const QStringList fds =
+            QDir("/proc/" + pid + "/fd").entryList(QDir::AllEntries | QDir::System | QDir::NoDotAndDotDot);
+        for (const QString &fd : fds) {
+            char buffer[4096];
+            const ssize_t n = ::readlink(QFile::encodeName("/proc/" + pid + "/fd/" + fd).constData(), buffer, sizeof buffer);
+            if (n > 0 && QFile::decodeName(QByteArray(buffer, int(n))).startsWith(prefix))
+                return pid.toLongLong();
+        }
     }
     return 0;
 }
@@ -196,13 +207,15 @@ bool runAtStartup(QString *message) {
     const Roots roots = defaultRoots();
     if (!pending(roots))
         return true;
-    const qint64 pid = runningOmampPid();
+    // Omamp keeps library.db open while it runs, so a process with a file
+    // open in its data folder means Omamp (or a script using it) is running.
+    const qint64 pid = processUsing(roots.data + '/' + oldName);
     const Result r = migrate(roots, pid > 0);
     for (const QString &line : r.log)
         std::fprintf(stderr, "thrum: %s\n", qPrintable(line));
     if (r.blocked) {
         if (message)
-            *message = r.blockedWhy + QString(" (Omamp's process id is %1.)").arg(pid);
+            *message = r.blockedWhy + QString(" (Process %1 has its library open.)").arg(pid);
         return false;
     }
     return true;

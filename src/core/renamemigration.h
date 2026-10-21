@@ -47,12 +47,13 @@ struct Result {
 };
 
 // Moves what needs moving under roots. omampRunning, when set, says whether
-// an Omamp process still has the files open; if it does and there is
+// an Omamp process still has its files open (see processUsing); if it does and there is
 // anything to move, nothing is moved and blocked is set.
 Result migrate(const Roots &roots, bool omampRunning = false);
 
-// The process id of a running Omamp ("omamp" in /proc/<pid>/comm), or 0.
-qint64 runningOmampPid();
+// The id of a process (this user's, as /proc shows them) with a file open
+// under dir, or 0.
+qint64 processUsing(const QString &dir);
 
 // Whether anything under roots still needs moving.
 bool pending(const Roots &roots);

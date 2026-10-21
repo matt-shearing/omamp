@@ -644,6 +644,9 @@ void Visualiser::ensureCaches() {
 // ---------------------------------------------------------------------------
 // The fade for drawing behind other things (`fade`).
 
+// How much a quiet area (under the words) takes off the picture.
+static constexpr qreal kQuietDim = 0.35;
+
 qreal Visualiser::fadeStrength(const QString &style) {
     // The scenes and the sparse styles carry the bar; the dense ones would
     // crowd the words, so they are held back.
@@ -651,8 +654,12 @@ qreal Visualiser::fadeStrength(const QString &style) {
         return 0.95;
     if (style == "pulse")
         return 0.9;
-    if (style == "line" || style == "scope")
+    if (style == "line")
         return 0.8;
+    // The oscilloscope's bright line crosses the title wherever the wave
+    // goes, so it is held back a little more.
+    if (style == "scope")
+        return 0.7;
     if (style == "ribbon")
         return 0.7;
     if (style == "skyline" || style == "fire")
@@ -661,10 +668,12 @@ qreal Visualiser::fadeStrength(const QString &style) {
 }
 
 
-// The mask: full strength in the middle, falling smoothly to nothing over
-// the last sixth of the width at each side; strongest towards the edge away
-// from quietEdge and faint at quietEdge; and dimmed under each quiet area,
-// with a soft border so no box shows. Made per pixel once per size, style
+// The mask: full strength across the width, falling smoothly to nothing
+// over the last few dozen pixels at each side; strongest towards the edge
+// away from quietEdge and softer at quietEdge; and lightly dimmed under each
+// quiet area, with a soft border so no box shows. The words over it carry a
+// halo of their own (BigBar.qml), so the dimming only has to take the edge
+// off the brightest parts. Made per pixel once per size, style
 // and set of areas, and reused every frame.
 void Visualiser::ensureMask() {
     const int w = qMax(1, int(std::ceil(width()))), h = qMax(1, int(std::ceil(height())));
@@ -674,7 +683,9 @@ void Visualiser::ensureMask() {
     if (m_mask.width() != w || m_mask.height() != h)
         m_mask = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
     const qreal strength = m_behind ? fadeStrength(m_style) : 1.0;
-    const qreal side = qBound(24.0, w * 0.17, 300.0);
+    // Matt found a sixth of the width at each end too dark over the cover
+    // and the title: the fade now only softens the very ends.
+    const qreal side = qBound(20.0, w * 0.045, 72.0);
     QVector<qreal> across(w), down(h);
     for (int x = 0; x < w; ++x)
         across[x] = smoothStep(0, side, qMin(x + 0.5, w - x - 0.5));
@@ -682,7 +693,7 @@ void Visualiser::ensureMask() {
     for (int y = 0; y < h; ++y) {
         // s runs from 0 at the quiet edge to 1 at the other.
         const qreal s = quietTop ? (y + 0.5) / h : 1 - (y + 0.5) / h;
-        down[y] = (0.2 + 0.8 * smoothStep(0, 0.55, s)) * (0.75 + 0.25 * smoothStep(0, 0.12, 1 - s));
+        down[y] = (0.45 + 0.55 * smoothStep(0, 0.5, s)) * (0.8 + 0.2 * smoothStep(0, 0.12, 1 - s));
     }
     // The last few pixels before the quiet edge go to nothing, centrepiece
     // included, so no line shows where the item ends.
@@ -699,7 +710,7 @@ void Visualiser::ensureMask() {
         if (r.isValid())
             areas.append(r);
     }
-    const qreal feather = qMax(10.0, h * 0.22);
+    const qreal feather = qMax(8.0, h * 0.12);
     for (int y = 0; y < h; ++y) {
         auto *line = reinterpret_cast<QRgb *>(m_mask.scanLine(y));
         const qreal py = y + 0.5;
@@ -712,7 +723,7 @@ void Visualiser::ensureMask() {
                 const qreal dx = qMax(0.0, qMax(r.left() - px, px - r.right()));
                 const qreal dy = qMax(0.0, qMax(r.top() - py, py - r.bottom()));
                 const qreal d = dx == 0 || dy == 0 ? dx + dy : std::sqrt(dx * dx + dy * dy);
-                a *= 1 - 0.72 * (1 - smoothStep(0, feather, d));
+                a *= 1 - kQuietDim * (1 - smoothStep(0, feather, d));
             }
             line[x] = qRgba(0, 0, 0, qBound(0, int(a * 255 + 0.5), 255));
         }
@@ -1048,7 +1059,9 @@ void Visualiser::paintSynthwave(QPainter *p) {
     const int left = qMax(0, int((cx - r * 1.25) / pitch)), right = qMax(0, int((w - cx - r * 1.25) / pitch));
     const int each = qMax(left, right);
     const QColor city = withAlpha(m_mid, 0.55);
-    const qreal reach = horizon * (grand ? 0.55 : 0.85);
+    // The towers can reach most of the way up the sky, so loud music
+    // stands tall behind the whole bar (spectrum.h keeps the average lower).
+    const qreal reach = horizon * (grand ? 0.9 : 0.85);
     for (int i = 0; i < each; ++i) {
         const qreal level = levelAt(each > 1 ? qreal(i) / (each - 1) : 0);
         const qreal tall = qMax(1.0, level * reach);

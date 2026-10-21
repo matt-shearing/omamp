@@ -59,6 +59,24 @@ ColumnLayout {
         }
     }
 
+    Sub { text: qsTr("Sensitivity") }
+    Note { text: qsTr("How readily every visualiser fills. Omamp follows the music's loudness, so loud and quiet recordings both move; High makes the bars taller, Low calmer.") }
+    Flow {
+        Layout.fillWidth: true
+        spacing: 4
+        Repeater {
+            model: appearance.sensitivities
+            RadioButton {
+                required property string modelData
+                objectName: "visualiserSensitivity_" + modelData
+                text: appearance.sensitivityName(modelData)
+                font.pixelSize: 13
+                checked: appearance.visualiserSensitivity === modelData
+                onClicked: appearance.visualiserSensitivity = modelData
+            }
+        }
+    }
+
     Sub { text: qsTr("While nothing plays through Omamp") }
     Note { text: qsTr("Paused, stopped, or playing on Spotify, whose sound never reaches Omamp's analyser.") }
     RadioButton {

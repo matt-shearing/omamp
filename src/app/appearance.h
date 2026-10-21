@@ -43,6 +43,10 @@ class Appearance : public QObject {
     Q_PROPERTY(QString idleVisualiser READ idleVisualiser WRITE setIdleVisualiser NOTIFY changed)
     // Slower, calmer visualisers with no beat flashes.
     Q_PROPERTY(bool reduceMotion READ reduceMotion WRITE setReduceMotion NOTIFY changed)
+    // How readily the visualisers fill on loud and quiet music: "low",
+    // "normal" or "high" (the analyser's auto-range, spectrum.h).
+    Q_PROPERTY(QString visualiserSensitivity READ visualiserSensitivity WRITE setVisualiserSensitivity NOTIFY changed)
+    Q_PROPERTY(QStringList sensitivities READ sensitivities CONSTANT)
     Q_PROPERTY(QStringList barPlacements READ barPlacements CONSTANT)
     Q_PROPERTY(QVariantMap deck READ deck NOTIFY paletteChanged)
     Q_PROPERTY(QVariantMap plain READ plain NOTIFY paletteChanged)
@@ -81,6 +85,10 @@ public:
     void setIdleVisualiser(const QString &kind);
     bool reduceMotion() const { return m_reduceMotion; }
     void setReduceMotion(bool on);
+    QString visualiserSensitivity() const { return m_sensitivity; }
+    void setVisualiserSensitivity(const QString &sensitivity);
+    static QStringList sensitivities() { return {"low", "normal", "high"}; }
+    Q_INVOKABLE QString sensitivityName(const QString &sensitivity) const;
     // "off", "behind", "full" (behind the whole bar, fading out to its
     // edges), "edge", "beside".
     static QStringList barPlacements() { return {"off", "behind", "full", "edge", "beside"}; }
@@ -147,6 +155,7 @@ private:
     QString m_barVisualiserStyle;
     QString m_idleVisualiser = "calm";
     bool m_reduceMotion = false;
+    QString m_sensitivity = "normal";
     QVariantMap m_deck, m_plain;
     LayoutPrefs *m_layout = nullptr;
     QPointer<QObject> m_pickerAnchor;

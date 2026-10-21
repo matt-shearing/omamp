@@ -19,6 +19,8 @@
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlContext>
+#include <QQmlProperty>
+#include <numeric>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QRandomGenerator>
@@ -199,6 +201,111 @@ green = "#2aa198"
 cyan = "#00b4c8"
 )";
 
+// The background under a line of text, with the text hidden, against the
+// text's colour: the worst contrast and how many pixels fall below `aim`.
+struct Under {
+    double worst = 100;
+    int poor = 0, total = 0;
+};
+Under contrastUnder(QQuickWindow *window, QQuickItem *text, const QColor &colour, double aim) {
+    Under u;
+    const qreal was = text->opacity();
+    text->setOpacity(0);
+    const QImage shot = window->grabWindow();
+    text->setOpacity(was);
+    const qreal wide = qMin(text->width(), qMax(40.0, text->property("contentWidth").toReal()));
+    const QRect area = text->mapRectToScene(QRectF(0, 0, qMin(wide, 200.0), text->height())).toAlignedRect().intersected(shot.rect());
+    for (int y = area.top(); y <= area.bottom(); ++y)
+        for (int x = area.left(); x <= area.right(); ++x) {
+            const double c = contrast(colour, QColor(shot.pixel(x, y)));
+            u.worst = qMin(u.worst, c);
+            u.poor += c < aim;
+            ++u.total;
+        }
+    return u;
+}
+
+
+// Pink noise with a kick drum twice a second, made by ffmpeg as FLAC and
+// decoded by Omamp's Decoder, then scaled so its loudest sample sits at
+// `peakDb` dBFS: a loud modern master at -6, a very quiet recording at -30.
+Sound drumsAndNoise(const QString &dir, double peakDb, QString *error) {
+    const QString flac = dir + "/drums-noise.flac";
+    if (!QFile::exists(flac)) {
+        QProcess ff;
+        ff.start("ffmpeg", {"-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i",
+                            QString("anoisesrc=color=pink:amplitude=0.3:d=10:r=%1:seed=7").arg(kRate), "-f", "lavfi", "-i",
+                            QString("aevalsrc=0.9*exp(-mod(t\\,0.5)*18)*sin(2*PI*60*t):s=%1:d=10").arg(kRate),
+                            "-filter_complex", "[0][1]amix=inputs=2:normalize=0", "-ac", "2", "-c:a", "flac", flac});
+        if (!ff.waitForFinished(30000) || ff.exitCode() != 0) {
+            *error = "ffmpeg: " + QString::fromUtf8(ff.readAllStandardError());
+            return {};
+        }
+    }
+    Decoder decoder;
+    if (!decoder.open(flac, error))
+        return {};
+    Sound s{QString("drums at %1 dBFS").arg(peakDb), {}};
+    QList<float> chunk(4096 * 2);
+    for (;;) {
+        const int got = decoder.read(chunk.data(), 4096);
+        if (got <= 0)
+            break;
+        s.samples.append(chunk.mid(0, got * 2));
+    }
+    float loudest = 0;
+    for (float v : std::as_const(s.samples))
+        loudest = qMax(loudest, std::abs(v));
+    if (loudest <= 0) {
+        *error = "silent fixture";
+        return {};
+    }
+    const float scale = float(std::pow(10.0, peakDb / 20) / loudest);
+    for (float &v : s.samples)
+        v *= scale;
+    return s;
+}
+
+// How full the analyser runs on a sound: for each update after a settling
+// time, the tallest band and the average band, as the player feeds it.
+struct Fill {
+    QList<qreal> tallest, average, bass;
+    qreal percentile(QList<qreal> v, qreal p) const {
+        std::sort(v.begin(), v.end());
+        return v.isEmpty() ? 0 : v[qBound(0, int(p * (v.size() - 1)), int(v.size() - 1))];
+    }
+    qreal spread(const QList<qreal> &v) const {
+        qreal m = 0, q = 0;
+        for (qreal x : v)
+            m += x / v.size();
+        for (qreal x : v)
+            q += (x - m) * (x - m) / v.size();
+        return std::sqrt(q);
+    }
+};
+Fill measureFill(const Sound &sound, const QString &sensitivity) {
+    Spectrum spectrum;
+    spectrum.setSensitivity(sensitivity);
+    QAudioFormat format;
+    format.setSampleRate(kRate);
+    format.setChannelCount(2);
+    format.setSampleFormat(QAudioFormat::Float);
+    Fill fill;
+    for (int at = 0, step = 0; at + kChunk <= sound.frames(); at += kChunk, ++step) {
+        spectrum.feed(QAudioBuffer(QByteArray(reinterpret_cast<const char *>(sound.samples.constData() + at * 2),
+                                              kChunk * 2 * sizeof(float)),
+                                   format));
+        spectrum.decay();
+        if (step < 90) // three seconds to settle
+            continue;
+        const QList<qreal> l = spectrum.levels();
+        fill.tallest << *std::max_element(l.begin(), l.end());
+        fill.average << std::accumulate(l.begin(), l.end(), 0.0) / l.size();
+        fill.bass << l[1];
+    }
+    return fill;
+}
+
 void writeTheme(const QString &dir, const char *colours) {
     QDir().mkpath(dir + "/theme/theme");
     QFile f(dir + "/theme/theme/colors.toml");
@@ -353,6 +460,10 @@ private slots:
     void everyStyleRendersAtEverySize() {
         QQuickWindow window;
         window.resize(1600, 200);
+        // Dark, as the deck and the bar are: loud white noise now lights
+        // every star in the peak colour, white by default, which would
+        // vanish into a white window.
+        window.setColor(QColor("#101018"));
         auto *vis = new Visualiser(window.contentItem());
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
@@ -641,12 +752,19 @@ private slots:
         QVERIFY(vis->fadeAt(1597, 80) < 0.02);
         const qreal strength = Visualiser::fadeStrength("synthwave");
         QVERIFY(vis->fadeAt(800, 90) > strength * 0.9);
+        // Only the very ends fade (Matt found a sixth of the width too dark
+        // over the cover and the title): full strength 80 px in.
+        QVERIFY(vis->fadeAt(80, 90) > strength * 0.9);
+        QVERIFY(vis->fadeAt(1518, 90) > strength * 0.9);
+        QVERIFY(vis->fadeAt(30, 90) < strength * 0.9);
         // The quiet edge (top, under the library) is fainter than the far
         // one, except around the centrepiece.
         QVERIFY(vis->fadeAt(1250, 2) < vis->fadeAt(1250, 90) * 0.4);
         QVERIFY(vis->fadeAt(840, 20) > strength * 0.8);
-        // Under the words it is dimmed, and soft round them.
-        QVERIFY(vis->fadeAt(220, 50) < vis->fadeAt(220, 105) * 0.5 || vis->fadeAt(220, 50) < 0.15);
+        // Under the words it is dimmed a little, not blacked out, and soft
+        // round them (the words carry a halo of their own).
+        QVERIFY(vis->fadeAt(220, 50) < vis->fadeAt(600, 50) * 0.75);
+        QVERIFY(vis->fadeAt(220, 50) > vis->fadeAt(600, 50) * 0.5);
         QVERIFY(vis->fadeAt(400, 90) > vis->fadeAt(300, 50));
         // Flipped for a bar at the top.
         vis->setQuietEdge("bottom");
@@ -710,6 +828,98 @@ private slots:
         QVERIFY(again.bigVisualiserFade());
     }
 
+    // ---- Auto-ranging on real-sounding music ----------------------------
+
+    // The analyser fills the same way on a loud master and on a quiet
+    // recording: the tallest band reaches well up most of the time without
+    // pinning at the top, the average stays in the middle, the kicks move
+    // the bass, and the sensitivity makes it taller or calmer. Before the
+    // auto-range the quiet one barely lit two bands.
+    void autoRangeFillsLoudAndQuiet() {
+        QString error;
+        const Sound loud = drumsAndNoise(m_dir.path(), -6, &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        const Sound quiet = drumsAndNoise(m_dir.path(), -30, &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QVERIFY(loud.frames() > kRate * 8);
+        for (const Sound *sound : {&loud, &quiet}) {
+            const Fill f = measureFill(*sound, "normal");
+            QVERIFY(f.tallest.size() > 150);
+            const qreal median = f.percentile(f.tallest, 0.5), high = f.percentile(f.tallest, 0.9);
+            const qreal average = f.percentile(f.average, 0.5);
+            int pinned = 0;
+            for (qreal v : f.average)
+                pinned += v > 0.9;
+            qInfo("%s: tallest band median %.2f, 90th %.2f; average %.2f; bass spread %.2f", qPrintable(sound->name), median,
+                  high, average, f.spread(f.bass));
+            // The tallest band reaches well up, and 70 % or more on the kicks
+            // (steady noise; real masters run taller, docs/plan/progress.md)...
+            QVERIFY2(median >= 0.45 && high >= 0.7, qPrintable(sound->name));
+            // ...the rest of the spectrum sits in the middle, not pinned...
+            QVERIFY2(average >= 0.2 && average <= 0.7, qPrintable(sound->name));
+            QVERIFY2(pinned < f.average.size() / 20, qPrintable(sound->name));
+            // ...and the bass moves with the kick.
+            QVERIFY2(f.spread(f.bass) > 0.1, qPrintable(sound->name));
+        }
+        // The two land within a few points of each other.
+        const Fill a = measureFill(loud, "normal"), b = measureFill(quiet, "normal");
+        QVERIFY(qAbs(a.percentile(a.average, 0.5) - b.percentile(b.average, 0.5)) < 0.12);
+        // Sensitivity: High is taller than Normal, Normal than Low.
+        const Fill low = measureFill(loud, "low"), high = measureFill(loud, "high");
+        QVERIFY(low.percentile(low.average, 0.5) < a.percentile(a.average, 0.5));
+        QVERIFY(high.percentile(high.average, 0.5) > a.percentile(a.average, 0.5));
+        // Silence stays silent, at any sensitivity.
+        for (const QString &sensitivity : Appearance::sensitivities()) {
+            const Fill none = measureFill(synth("silence", kRate * 4), sensitivity);
+            QCOMPARE(none.percentile(none.tallest, 1.0), 0.0);
+        }
+    }
+
+    // Settings > Appearance > Visualiser's Sensitivity: kept in window.conf,
+    // bad values refused, passed to the player's analyser, and offered in
+    // Settings and in the picker.
+    void sensitivitySettingPersists() {
+        QTemporaryDir dir;
+        const QString conf = dir.filePath("window.conf");
+        {
+            Appearance a(conf);
+            QCOMPARE(a.visualiserSensitivity(), QString("normal"));
+            QCOMPARE(Appearance::sensitivities(), QStringList({"low", "normal", "high"}));
+            a.setVisualiserSensitivity("loud");
+            QCOMPARE(a.visualiserSensitivity(), QString("normal"));
+            a.setVisualiserSensitivity("high");
+            QCOMPARE(a.sensitivityName("high"), QString("High"));
+        }
+        QCOMPARE(Appearance(conf).visualiserSensitivity(), QString("high"));
+        Spectrum spectrum;
+        QCOMPARE(spectrum.sensitivity(), QString("normal"));
+        spectrum.setSensitivity("low");
+        QCOMPARE(spectrum.sensitivity(), QString("low"));
+        spectrum.setSensitivity("nonsense");
+        QCOMPARE(spectrum.sensitivity(), QString("normal"));
+
+        writeConf(conf, true, "large");
+        Window w(dir);
+        QVERIFY(w.load());
+        // The saved choice reached the player, and changes follow.
+        QCOMPARE(w.player.visualiserSensitivity(), QString("high"));
+        w.appearance()->setVisualiserSensitivity("low");
+        QCOMPARE(w.player.visualiserSensitivity(), QString("low"));
+        // Settings' radio buttons.
+        QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("settings-appearance")));
+        QTRY_VERIFY(w.find("visualiserSensitivity_normal"));
+        QMetaObject::invokeMethod(w.find("visualiserSensitivity_normal"), "clicked");
+        QCOMPARE(w.appearance()->visualiserSensitivity(), QString("normal"));
+        QCOMPARE(w.player.visualiserSensitivity(), QString("normal"));
+        QTRY_COMPARE(QSettings(conf, QSettings::IniFormat).value("appearance/visualiserSensitivity").toString(), QString("normal"));
+        // The picker's chips.
+        w.appearance()->choosePicker(nullptr, "bar");
+        QTRY_VERIFY(w.shown("pickerSensitivity_high"));
+        click(w, w.find("pickerSensitivity_high"));
+        QCOMPARE(w.appearance()->visualiserSensitivity(), QString("high"));
+        QVERIFY(w.find("pickerSensitivity_high")->property("chosen").toBool());
+    }
+
     // In the library window, light and dark, with the bar at the bottom and
     // the top: the visualiser covers the whole bar, centres on the play
     // button, and the words over it keep their contrast with every style
@@ -762,8 +972,15 @@ private slots:
         QCOMPARE(vis->quietAreas().size(), 4);
         // The title's area is one of the quiet ones.
         QQuickItem *title = w.find("bigBarTitle");
-        const QPointF titleAt = title->mapToItem(vis, QPointF(title->width() / 2, title->height() / 2));
-        QVERIFY(vis->fadeAt(titleAt.x(), titleAt.y()) < 0.3);
+        // The middle of the words themselves: the quiet area is only as
+        // wide as the title or the artist reaches.
+        const QPointF titleAt = title->mapToItem(
+            vis, QPointF(qMin(title->width(), title->property("contentWidth").toReal()) / 2, title->height() / 2));
+        const qreal open = vis->fadeAt(titleAt.x() + 420, titleAt.y());
+        QVERIFY(vis->fadeAt(titleAt.x(), titleAt.y()) < open * 0.75);
+        QVERIFY(vis->fadeAt(titleAt.x(), titleAt.y()) > open * 0.5);
+        // The words have a halo behind the whole bar.
+        QCOMPARE(title->property("style").toInt(), 1); // Text.Outline
         // A click on the bar's empty space doesn't change the style.
         const QString before = appearance->barStyle();
         QTest::mouseClick(w.window, Qt::LeftButton, {}, vis->mapToScene(QPointF(vis->width() * 0.62, vis->height() - 4)).toPoint());
@@ -773,9 +990,18 @@ private slots:
         vis->setIdle(false);
         const QVariantMap skin = appearance->deck();
         const QColor text(skin.value("text").toString()), label(skin.value("label").toString());
-        QStringList hide = {"bigBarTitle"};
-        double worst = 100;
-        QString worstStyle;
+        // The title must reach 4.5:1 and the artist 3:1 (WCAG's large or
+        // secondary text) against what is drawn under them, before their
+        // halo is counted: at most 2 % of the pixels may fall short, and
+        // none of the title's below 3:1.
+        QQuickItem *artist = w.find("bigBarArtist");
+        QVERIFY(artist);
+        // Words as long as a real track's (nothing plays in the test).
+        QQmlProperty::write(title, "text", QString("Midnight Highway (Extended Mix)"));
+        QQmlProperty::write(artist, "text", QString("Neon Coast"));
+        QTRY_VERIFY(artist->isVisible() && artist->width() > 0);
+        double worst = 100, worstArtist = 100;
+        QString worstStyle, worstArtistStyle;
         for (const QString &style : Appearance::visualisers()) {
             appearance->setBarVisualiserStyle(style);
             QCOMPARE(vis->style(), style);
@@ -786,31 +1012,22 @@ private slots:
                 if (vis->animated())
                     vis->advance(1.0 / 30);
             }
-            // The background under the title, with the title hidden, against
-            // the title's colour.
-            title->setOpacity(0);
-            const QImage shot = w.window->grabWindow();
-            title->setOpacity(1);
-            const QRect area = title->mapRectToScene(QRectF(0, 0, qMin(title->width(), 200.0), title->height()))
-                                   .toAlignedRect()
-                                   .intersected(shot.rect());
-            QVERIFY(!area.isEmpty());
-            int poor = 0, total = 0;
-            for (int y = area.top(); y <= area.bottom(); ++y)
-                for (int x = area.left(); x <= area.right(); ++x) {
-                    const double c = contrast(text, QColor(shot.pixel(x, y)));
-                    worst = qMin(worst, c);
-                    if (worst == c)
-                        worstStyle = style;
-                    poor += c < 4.5;
-                    ++total;
-                }
-            QVERIFY2(poor <= total / 50, qPrintable(QString("%1: %2 of %3 pixels under the title below 4.5:1")
-                                                         .arg(style).arg(poor).arg(total)));
+            const Under t = contrastUnder(w.window, title, text, 4.5);
+            QVERIFY(t.total > 0);
+            if (t.worst < worst)
+                worst = t.worst, worstStyle = style;
+            QVERIFY2(t.poor <= t.total / 50, qPrintable(QString("%1: %2 of %3 pixels under the title below 4.5:1")
+                                                          .arg(style).arg(t.poor).arg(t.total)));
+            const Under a = contrastUnder(w.window, artist, label, 3.0);
+            QVERIFY(a.total > 0);
+            if (a.worst < worstArtist)
+                worstArtist = a.worst, worstArtistStyle = style;
+            QVERIFY2(a.poor <= a.total / 50, qPrintable(QString("%1: %2 of %3 pixels under the artist below 3:1")
+                                                          .arg(style).arg(a.poor).arg(a.total)));
         }
-        qInfo("worst contrast under the title: %.2f:1 (%s)", worst, qPrintable(worstStyle));
+        qInfo("worst contrast under the title: %.2f:1 (%s); under the artist: %.2f:1 (%s)", worst,
+              qPrintable(worstStyle), worstArtist, qPrintable(worstArtistStyle));
         QVERIFY2(worst >= 3.0, qPrintable(QString("%1: the title falls to %2:1").arg(worstStyle).arg(worst)));
-        Q_UNUSED(label);
         // Idle and asked to hide: gone; off: gone.
         vis->setIdle(true);
         appearance->setIdleVisualiser("hide");
@@ -1270,6 +1487,105 @@ private slots:
                 out << line << "\n";
         }
         out.flush();
+    }
+
+    // OMAMP_VIS_REAL="<file>@<seconds>;…" with OMAMP_VIS_SHOTS=<folder>:
+    // the large bar, visualiser behind the whole bar, at each moment of each
+    // file, decoded by Omamp's Decoder and pushed through the analyser as
+    // the player does (6 seconds of run-up), saved as <label>-<n>-<style>.png
+    // with OMAMP_VIS_LABEL, OMAMP_VIS_STYLES (default synthwave),
+    // OMAMP_VIS_THEME (dark or light) and OMAMP_VIS_SENSITIVITY. Prints how
+    // full the analyser was. For checking against real music by hand: the
+    // files are read, never changed, and nothing is played.
+    void realMusicSheet() {
+        const QStringList entries = qEnvironmentVariable("OMAMP_VIS_REAL").split(';', Qt::SkipEmptyParts);
+        const QString shots = qEnvironmentVariable("OMAMP_VIS_SHOTS");
+        if (entries.isEmpty() || shots.isEmpty())
+            QSKIP("OMAMP_VIS_REAL and OMAMP_VIS_SHOTS draw the bar from real files");
+        QDir().mkpath(shots);
+        const QString label = qEnvironmentVariable("OMAMP_VIS_LABEL", "shot");
+        const QStringList styles = qEnvironmentVariable("OMAMP_VIS_STYLES", "synthwave").split(',', Qt::SkipEmptyParts);
+        QTemporaryDir dir;
+        writeTheme(dir.path(), qEnvironmentVariable("OMAMP_VIS_THEME") == "light" ? kLightGlass : kNightRide);
+        {
+            QSettings conf(dir.filePath("window.conf"), QSettings::IniFormat);
+            conf.setValue("window/advanced", true);
+            conf.setValue("window/libraryHintDone", true);
+            conf.setValue("window/advancedWidth", 1600);
+            conf.setValue("window/advancedHeight", 900);
+            conf.setValue("layout/barSize", "large");
+            conf.setValue("layout/barPosition", "bottom");
+            conf.setValue("appearance/barVisualiser", "full");
+            if (!qEnvironmentVariableIsEmpty("OMAMP_VIS_SENSITIVITY"))
+                conf.setValue("appearance/visualiserSensitivity", qEnvironmentVariable("OMAMP_VIS_SENSITIVITY"));
+        }
+        Window w(dir);
+        QVERIFY(w.load());
+        QTRY_VERIFY(w.shown("barVisualiserFull"));
+        auto *vis = qobject_cast<Visualiser *>(w.find("barVisualiserFull"));
+        QQuickItem *bar = w.find("bigBar");
+        QQuickItem *title = w.find("bigBarTitle");
+        QQuickItem *artist = title->parentItem()->childItems().value(1);
+        // The pictures come from here, not from the player.
+        for (const char *name : {"levels", "peaks", "waveform", "stereoWaveform", "idle"})
+            QQmlProperty::write(vis, name, QString(name) == "idle" ? QVariant(false) : QVariant::fromValue(QList<qreal>()));
+        int n = 0;
+        for (const QString &entry : entries) {
+            const int at = entry.lastIndexOf('@');
+            const QString path = at > 0 ? entry.left(at) : entry;
+            const double seconds = at > 0 ? entry.mid(at + 1).toDouble() : 30;
+            ++n;
+            for (const QString &style : styles) {
+                w.appearance()->setBarVisualiserStyle(style);
+                Decoder decoder;
+                QString error;
+                QVERIFY2(decoder.open(path, &error), qPrintable(error));
+                QQmlProperty::write(title, "text", decoder.metaData().value("title").toString());
+                if (artist)
+                    QQmlProperty::write(artist, "text", decoder.metaData().value("artist").toString());
+                decoder.seek(qint64(qMax(0.0, seconds - 6.0) * 1000));
+                QAudioFormat format;
+                format.setSampleRate(decoder.sampleRate());
+                format.setChannelCount(2);
+                format.setSampleFormat(QAudioFormat::Float);
+                const int chunk = decoder.sampleRate() / 30;
+                QList<float> buffer(chunk * 2);
+                Spectrum spectrum(qEnvironmentVariableIntValue("OMAMP_VIS_BANDS") > 0 ? qEnvironmentVariableIntValue("OMAMP_VIS_BANDS") : 24);
+                spectrum.setSensitivity(w.appearance()->property("visualiserSensitivity").toString());
+                qreal top = 0, sum = 0;
+                int counted = 0;
+                for (int step = 0; step < 180; ++step) {
+                    const int got = decoder.read(buffer.data(), chunk);
+                    if (got <= 0)
+                        break;
+                    spectrum.feed(QAudioBuffer(QByteArray(reinterpret_cast<const char *>(buffer.constData()), got * 2 * sizeof(float)), format));
+                    spectrum.decay();
+                    vis->setLevels(spectrum.levels());
+                    vis->setPeaks(spectrum.peaks());
+                    vis->setWaveform(spectrum.waveform());
+                    vis->setStereoWaveform(spectrum.stereoWaveform());
+                    vis->advance(1.0 / 30);
+                    if (step >= 150) {
+                        const QList<qreal> l = spectrum.levels();
+                        top = qMax(top, *std::max_element(l.begin(), l.end()));
+                        sum += std::accumulate(l.begin(), l.end(), 0.0) / l.size();
+                        ++counted;
+                    }
+                }
+                QCoreApplication::processEvents();
+                const QImage shot = w.window->grabWindow();
+                const QRect rect = bar->mapRectToScene(QRectF(0, 0, bar->width(), bar->height())).toAlignedRect().intersected(shot.rect());
+                const QString file = QString("%1/%2-%3-%4.png").arg(shots, label).arg(n).arg(style);
+                QVERIFY(shot.copy(rect).save(file));
+                const QVariantMap skin = w.appearance()->deck();
+                const Under t = contrastUnder(w.window, title, QColor(skin.value("text").toString()), 4.5);
+                const Under a = artist ? contrastUnder(w.window, artist, QColor(skin.value("label").toString()), 3.0) : Under{};
+                qInfo("%s at %.0f s, %s: loudest band %.2f, mean %.2f; title %.2f:1 (%d of %d under 4.5), artist %.2f:1 "
+                      "(%d of %d under 3) -> %s",
+                      qPrintable(QFileInfo(path).fileName()), seconds, qPrintable(style), top, counted ? sum / counted : 0.0,
+                      t.worst, t.poor, t.total, a.worst, a.poor, a.total, qPrintable(file));
+            }
+        }
     }
 };
 

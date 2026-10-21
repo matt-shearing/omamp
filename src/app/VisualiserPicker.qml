@@ -374,6 +374,18 @@ Popup {
                 checked: appearance.reduceMotion
                 onClicked: appearance.reduceMotion = checked
             }
+            // How readily the bars fill (the analyser's auto-range).
+            Caption { text: qsTr("Sensitivity") }
+            Repeater {
+                model: appearance.sensitivities
+                Chip {
+                    required property string modelData
+                    objectName: "pickerSensitivity_" + modelData
+                    text: appearance.sensitivityName(modelData)
+                    chosen: appearance.visualiserSensitivity === modelData
+                    onClicked: appearance.visualiserSensitivity = modelData
+                }
+            }
             Caption {
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignRight

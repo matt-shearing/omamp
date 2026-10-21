@@ -32,6 +32,10 @@ Rectangle {
     readonly property string visPlace: appearance.barVisualiser
     readonly property bool atTop: appearance.layout.barPosition === "top"
     readonly property int edgeHeight: visPlace === "edge" ? 24 : 0
+    // Behind the whole bar, the words get a soft halo in the bar's colour,
+    // so they stay sharp over the picture without a dark patch under them.
+    readonly property int halo: visPlace === "full" ? Text.Outline : Text.Normal
+    readonly property color haloColour: Qt.alpha(skin.panel, 0.6)
     readonly property var info: library.playingTrackId > 0 && library.revision >= 0 ? library.trackInfo(library.playingTrackId) : ({})
 
     function clock(ms) {
@@ -121,7 +125,10 @@ Rectangle {
         quietEdge: bar.atTop ? "bottom" : "top"
         centre: row.x + middle.x + transport.x + playButton.x + playButton.width / 2 - x
         quietAreas: [
-            Qt.rect(row.x + leftSide.x + words.x - x, row.y + leftSide.y + words.y - y, words.width, words.height),
+            // Only as wide as the title or the artist reaches, so a short
+            // title leaves the picture beside it alone.
+            Qt.rect(row.x + leftSide.x + words.x - x, row.y + leftSide.y + words.y - y,
+                    Math.min(words.width, Math.max(60, titleText.contentWidth, artistText.contentWidth) + 6), words.height),
             Qt.rect(row.x + middle.x + seekRow.x + timeLeft.x - x, row.y + middle.y + seekRow.y + timeLeft.y - y,
                     timeLeft.width, timeLeft.height),
             Qt.rect(row.x + middle.x + seekRow.x + timeRight.x - x, row.y + middle.y + seekRow.y + timeRight.y - y,
@@ -161,8 +168,11 @@ Rectangle {
                 Layout.fillWidth: true
                 spacing: 2
                 Text {
+                    id: titleText
                     objectName: "bigBarTitle"
                     Layout.fillWidth: true
+                    style: bar.halo
+                    styleColor: bar.haloColour
                     elide: Text.ElideRight
                     text: backend.currentIndex < 0 ? qsTr("Nothing playing") : backend.title
                     font.pixelSize: 15
@@ -170,7 +180,11 @@ Rectangle {
                     color: bar.skin.text
                 }
                 Text {
+                    id: artistText
+                    objectName: "bigBarArtist"
                     Layout.fillWidth: true
+                    style: bar.halo
+                    styleColor: bar.haloColour
                     elide: Text.ElideRight
                     visible: text !== ""
                     text: backend.live ? (radio.nowPlaying || backend.artist) : backend.artist
@@ -261,6 +275,8 @@ Rectangle {
                 spacing: 8
                 Text {
                     id: timeLeft
+                    style: bar.halo
+                    styleColor: bar.haloColour
                     Layout.preferredWidth: 48
                     horizontalAlignment: Text.AlignRight
                     visible: !backend.live
@@ -280,6 +296,8 @@ Rectangle {
                 }
                 Text {
                     id: timeRight
+                    style: bar.halo
+                    styleColor: bar.haloColour
                     Layout.preferredWidth: 48
                     visible: !backend.live
                     text: (bar.showRemaining ? "-" + bar.clock(backend.duration - backend.position) : bar.clock(backend.duration))

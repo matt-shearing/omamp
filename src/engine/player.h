@@ -105,6 +105,10 @@ public:
     bool shuffle() const { return m_shuffle; }
     bool repeat() const { return m_repeat; }
     QList<qreal> levels() const { return m_spectrum.levels(); }
+    // How readily the analyser's bars fill: "low", "normal" or "high"
+    // (Settings > Appearance > Visualiser; spectrum.h).
+    void setVisualiserSensitivity(const QString &sensitivity) { m_spectrum.setSensitivity(sensitivity); }
+    QString visualiserSensitivity() const { return m_spectrum.sensitivity(); }
     QList<qreal> peaks() const { return m_spectrum.peaks(); }
     QList<qreal> waveform() const { return m_spectrum.waveform(); }
     QList<qreal> stereoWaveform() const { return m_spectrum.stereoWaveform(); }

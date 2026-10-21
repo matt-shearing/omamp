@@ -182,6 +182,10 @@ int main(int argc, char *argv[]) {
     QObject::connect(&player, &Player::stateChanged, &levelsFeed, syncLevelsFeed);
     QObject::connect(&player, &Player::trackChanged, &levelsFeed, syncLevelsFeed);
     QObject::connect(&appearance, &Appearance::changed, &levelsFeed, syncLevelsFeed);
+    // The analyser's auto-range follows Settings > Appearance > Visualiser.
+    player.setVisualiserSensitivity(appearance.visualiserSensitivity());
+    QObject::connect(&appearance, &Appearance::changed, &player,
+                     [&] { player.setVisualiserSensitivity(appearance.visualiserSensitivity()); });
     syncLevelsFeed();
     levelsFeed.start();
 

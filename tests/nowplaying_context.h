@@ -12,6 +12,7 @@
 #include "appearance.h"
 #include "firstrun.h"
 #include "nowplaying.h"
+#include "player.h"
 #include "spotifycontroller.h"
 #include "radiocontroller.h"
 #include "windowplacement.h"
@@ -24,6 +25,12 @@ inline void installNowPlaying(QQmlEngine &engine, Theme *theme, Player *player, 
     auto *appearance = new Appearance(windowConf, theme, &engine);
     auto *now = new NowPlaying(player, dbPath, artDir, &engine);
     engine.rootContext()->setContextProperty("appearance", appearance);
+    // The analyser's auto-range follows the setting, as main() wires it.
+    if (player) {
+        player->setVisualiserSensitivity(appearance->visualiserSensitivity());
+        QObject::connect(appearance, &Appearance::changed, player,
+                         [appearance, player] { player->setVisualiserSensitivity(appearance->visualiserSensitivity()); });
+    }
     engine.rootContext()->setContextProperty("nowPlayingArt", now);
     // Spotify, switched off, with its settings beside the test's pictures.
     engine.rootContext()->setContextProperty(

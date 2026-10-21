@@ -50,6 +50,9 @@ Appearance::Appearance(const QString &settingsPath, Theme *theme, QObject *paren
         if (idle == "calm" || idle == "hide")
             m_idleVisualiser = idle;
         m_reduceMotion = s.value("reduceMotion", m_reduceMotion).toBool();
+        const QString sensitivity = s.value("visualiserSensitivity", m_sensitivity).toString();
+        if (sensitivities().contains(sensitivity))
+            m_sensitivity = sensitivity;
     }
     if (m_theme)
         connect(m_theme, &Theme::changed, this, &Appearance::rebuild);
@@ -194,6 +197,22 @@ void Appearance::setReduceMotion(bool on) {
     m_reduceMotion = on;
     save("reduceMotion", on);
     emit changed();
+}
+
+void Appearance::setVisualiserSensitivity(const QString &sensitivity) {
+    if (sensitivity == m_sensitivity || !sensitivities().contains(sensitivity))
+        return;
+    m_sensitivity = sensitivity;
+    save("visualiserSensitivity", sensitivity);
+    emit changed();
+}
+
+QString Appearance::sensitivityName(const QString &sensitivity) const {
+    if (sensitivity == "low")
+        return tr("Low");
+    if (sensitivity == "high")
+        return tr("High");
+    return tr("Normal");
 }
 
 void Appearance::setCoverInDeck(bool on) {

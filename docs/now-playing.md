@@ -223,17 +223,50 @@ Appearance > Visualiser** places a visualiser in it:
 | Place | Looks like |
 | --- | --- |
 | Behind the seek bar | A wide band across the middle, from the transport buttons down, faint enough to read the position through. The default |
+| Behind the whole bar | The whole bar, edge to edge, under the cover, the words and every button, fading out towards the ends and the library. The bar grows by 16 pixels |
 | Along the edge | A thin strip across the whole bar, on the edge that faces the library. The bar grows to make room |
 | Beside the cover | A small panel after the title and artist, when the window is at least 1,000 pixels wide |
 | Off | No visualiser |
 
 ![The library with the synthwave visualiser behind the large bar's seek bar](big-bar-visualiser-dark.png)
 
+#### Behind the whole bar
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="fullbar-synthwave-dark.png">
+  <img alt="The library with Synthwave behind the whole large bar" src="fullbar-synthwave-light.png">
+</picture>
+
+The visualiser fills the bar and fades out over the last sixth of its
+width at each end, and towards the edge that faces the library, so it
+melts into the window rather than stopping at a line. It centres on the
+play button: Synthwave's sun rises behind it, with hills, a city of
+spectrum bars and the rolling grid running out to both ends. Under the
+title, the times and the controls on the right it is dimmed, so the words
+stay readable; the play button gets a ring in the bar's colour.
+
+![Every style behind the whole bar, in Night Ride](fullbar-styles-dark.png)
+
+Synthwave, Star field, Pulse and Spectrum line suit it best. The busier
+styles show more faintly: Skyline and Fire at 60 %, and the bars, Bars with
+peaks, Mirrored spectrum and LED matrix at 45 %, spread over thin columns,
+with the LED matrix's unlit cells left out. A click on the bar's empty
+space does nothing here, so `Shift+V` moves the style on.
+
 The bar shares the player's style unless **Style in the bar** picks another.
 Click the bar's visualiser, or press `Shift+V` while the library shows, to
 move the bar's style on; with no style of its own, that moves the shared
 style. The palette (`Ctrl+K`) has **Large bar visualiser: Along the edge**
 and the rest.
+
+### Edge to edge in the big view
+
+**Settings > Appearance > Big Now Playing view** has **Run the big view's
+visualiser edge to edge, fading out at the sides and the top**. The
+visualiser then spans the whole width of the view, a little taller, and
+fades out at both ends and towards the cover and words above it.
+
+![The big view with Synthwave edge to edge](big-view-edge-to-edge-dark.png)
 
 ### Paused, stopped, or Spotify
 

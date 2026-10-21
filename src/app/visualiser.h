@@ -8,6 +8,7 @@
 #include <QPolygonF>
 #include <QQuickPaintedItem>
 #include <QTimer>
+#include <QVariantList>
 #include <QVector>
 
 // The analyser and its friends, drawn on the CPU with QPainter so they work
@@ -45,6 +46,15 @@
 // led:       a Winamp-era LED matrix with peak lights
 // synthwave: a sun on the horizon, a city of bars, a grid rolling forward
 // stars:     a drifting star field, pushed along by the bass
+//
+// With `fade` on, the picture is drawn to sit behind other things, as the
+// large bar's "Full bar" placement does: it fades out towards the left and
+// right edges and towards `quietEdge`, is dimmed under `quietAreas` (the
+// words and buttons drawn over it), and is held to a strength that suits
+// its style. The fade is one alpha mask, made when the size, the style or
+// the areas change and applied with one composition each frame. `centre`
+// puts the centrepiece of the styles that have one (the synthwave sun, the
+// pulse, the skyline's bass) at that x instead of the middle.
 class Visualiser : public QQuickPaintedItem {
     Q_OBJECT
     Q_PROPERTY(QString style READ style WRITE setStyle NOTIFY styleChanged)
@@ -64,6 +74,17 @@ class Visualiser : public QQuickPaintedItem {
     Q_PROPERTY(bool reduceMotion READ reduceMotion WRITE setReduceMotion NOTIFY idleChanged)
     // Whether the style runs on its own clock (the newer styles).
     Q_PROPERTY(bool animated READ animated NOTIFY styleChanged)
+    // Fade out towards the edges, to sit behind other things.
+    Q_PROPERTY(bool fade READ fade WRITE setFade NOTIFY fadeChanged)
+    // The edge that fades out the most: "top" or "bottom".
+    Q_PROPERTY(QString quietEdge READ quietEdge WRITE setQuietEdge NOTIFY fadeChanged)
+    // Rectangles (in the item's coordinates) to dim, under words and buttons.
+    Q_PROPERTY(QVariantList quietAreas READ quietAreas WRITE setQuietAreas NOTIFY fadeChanged)
+    // Whether words and buttons are drawn over it (the default): the fade
+    // then also holds each style to the strength that keeps them readable.
+    Q_PROPERTY(bool behind READ behind WRITE setBehind NOTIFY fadeChanged)
+    // Where the centrepiece sits across the item; negative is the middle.
+    Q_PROPERTY(qreal centre READ centre WRITE setCentre NOTIFY fadeChanged)
     // How many frames have been painted (tests check that drawing happens).
     Q_PROPERTY(int frames READ frames NOTIFY framesChanged)
 
@@ -96,11 +117,27 @@ public:
     void setReduceMotion(bool on);
     bool animated() const { return isAnimatedStyle(m_style); }
     int frames() const { return m_frames; }
+    bool fade() const { return m_fade; }
+    void setFade(bool on);
+    QString quietEdge() const { return m_quietEdge; }
+    void setQuietEdge(const QString &edge);
+    QVariantList quietAreas() const { return m_quietAreas; }
+    void setQuietAreas(const QVariantList &areas);
+    bool behind() const { return m_behind; }
+    void setBehind(bool on);
+    qreal centre() const { return m_centre; }
+    void setCentre(qreal x);
 
     void paint(QPainter *painter) override;
 
     // The colour at a height (0 bottom, 1 top) of a bar.
     QColor colourAt(qreal t) const;
+
+    // How strongly a style shows behind other things with `fade` on, 0..1:
+    // busy, bright styles are held back further so text stays readable.
+    static qreal fadeStrength(const QString &style);
+    // The fade mask's alpha (0..1) at a point, for tests.
+    qreal fadeAt(qreal x, qreal y);
 
     // The styles that run on their own clock.
     static bool isAnimatedStyle(const QString &style);
@@ -118,6 +155,7 @@ signals:
     void coloursChanged();
     void framesChanged();
     void idleChanged();
+    void fadeChanged();
 
 protected:
     void itemChange(ItemChange change, const ItemChangeData &value) override;
@@ -149,6 +187,10 @@ private:
     qreal random();
     void seedStars();
     void ensureCaches();
+    void ensureMask();
+    void makeSynthwaveBackdrop();
+    // The centrepiece's x: `centre` when set, else the middle.
+    qreal centreX() const;
     int ledRows() const;
     int ledColumns() const;
 
@@ -184,7 +226,7 @@ private:
     // Drawn ahead and reused while the size and colours stay.
     bool m_cachesValid = false;
     QImage m_ledGrid, m_sun, m_backdrop, m_glowCore, m_glowWide;
-    QBrush m_skyBrush, m_reflectBrush, m_lineFill, m_lineStroke;
+    QBrush m_skyBrush, m_reflectBrush, m_lineFill, m_lineStroke, m_cityBrush;
     QVector<QColor> m_rowColours;
     // Reused every frame, so painting allocates nothing.
     QPolygonF m_points, m_curve, m_lower;
@@ -196,6 +238,14 @@ private:
     };
     QVector<Star> m_stars;
     qreal m_starsW = 0, m_starsH = 0;
+
+    bool m_fade = false;
+    QString m_quietEdge = "top";
+    QVariantList m_quietAreas;
+    qreal m_centre = -1;
+    bool m_behind = true;
+    bool m_maskValid = false;
+    QImage m_mask;
 
     qint64 m_paintNs = 0;
 };

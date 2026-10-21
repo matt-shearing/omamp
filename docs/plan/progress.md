@@ -5818,3 +5818,199 @@ position below the menu bar, and a shorter Navidrome line.
 - **Radio has no off switch**, so the setup only mentions it.
 - **Translations**: the new strings are English only.
 - Navidrome is a line of text pointing at the Library menu, not a button.
+
+## Full-bar visualisers (21 October 2026)
+
+Matt liked Synthwave in the large bar and asked whether it could "fade out
+on the edges, all the way out to the edge of the now playing thing, so that
+it kind of covers the whole thing … And maybe some of the others too." The
+large bar has a fifth place for its visualiser, **Behind the whole bar**,
+and every style has been looked at that size. The big view can run its
+visualiser edge to edge as well. User documentation is in
+[docs/now-playing.md](../now-playing.md#behind-the-whole-bar).
+
+### What was built
+
+```
+src/app/visualiser.{h,cpp}  fade, quietEdge, quietAreas, centre, behind; the mask; the whole synthwave scene
+src/app/appearance.{h,cpp}  "full" in barPlacements; bigVisualiserFade
+src/app/BigBar.qml          the full-bar visualiser, its quiet areas and centre; 16 px taller; a ring on Play
+src/app/BigView.qml         edge to edge when bigVisualiserFade is on
+src/app/AppearancePage.qml  the big view's checkbox (the bar's place comes from barPlacements)
+tests/visualiser_tests.cpp  four new tests and a CPU measurement
+```
+
+- **The place.** `appearance/barVisualiser=full`, named *Behind the whole
+  bar*, after *Behind the seek bar* in Settings > Appearance and in the
+  palette (`Large bar visualiser: Behind the whole bar`), both of which read
+  `Appearance::barPlacements()`. The user's current place is kept; nothing
+  switches to it by itself. The setup wizard lists styles, not places, so it
+  is unchanged. The visualiser sits under the bar's row, 1 px inside the
+  border, and the bar grows by 16 px to give it room. A click on empty bar
+  space does nothing (`cycles: false`); `Shift+V` still moves the style on.
+- **The fade.** `Visualiser.fade` draws the style as before, then applies one
+  ARGB mask with `CompositionMode_DestinationIn`. The mask is made per pixel
+  once per size, style, edge, centre and set of areas (about 1,600 × 110,
+  well under a millisecond) and is the product of:
+  - the style's strength (`fadeStrength`): Synthwave and Star field 0.95,
+    Pulse 0.9, Spectrum line and Oscilloscope 0.8, Waveform ribbon 0.7,
+    Skyline and Fire 0.6, the bars, peaks, mirror and LED matrix 0.45;
+  - a smoothstep from nothing at each end to full over 17 % of the width;
+  - a vertical ramp from 0.2 at `quietEdge` (the library side: the top for a
+    bar at the bottom, the bottom for a bar at the top) to full past 55 % of
+    the height, easing to 0.75 at the far edge, and to nothing over the last
+    6–8 % at the quiet edge so no line shows;
+  - an oval about `centre` (the play button) where the vertical ramp does
+    not apply, so the sun and the bass stay bright;
+  - for each of `quietAreas` (the title column, the two times and the
+    controls on the right, mapped from the layout in BigBar.qml), a dimming
+    to 28 % inside, feathered over 22 % of the height outside: a soft
+    scrim, not a box.
+  `behind: false` (the big view) drops the strength, as nothing is drawn
+  over it there.
+- **Synthwave at full size** (any strip 72 px or taller, so the big view too):
+  a sun up to 0.86 of the horizon's height, five stripes, a paler crown; a
+  sky that warms towards the horizon and a faintly lit floor; still stars,
+  fewer near the horizon; two ranges of hills, low near the sun and taller
+  towards the sides; towers spaced further apart (8–15 px) with a gradient
+  to their feet, the same height at the same distance either side of the
+  sun; the sun's reflection as six shimmering bands under it; eight floor
+  rows, the nearer ones 2 px; spokes that fade into the distance and reach
+  both ends from an off-centre vanishing point; a glow along the horizon.
+  Only the reflection, towers, glow, sun and rows are drawn per frame; the
+  rest is the cached backdrop.
+- **Other styles.** Skyline and Pulse centre on `centre`; Skyline maps the
+  spectrum by distance from it to the further end, so the two sides match.
+  Behind other things, the bars, peaks and mirror spread their bands over
+  columns about 12 px wide (they were 64 px slabs), the LED matrix leaves
+  out its unlit cells, and Star field keeps to the theme's middle and top
+  colours (the peak colour is near black in a light theme), gives its bigger
+  stars a halo and halves the trails.
+- **Big view.** `appearance/bigVisualiserFade` (off by default; a checkbox
+  under Big Now Playing view): the visualiser runs edge to edge, 30 % taller,
+  fading at the ends and the top.
+- **Deck and strip: not done.** Their visualiser sits in an LCD readout with
+  a clock beside it; fading it out to the edges of that frame would look
+  broken rather than soft, so it was left as it is.
+- **Reduce motion and idle** work as before: the same clock, the calm idle
+  animation, a still frame with Reduce motion, and *Hide the large bar's
+  visualiser* hides this one too.
+
+### CPU
+
+`OMAMP_VIS_BENCH=1 OMAMP_TESTS=visualiser build/tests/omamp_tests cpuBehindTheWholeBar`
+loads the library window (1,600 × 900, Night Ride, large bar at the bottom)
+with the visualiser behind the whole bar, 1,582 × 110, and feeds the decoded
+fixture through `Spectrum` every 33 ms for eight seconds per style, then
+idle. Offscreen, software renderer, Ryzen 9 7950X3D with other work running
+(load average 5–8), so the figures move by a point or two between runs. CPU
+is the whole test process as a share of one core; *(off)* is the same
+window and analyser with no visualiser in the bar. Paint is the time in
+`paint()` per frame, mask included; render is the scene graph's time per
+frame, which redraws the bar's words and buttons over the visualiser.
+
+| Style | Playing: CPU | fps | paint | render | Idle: CPU | fps |
+|---|---:|---:|---:|---:|---:|---:|
+| (off) | 3.2 % | – | – | 0.07 ms | 4.1 % | – |
+| Bars | 6.3 % | 46 | 0.20 ms | 0.20 ms | 6.1 % | 39 |
+| Bars with peaks | 6.8 % | 52 | 0.22 ms | 0.21 ms | 3.4 % | 31 |
+| Mirrored spectrum | 6.3 % | 43 | 0.25 ms | 0.19 ms | 5.7 % | 31 |
+| Oscilloscope | 6.3 % | 39 | 0.40 ms | 0.19 ms | 2.6 % | 31 |
+| Fire | 6.4 % | 38 | 0.21 ms | 0.21 ms | 6.5 % | 31 |
+| Skyline | 7.7 % | 30 | 0.33 ms | 0.17 ms | 6.1 % | 30 |
+| Waveform ribbon | 5.8 % | 30 | 0.65 ms | 0.18 ms | 6.2 % | 30 |
+| Spectrum line | 9.1 % | 30 | 0.78 ms | 0.16 ms | 7.8 % | 30 |
+| Pulse | 4.9 % | 30 | 0.22 ms | 0.16 ms | 5.6 % | 30 |
+| LED matrix | 6.2 % | 30 | 0.10 ms | 0.17 ms | 6.8 % | 30 |
+| Synthwave | 5.0 % | 30 | 0.26 ms | 0.18 ms | 4.6 % | 30 |
+| Star field | 5.7 % | 30 | 0.15 ms | 0.17 ms | 6.5 % | 30 |
+
+Above *(off)*, every style adds 2–6 % of a core, against the target of
+about 6 %. The oscilloscope row is after a fix (below); it first measured
+13.8 %.
+
+- **30 fps on the software renderer.** At 60 fps the animated styles cost
+  8–10 % (Skyline 10.6, Synthwave 10.0) although `paint()` took a quarter of
+  a millisecond: the rest is the software renderer redrawing the whole bar.
+  Behind the whole bar on the software renderer the clock now runs at 33 ms;
+  on a GPU renderer, where the words are cached textures, it stays at 16 ms.
+- **Spectrum line** took 2.57 ms a frame at 110 px high, because a strip
+  over 100 px drew its line 2 px wide, which QPainter strokes on a slow path.
+  It now draws three one-pixel strokes 0.6 px apart (0.78 ms; 0.65 ms on the
+  1,600 × 60 strip, as before).
+- **Oscilloscope** repainted for its levels, its peaks and its waveform, up
+  to 62 times a second; it now repaints for the waveform only.
+
+### Tests
+
+`tests/visualiser_tests.cpp` (OMAMP_TESTS=visualiser), offscreen in
+software with no audio device under a temporary XDG home:
+
+- `fullBarFadeAndEveryStyle`: the mask is clear at both ends, at the style's
+  strength in the middle, fainter at the quiet edge except round the centre,
+  dimmed under a quiet area, flipped for the other edge, and at full
+  strength with `behind: false`; every one of the twelve styles at
+  1,598 × 110, 1,198 × 110, 1,598 × 128 and 798 × 100, with each edge, from
+  silence, a sine, noise and the decoded fixture, paints, draws more than
+  one colour when there is sound, leaves the end pixel the window's colour,
+  and logs no warning;
+- `fullBarSettingsPersist`: the place and the big view's fade persist;
+- `fullBarInTheWindow`, Night Ride and a light theme, the bar at the bottom
+  and the top: the visualiser covers the bar, the bar is 16 px taller, the
+  quiet edge faces the library, the centre is the play button's, the title
+  is in a quiet area, a click on empty bar space changes nothing; then for
+  every style, playing the fixture, the background under the title (with
+  the title hidden) is compared with the title's colour: at most 2 % of its
+  pixels may fall below 4.5:1 and none below 3:1. The worst seen was 8.9:1
+  (Spectrum line, dark theme, bar at the top). Idle with *Hide* hides it;
+  Settings' radio button and the palette set the place and it is saved.
+- `cpuBehindTheWholeBar` (opt-in): the table above.
+
+`bin/test` with JOBS=4: 33 Totals lines, 476 passed, 0 failed, 8 skipped (the
+existing opt-in benchmarks and live web test, and the two opt-in CPU
+measurements).
+
+### Screenshots
+
+`docs/fullbar-synthwave-{light,dark}.png` (the whole library window, large
+bar at the bottom), `docs/fullbar-styles-dark.png` (each of the twelve styles
+behind the whole bar, labelled) and `docs/big-view-edge-to-edge-dark.png`.
+Made-up library from `tests/make-demo-library` with `DEMO_SECONDS=60`,
+playing Neon Coast's Midnight Highway on the native engine into a buffer
+(`OMAMP_NO_AUDIO_DEVICE`) so the PCM tap feeds the analyser; captured with
+`OMAMP_SCREENSHOT`, offscreen in software, in a throwaway HOME with no
+session bus. Light is a copy of the desktop's current theme (OneQode Light
+Glass), dark is Night Ride. Looking at them led to:
+
+- the bar 16 px taller, and a ring round the play button so it stands apart
+  from the sun;
+- a dense wall of city bars thinned into spaced towers lower than the hills,
+  so the hills show;
+- the vertical fade keeping full strength round the play button (the sun
+  was washed out at the top of the bar);
+- the bar styles' 64 px slabs spread into thin columns;
+- a hard line at the top of the big view's visualiser, fixed by fading the
+  last few pixels at the quiet edge to nothing;
+- the sun's reflection in the sun's colour rather than the middle one,
+  which read as a dark smudge.
+
+### Decisions
+
+- **One mask, not gradients per style.** Every style gets the same fade for
+  the cost of one composition per frame, and new styles get it for free.
+- **Dimming under the words instead of a scrim box.** The quiet areas come
+  from the bar's layout, so the scrim follows the title, the times and the
+  controls wherever the bar puts them.
+- **The picture is never flipped.** With the bar at the top, only the fade
+  turns over; Synthwave's floor stays below its sky.
+- **Not the default.** Matt's current place stays; the new one is a choice.
+
+### Known gaps
+
+- **Not seen on a real screen** or on the GPU renderer; the 60 fps there is
+  the timer's rate.
+- **The light theme is one colour.** OneQode Light Glass uses the same cyan
+  for its accent and its middle colour, so Synthwave there is cyan on cyan;
+  themes with two colours look richer.
+- **Deck and strip** keep their framed visualiser (see above).
+- **Translations**: the new strings are English only.

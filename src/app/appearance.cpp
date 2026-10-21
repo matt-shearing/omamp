@@ -39,6 +39,7 @@ Appearance::Appearance(const QString &settingsPath, Theme *theme, QObject *paren
         if (bg == "blur" || bg == "theme")
             m_bigBackground = bg;
         m_bigLyrics = s.value("bigLyrics", m_bigLyrics).toBool();
+        m_bigVisualiserFade = s.value("bigVisualiserFade", m_bigVisualiserFade).toBool();
         const QString place = s.value("barVisualiser", m_barVisualiser).toString();
         if (barPlacements().contains(place))
             m_barVisualiser = place;
@@ -97,6 +98,8 @@ QString Appearance::visualiserName(const QString &style) const {
 QString Appearance::barPlacementName(const QString &place) const {
     if (place == "behind")
         return tr("Behind the seek bar");
+    if (place == "full")
+        return tr("Behind the whole bar");
     if (place == "edge")
         return tr("Along the edge");
     if (place == "beside")
@@ -200,6 +203,14 @@ void Appearance::setBigLyrics(bool on) {
         return;
     m_bigLyrics = on;
     save("bigLyrics", on);
+    emit changed();
+}
+
+void Appearance::setBigVisualiserFade(bool on) {
+    if (on == m_bigVisualiserFade)
+        return;
+    m_bigVisualiserFade = on;
+    save("bigVisualiserFade", on);
     emit changed();
 }
 

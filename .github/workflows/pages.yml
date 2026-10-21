@@ -1,0 +1,39 @@
+name: Website (GitHub Pages)
+
+# Publishes the one-page site in site/ to GitHub Pages.
+#
+# Inert on purpose: it runs only when started by hand, and it does nothing
+# useful until Pages is switched on for this repository with "GitHub Actions"
+# as the source. To publish on every change to the site, add this under `on:`:
+#
+#   push:
+#     branches: [main]
+#     paths: ["site/**", ".github/workflows/pages.yml"]
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Leave the build tools and previews out of the published site
+        run: rm -rf site/tools site/preview
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

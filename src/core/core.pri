@@ -25,6 +25,7 @@ HEADERS += \
     $$PWD/organise.h \
     $$PWD/ownwrites.h \
     $$PWD/palette.h \
+    $$PWD/renamemigration.h \
     $$PWD/query.h \
     $$PWD/scanner.h \
     $$PWD/tagreader.h \
@@ -34,6 +35,7 @@ HEADERS += \
 
 SOURCES += \
     $$PWD/artwork.cpp \
+    $$PWD/renamemigration.cpp \
     $$PWD/autodj.cpp \
     $$PWD/m3u.cpp \
     $$PWD/mmimport.cpp \

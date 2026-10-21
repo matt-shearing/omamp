@@ -247,6 +247,15 @@ private slots:
         QFile::copy(mount + "/music/.thrum-volume-id", moved + "/music/.thrum-volume-id");
         fake.setMounts({{moved, "/", "nfs4", "nas:/share"}});
         QCOMPARE(r.locate(added.key, added.rootPath, added.mountSubpath), moved + "/music");
+
+        // A share Omamp (Thrum's old name) marked: .omamp-volume-id is read,
+        // so it is still found, and adding it again writes no new marker.
+        QVERIFY(QFile::rename(moved + "/music/.thrum-volume-id", moved + "/music/.omamp-volume-id"));
+        QCOMPARE(r.locate(added.key, added.rootPath, added.mountSubpath), moved + "/music");
+        const VolumeInfo legacy = r.identify(moved + "/music", true);
+        QCOMPARE(legacy.key, added.key);
+        QVERIFY(!legacy.markerWritten);
+        QVERIFY(!QFile::exists(moved + "/music/.thrum-volume-id"));
         fake.setMounts({});
         QVERIFY(r.locate(added.key, added.rootPath, added.mountSubpath).isEmpty());
     }

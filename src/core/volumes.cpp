@@ -103,8 +103,11 @@ QString VolumeResolver::uuidForSource(const QString &source) const {
 
 QString VolumeResolver::readMarker(const QString &dir) {
     QFile file(dir + '/' + markerName);
-    if (!file.open(QIODevice::ReadOnly))
-        return {};
+    if (!file.open(QIODevice::ReadOnly)) {
+        file.setFileName(dir + '/' + legacyMarkerName);
+        if (!file.open(QIODevice::ReadOnly))
+            return {};
+    }
     const QString id = QString::fromUtf8(file.readLine(200)).trimmed();
     return QUuid::fromString(id).isNull() ? QString() : id;
 }
@@ -453,11 +456,11 @@ bool reassign(Library &library, const VolumeResolver &resolver, qint64 volumeId,
         // Carry the old identity over: write the old marker id onto the new
         // root when it has none, so the next lookup finds it by marker.
         const QString id = old.key.mid(7);
-        QFile marker(root + '/' + VolumeResolver::markerName);
         QString existing;
-        if (marker.open(QIODevice::ReadOnly)) {
-            existing = QString::fromUtf8(marker.readLine(200)).trimmed();
-            marker.close();
+        for (const char *name : {VolumeResolver::markerName, VolumeResolver::legacyMarkerName}) {
+            QFile marker(root + '/' + name);
+            if (existing.isEmpty() && marker.open(QIODevice::ReadOnly))
+                existing = QString::fromUtf8(marker.readLine(200)).trimmed();
         }
         if (existing.isEmpty()) {
             QSaveFile out(root + '/' + VolumeResolver::markerName);

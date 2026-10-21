@@ -154,6 +154,11 @@ page, [NAS and Navidrome](docs/nas.md) libraries, and the
 
 ## Install
 
+**Coming from Omamp?** Thrum is the same player under a new name. Quit Omamp,
+then start Thrum: it moves your library, settings and cache over on its first
+start. The [0.4.0 notes](CHANGELOG.md#040) list the few things to change by
+hand (the bar widget, Hyprland rules, scripts).
+
 Thrum is not in the AUR yet; the package files are ready in [aur/](aur/).
 For now, build it from source on Arch or Omarchy.
 

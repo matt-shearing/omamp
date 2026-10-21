@@ -40,8 +40,9 @@ int realStat(const QByteArray &path, struct stat *st) { return ::stat(path.const
 
 // Reads the marker the way VolumeResolver does, but on the probe thread.
 QString readMarkerAt(const QByteArray &dir) {
-    const QByteArray file = dir + '/' + VolumeResolver::markerName;
-    const int fd = ::open(file.constData(), O_RDONLY | O_CLOEXEC);
+    int fd = ::open((dir + '/' + VolumeResolver::markerName).constData(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        fd = ::open((dir + '/' + VolumeResolver::legacyMarkerName).constData(), O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return {};
     char buffer[200];

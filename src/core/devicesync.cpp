@@ -33,6 +33,9 @@ namespace DeviceSync {
 
 const char *const defaultMask = "<Album Artist>/<Album>/$If(<Disc#>,<Disc#>-)<Track#:2> <Title>";
 const char *const manifestName = ".thrum-sync.json";
+// The manifest's name before the rename (Thrum was Omamp until 0.4.0): read
+// when a device has no new one, and removed once the new one is written.
+const char *const legacyManifestName = ".omamp-sync.json";
 
 namespace {
 
@@ -191,8 +194,11 @@ struct Manifest {
 Manifest readManifest(const QString &target) {
     Manifest m;
     QFile f(QDir(target).filePath(manifestName));
-    if (!f.open(QIODevice::ReadOnly))
-        return m;
+    if (!f.open(QIODevice::ReadOnly)) {
+        f.setFileName(QDir(target).filePath(legacyManifestName));
+        if (!f.open(QIODevice::ReadOnly))
+            return m;
+    }
     const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
     const QJsonObject files = o.value("files").toObject();
     for (auto it = files.begin(); it != files.end(); ++it) {
@@ -228,6 +234,7 @@ bool writeManifest(const QString &target, const QString &profile, const Manifest
             *error = f.errorString();
         return false;
     }
+    QFile::remove(QDir(target).filePath(legacyManifestName));
     return true;
 }
 

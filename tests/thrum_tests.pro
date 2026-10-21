@@ -38,7 +38,7 @@ SOURCES += main.cpp thrum_tests.cpp library_tests.cpp query_tests.cpp palette_te
            ../src/app/radiocontroller.cpp ../src/app/windowplacement.cpp menu_tests.cpp \
            ../src/app/layoutprefs.cpp ../src/app/aboutcontroller.cpp layout_tests.cpp visualiser_tests.cpp \
            ../src/app/firstrun.cpp setup_tests.cpp \
-           ../src/app/levelsfeed.cpp levelsfeed_tests.cpp
+           ../src/app/levelsfeed.cpp levelsfeed_tests.cpp renamemigration_tests.cpp
 
 # The real window, for the keyboard test of advanced mode.
 RESOURCES += ../src/app/resources.qrc

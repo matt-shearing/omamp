@@ -10,6 +10,7 @@
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QUrl>
 
@@ -30,12 +31,15 @@
 #include "playlistscontroller.h"
 #include "spotifycontroller.h"
 #include "radiocontroller.h"
+#include "renamemigration.h"
 #include "streamresolver.h"
 #include "tageditor.h"
 #include "theme.h"
 #include "windowplacement.h"
 #include "translator.h"
 #include "visualiser.h"
+
+#include <cstdio>
 
 static const char *version = "0.4.0";
 
@@ -48,12 +52,28 @@ int main(int argc, char *argv[]) {
         app.setApplicationName("thrum");
         app.setApplicationVersion(version);
         QTextStream out(stdout), err(stderr);
+        QString why;
+        if (!RenameMigration::runAtStartup(&why)) {
+            err << why << Qt::endl;
+            return 1;
+        }
         return Cli::run(app.arguments().mid(1), out, err);
     }
 
     QGuiApplication app(argc, argv);
     app.setApplicationName("thrum");
     app.setApplicationVersion(version);
+
+    // Omamp's library and settings move to Thrum's folders on the first start
+    // after the rename, before anything opens them (src/core/renamemigration.h).
+    {
+        QString why;
+        if (!RenameMigration::runAtStartup(&why)) {
+            std::fprintf(stderr, "thrum: %s\n", qPrintable(why));
+            QProcess::startDetached("notify-send", {"-a", "Thrum", "Thrum can't start yet", why});
+            return 1;
+        }
+    }
 
     // Matches the window to thrum.desktop, so the compositor (Wayland app_id)
     // and the launcher pick up the installed icon.

@@ -2,7 +2,7 @@
 // Totals line; the exit code is non-zero if any of them failed.
 //
 // THRUM_TESTS=query,palette runs only the named classes (player, library,
-// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, nas, subsonic, p3window, p45window, streaming, sync, syncwindow, nowplaying, spotify, radio, menu, mixed, layout, visualiser, setup, levelsfeed), for a quick loop or a machine that must stay silent.
+// query, palette, watcher, window, mask, tidy, playlists, engine, web, tidywindow, nas, subsonic, p3window, p45window, streaming, sync, syncwindow, nowplaying, spotify, radio, menu, mixed, layout, visualiser, setup, levelsfeed, rename), for a quick loop or a machine that must stay silent.
 #include <QGuiApplication>
 #include <QQmlEngine>
 #include <QtTest>
@@ -37,6 +37,7 @@ int runLayoutTests(int argc, char **argv);
 int runVisualiserTests(int argc, char **argv);
 int runSetupTests(int argc, char **argv);
 int runLevelsFeedTests(int argc, char **argv);
+int runRenameMigrationTests(int argc, char **argv);
 
 int main(int argc, char **argv) {
     // Never on anyone's screen, never on the GPU.
@@ -110,5 +111,7 @@ int main(int argc, char **argv) {
         failures += runSetupTests(argc, argv);
     if (wanted("levelsfeed"))
         failures += runLevelsFeedTests(argc, argv);
+    if (wanted("rename"))
+        failures += runRenameMigrationTests(argc, argv);
     return failures ? 1 : 0;
 }

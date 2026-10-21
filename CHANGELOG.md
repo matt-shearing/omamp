@@ -1,6 +1,43 @@
 # Changelog
 
-What changed in each release of Omamp, newest first.
+What changed in each release of Thrum, newest first. Thrum was called Omamp
+until 0.4.0, so the entries before it use the old name.
+
+## 0.4.0
+
+- **Omamp is now Thrum.** The program, its package, the command, the window,
+  the bar widget and the website all carry the new name. Nothing else about
+  the player changes.
+- **Your library and settings come along by themselves.** On its first start
+  Thrum moves `~/.config/omamp`, `~/.local/share/omamp` (the library database
+  with its `-wal`, `-shm` and backup files) and `~/.cache/omamp` to the same
+  places named `thrum`, following `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and
+  `XDG_CACHE_HOME`. Each folder moves in one step, and a folder that already
+  exists under the new name is kept as it is. What moved is noted in
+  `~/.config/thrum/renamed-from-omamp.log`. NAS and Navidrome passwords saved
+  in the keyring under Omamp are found and copied to Thrum's name the first
+  time they are needed. Music shares and devices Omamp marked
+  (`.omamp-volume-id`, `.omamp-sync.json`) are still recognised.
+- **What you do by hand:**
+  - Quit Omamp before starting Thrum for the first time. If Omamp is still
+    running, Thrum says so and waits, so the library is never moved while it
+    is open.
+  - Install the `thrum` package; it replaces `omamp`. If you installed into
+    `~/.local` with `bin/install-user`, remove `~/.local/bin/omamp`,
+    `~/.local/bin/omamp-spotify-session`,
+    `~/.local/share/applications/omamp.desktop` and
+    `~/.local/share/icons/hicolor/scalable/apps/omamp.svg`.
+  - Run `omarchy-plugin/install` again (or
+    `/usr/share/thrum/omarchy-plugin/install`). The widget is now
+    `contra.thrum`; it takes the Omamp widget's place on the bar and removes
+    the old one. Its settings start from the defaults.
+  - Hyprland window rules: match the class `^thrum$` and the titles
+    `Thrum mini` and `Thrum micro`.
+  - Scripts: the command is `thrum`, environment variables start with
+    `THRUM_`, and the MPRIS name is `org.mpris.MediaPlayer2.thrum`
+    (`playerctl -p thrum`).
+- **The website** is at <https://matt-shearing.github.io/thrum/> and is
+  published on every change to `site/`.
 
 ## 0.3.3
 

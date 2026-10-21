@@ -342,6 +342,16 @@ private slots:
         QVERIFY(r2.ok);
         QCOMPARE(r2.copied + r2.converted, 0);
         QCOMPARE(r2.kept, 3);
+
+        // A device last synced by Omamp (Thrum's old name) has .omamp-sync.json:
+        // it is read, nothing is copied again, and it is replaced by the new one.
+        QVERIFY(QFile::rename(target + "/.thrum-sync.json", target + "/.omamp-sync.json"));
+        const DeviceSync::Plan legacy = DeviceSync::plan(library, p);
+        QCOMPARE(legacy.kept, 3);
+        QCOMPARE(legacy.copies + legacy.conversions + legacy.deletions, 0);
+        QVERIFY(DeviceSync::apply(library, legacy).ok);
+        QVERIFY(QFile::exists(target + "/.thrum-sync.json"));
+        QVERIFY(!QFile::exists(target + "/.omamp-sync.json"));
     }
 
     // What changes on the next sync: a changed source is copied again, a

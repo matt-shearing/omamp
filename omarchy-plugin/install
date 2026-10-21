@@ -16,6 +16,9 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ID="contra.thrum"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 SHELL_JSON="$HOME/.config/omarchy/shell.json"
+# Thrum was called Omamp until 0.4.0; its widget had this id.
+OLD_ID="contra.omamp"
+OLD_DIR="$HOME/.config/omarchy/plugins/$OLD_ID"
 
 add_bar="true"
 section=""
@@ -54,6 +57,11 @@ if [[ $add_bar == "true" ]]; then
   omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
   if grep -q "\"$PLUGIN_ID\"" "$SHELL_JSON" 2>/dev/null; then
     echo "  bar      already on the bar; position unchanged"
+  elif grep -q "\"$OLD_ID\"" "$SHELL_JSON" 2>/dev/null; then
+    # Where the Omamp widget was, which then comes off the bar.
+    omarchy bar put "$PLUGIN_ID" --after "$OLD_ID"
+    omarchy plugin disable "$OLD_ID" || true
+    echo "  bar      put where the Omamp widget was, and took that one off"
   elif [[ -n $section ]]; then
     omarchy bar put "$PLUGIN_ID" --section "$section"
     echo "  bar      added to the $section section"
@@ -65,6 +73,12 @@ if [[ $add_bar == "true" ]]; then
     omarchy bar put "$PLUGIN_ID" --section right
     echo "  bar      added to the right section"
   fi
+fi
+
+# The Omamp widget's link, if it is ours (a symlink), is replaced by this one.
+if [[ -L $OLD_DIR ]]; then
+  rm "$OLD_DIR"
+  echo "  plugin   removed the old $OLD_DIR link"
 fi
 
 echo

@@ -118,10 +118,23 @@ bool store(const QString &storeName, const QString &ref, const QString &secret, 
 QString lookup(const QString &storeName, const QString &ref, QString *error) {
     if (storeName == "libsecret") {
         QByteArray out;
-        if (!runSecretTool({"lookup", "application", "thrum", "remote", ref}, QByteArray(), &out, error))
+        if (!runSecretTool({"lookup", "application", "thrum", "remote", ref}, QByteArray(), &out, error) ||
+            out.isEmpty()) {
+            // Saved before the rename (Thrum was Omamp until 0.4.0): read the
+            // old entry, copy it under Thrum's name and leave the old one.
+            QByteArray legacy;
+            if (runSecretTool({"lookup", "application", "omamp", "remote", ref}, QByteArray(), &legacy, nullptr) &&
+                !legacy.isEmpty()) {
+                runSecretTool({"store", "--label=Thrum: " + ref, "application", "thrum", "remote", ref}, legacy,
+                              nullptr, nullptr);
+                if (error)
+                    error->clear();
+                return QString::fromUtf8(legacy);
+            }
+            if (out.isEmpty() && error && error->isEmpty())
+                *error = "The keyring has no secret for this source; add it again";
             return {};
-        if (out.isEmpty() && error)
-            *error = "The keyring has no secret for this source; add it again";
+        }
         return QString::fromUtf8(out);
     }
     const QJsonObject all = readFile();
@@ -134,8 +147,11 @@ QString lookup(const QString &storeName, const QString &ref, QString *error) {
 }
 
 bool remove(const QString &storeName, const QString &ref) {
-    if (storeName == "libsecret")
+    if (storeName == "libsecret") {
+        // Also any copy saved under the old name, from before the rename.
+        runSecretTool({"clear", "application", "omamp", "remote", ref}, QByteArray(), nullptr, nullptr);
         return runSecretTool({"clear", "application", "thrum", "remote", ref}, QByteArray(), nullptr, nullptr);
+    }
     QJsonObject all = readFile();
     if (!all.contains(ref))
         return true;

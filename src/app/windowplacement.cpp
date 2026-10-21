@@ -389,10 +389,15 @@ void WindowPlacement::enterCheck(const Request &r, const QString &address, int t
     });
 }
 
-void WindowPlacement::doResize(const Request &r) {
-    run({"-j", "clients"}, [this, r](bool ok, const QByteArray &out) {
+void WindowPlacement::doResize(const Request &r, int tries) {
+    run({"-j", "clients"}, [this, r, tries](bool ok, const QByteArray &out) {
         const QJsonObject client = ok ? clientIn(out, QCoreApplication::applicationPid()) : QJsonObject();
         if (client.isEmpty()) {
+            // The setup asks as the window opens, before it is mapped.
+            if (ok && tries < 20) {
+                QTimer::singleShot(100, this, [this, r, tries] { doResize(r, tries + 1); });
+                return;
+            }
             emit floatingResized(r.id, false, 0, 0);
             finish(Kind::Resize, false);
             return;

@@ -126,7 +126,7 @@ private:
     void submit(const Request &r);
     void startNext();
     void finish(Kind kind, bool ok);
-    void doResize(const Request &r);
+    void doResize(const Request &r, int tries = 0);
     void resizeDone(int id, const QString &address);
     void enterFind(const Request &r, int tries);
     void enterPlace(const Request &r, const QJsonObject &client);

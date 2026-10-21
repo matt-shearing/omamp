@@ -6014,3 +6014,132 @@ Glass), dark is Night Ride. Looking at them led to:
   themes with two colours look richer.
 - **Deck and strip** keep their framed visualiser (see above).
 - **Translations**: the new strings are English only.
+
+## Bar plugin visualiser (21 October 2026)
+
+The Omamp widget in the Omarchy bar now draws a small, faint copy of
+Omamp's visualiser behind "Artist – Title", and a larger one behind the
+title, artist and album in its panel. It follows the style chosen in Omamp,
+fades out at both ends and towards the bottom, and disappears while nothing
+plays through Omamp. Omamp sends the levels on a local socket.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../omarchy-plugin-visualiser-dark.png">
+  <img alt="The bar widget with each small visualiser style behind the track" src="../omarchy-plugin-visualiser-light.png">
+</picture>
+
+### What was built
+
+- **`src/app/levelsfeed.{h,cpp}`**: `LevelsFeed` listens on
+  `$XDG_RUNTIME_DIR/omamp-levels.sock` (user-only access;
+  `OMAMP_LEVELS_SOCKET` overrides it) and writes one compact JSON line per
+  frame: `{"style","reduceMotion","active","levels":[16 x 0..100]}`. The 24
+  analyser bands fold to 16, each the loudest of the bands it covers. A
+  client gets one frame on connecting, one when playing stops (`active`
+  false, no levels), one when the style or Reduce motion changes, and up to
+  20 a second while music plays (10 with Reduce motion). A frame identical
+  to the last is skipped, so silence costs nothing either. The frame timer
+  runs only while a client is connected and music plays through Omamp; the
+  levels are not even read otherwise. Writes never wait: a client more than
+  64 KB behind is dropped. A second Omamp finds the first answering on the
+  socket and stays quiet; a stale socket file from a crash is replaced.
+- **`main.cpp`** feeds it `player.levels()`, the shared visualiser style
+  (`appearance.visualiser`, the one the deck and the big view use), Reduce
+  motion, and "active" = playing and not Spotify. It is the context
+  property `levelsFeed`.
+- **Settings > Appearance > Share the visualiser with the Omarchy bar**
+  (`BarFeedSettings.qml`, one line in `AppearancePage.qml`), stored as
+  `shareWithBar` under `[appearance]` in `window.conf`. On by default.
+- **Plugin**: `MiniVisualiser.qml` (a Canvas that draws only when a frame
+  arrives), eight small styles, `Service.qml` owns the one `Socket` for
+  every monitor's copy, three new settings (`showVisualiser`,
+  `visualiserStyle`, `visualiserStrength`), and `status` now reports the
+  feed. `Model.js` gained the parsing, style mapping, throttle and geometry
+  helpers; `tests/render-visualiser.qml` renders the README pictures.
+
+### Decisions
+
+- **A Unix socket, not D-Bus or a CLI.** Quickshell 0.3.2 has no general
+  D-Bus client for QML (only MPRIS, the tray menu and its own services), so
+  a custom `org.omamp.Visualiser` interface would need a helper process to
+  reach the bar. A `omamp levels --stream` CLI read through `Process` would
+  run a second Omamp binary, with its library and Qt start-up, just to relay
+  bytes. Quickshell's `Socket` + `SplitParser` reads a local socket directly
+  in the shell process, with no extra process, no polling and no file
+  writes, and Qt's `QLocalServer` costs Omamp nothing until someone
+  connects. Omamp throttles at the source; the plugin also drops frames
+  closer than 40 ms in case of a misbehaving sender.
+- **The plugin connects on events, not on a timer.** Every failed connect
+  logs a `quickshell.io.socket` warning in the journal, so a steady retry
+  while sharing is off would fill it. The widget connects when it first
+  shows a track (and once more 1.5 s later, as Omamp opens the socket just
+  after it appears on MPRIS), when music starts and when the track changes.
+- **On by default on both sides, and subtle.** Matt asked for it, and both
+  ends cost nothing until music plays: Omamp's socket sits idle and the
+  widget draws nothing while there are no levels. Subtle is 32 % opacity
+  (26 % for the blocky Bars, Skyline and LED), Normal 55 % (44 %); the
+  pictures show the words stay clear over every style in light and dark.
+- **"Same as Omamp" follows the shared style**, not the large bar's own
+  style, because the deck, the big view and the mini players all show it.
+- **Twelve styles fold into eight.** The oscilloscope and the waveform
+  ribbon need the waveform, which the feed does not carry, so both become a
+  band drawn from the levels about the middle. Fire becomes bars;
+  the mirrored spectrum becomes the skyline. Anything unknown is bars.
+- **No "Off" in the style setting.** The on/off switch is its own setting,
+  so a fourth style choice would only duplicate it.
+- **The LED matrix draws columns, then cuts the row gaps**: a few dozen
+  canvas operations a frame instead of one per cell (about 600), which
+  halved its cost.
+
+### CPU cost
+
+- **Omamp**: one frame (fold the bands, write the JSON line) takes about
+  2 µs and is 114 bytes, so 20 frames a second is about 40 µs and 2.3 KB a
+  second. Measured end to end on the built binary (offscreen, no audio
+  device, private D-Bus, temporary XDG folders) playing a test tone: 4 clock
+  ticks in 3 s with nobody connected, 6 with a reader taking 20.7 frames a
+  second, which is inside the noise of one 10 ms tick.
+- **Plugin**: a 260 x 22 canvas fed 20 frames a second for 10 s, offscreen
+  in software, used 0.07 s of CPU with nothing drawn and 0.11–0.16 s with
+  each style drawn, so each frame costs about 0.2–0.4 ms, under 1 % of one
+  core. Nothing is drawn while idle.
+
+### Test results
+
+- `OMAMP_TESTS=levelsfeed` (15 tests): the cost of a frame, the band folding and the line
+  format; nothing listens until started and enabled, and turning it off
+  removes the socket; the setting persists in `window.conf`; with no client
+  the clock never runs and the levels are never read; a new client gets one
+  idle frame and nothing more; playing sends at most 20 frames a second;
+  identical frames are skipped; style and Reduce motion changes arrive at
+  once and Reduce motion halves the rate; stopping sends one idle frame and
+  stops the clock; the clock stops when the last client leaves; a second
+  Omamp leaves the first one feeding; a stale socket file is replaced; the
+  Appearance check box turns the feed off.
+- Plugin: `node omarchy-plugin/tests/model.test.mjs` passes (15 new cases);
+  `qmllint` reports only the unqualified-access warnings the files already
+  had and nothing for `MiniVisualiser.qml`; `omarchy plugin validate`
+  passes on the folder.
+- An offscreen Quickshell 0.3.2 check confirmed that `Socket` reconnects by
+  toggling `connected`, reads lines through `SplitParser`, and reports a
+  closed peer.
+
+### Known gaps
+
+- **Not seen in the live bar.** The pictures are the pill drawn by the
+  render harness with `MiniVisualiser.qml`, laid out as `Widget.qml` lays
+  it out; the shell's `qs.*` modules are not available offscreen. The panel
+  copy was not rendered.
+- **Turning sharing back on in Omamp** shows in the bar with the next track
+  or the next press of play, not at once.
+- **A second Omamp** does not take over the socket when the first quits.
+- **Translations**: the new strings are English only.
+
+### After merging
+
+- Rebuild and reinstall Omamp; the running copy has no socket.
+- `omarchy restart shell`: the plugin has a new file (`MiniVisualiser.qml`)
+  and new manifest settings, which a hot reload does not pick up. Then check
+  `journalctl --user --since '2 min ago'` for errors from `contra.omamp`,
+  and `omarchy-shell contra.omamp status` for `visualiser.connected` while
+  music plays.

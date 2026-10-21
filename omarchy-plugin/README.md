@@ -36,6 +36,43 @@ The time under the seek bar is Omamp's green clock. Click it to switch
 between time played and time left, as in Omamp. Omamp's full LCD, with the
 large clock and the scrolling title strip, is a setting (`showLcd`).
 
+## The visualiser behind the track
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/omarchy-plugin-visualiser-dark.png">
+  <img alt="The bar widget with each small visualiser style faintly behind the track's name" src="../docs/omarchy-plugin-visualiser-light.png">
+</picture>
+
+While music plays through Omamp, a small, faint copy of Omamp's visualiser
+runs behind "Artist – Title" in the bar, and a larger one behind the title,
+artist and album in the panel. It fades out towards both ends and towards
+the bottom, so the words stay easy to read. It follows the style chosen in
+Omamp: Synthwave in Omamp gives a small sun, city and grid in the bar.
+
+| Omamp's style | In the bar |
+| --- | --- |
+| Bars, Bars with peaks, Fire | Bars |
+| Skyline, Mirrored spectrum | Bars with the bass in the middle |
+| LED matrix | Small lit cells |
+| Synthwave | A sun on the horizon, a city of bars either side, a grid |
+| Spectrum line | A line with a shaded fill |
+| Waveform ribbon, Oscilloscope | A band about the middle |
+| Pulse | A glow that swells with the bass |
+| Star field | Stars that brighten with their part of the spectrum |
+
+It fades away when Omamp pauses or stops, and while Spotify plays, because
+Spotify's sound never reaches Omamp. Omamp's **Reduce motion**, or the
+shell's, makes it calmer: eased levels, no drift and no fades.
+
+The bar has no sound of its own; MPRIS carries none. Omamp sends the levels
+on a local socket, `$XDG_RUNTIME_DIR/omamp-levels.sock`, at up to 20 frames
+a second, and only while the bar is connected and music is playing. The
+widget connects only while it shows a track. In Omamp, **Settings >
+Appearance > Share the visualiser with the Omarchy bar** turns the socket
+off. The widget tries to connect when it first shows, when music starts and
+when the track changes, so after you turn sharing back on it appears with
+the next track or the next press of play.
+
 ## Why it is not the built-in media widget
 
 Omarchy's `omarchy.media` widget follows whichever player is active. It
@@ -51,6 +88,9 @@ In Setup > Bar, or inline on the `contra.omamp` entry in
 | Key | Default | What it does |
 | --- | --- | --- |
 | `showThumbnail` | `true` | Shows the small cover in the bar |
+| `showVisualiser` | `true` | Shows the faint visualiser behind the track in the bar and the panel |
+| `visualiserStyle` | `Same as Omamp` | Or `Bars`, or `Line`, whatever Omamp shows |
+| `visualiserStrength` | `Subtle` | Or `Normal`, which shows it more |
 | `coverSize` | `Large` | The cover in the panel: `Large` fills the top, `Medium` sits beside the track, `Hidden` leaves it out |
 | `showLcd` | `false` | Adds Omamp's green clock and scrolling title strip to the panel |
 | `maxLabelWidth` | `220` | The width past which the line pans instead of growing |
@@ -79,7 +119,7 @@ when that is on the bar, and in the right section otherwise.
 ## Scripting it
 
 ```sh
-omarchy-shell contra.omamp status        # JSON: state, track, artUrl, cover, position, volume, shuffle, repeat
+omarchy-shell contra.omamp status        # JSON: state, track, artUrl, cover, position, volume, shuffle, repeat, visualiser
 omarchy-shell contra.omamp playPause     # also stop, next, previous, shuffle, repeat, raise, launch
 omarchy-shell contra.omamp volume 40     # Omamp's volume, in percent
 omarchy-shell shell toggle contra.omamp  # open or close the panel
@@ -91,4 +131,14 @@ omarchy-shell shell toggle contra.omamp  # open or close the panel
 node omarchy-plugin/tests/model.test.mjs
 /usr/lib/qt6/bin/qmllint omarchy-plugin/*.qml
 omarchy plugin validate "$PWD/omarchy-plugin"
+```
+
+The visualiser pictures come from `tests/render-visualiser.qml`, which draws
+the pill with made-up levels and a made-up track:
+
+```sh
+for mode in dark light; do
+  QT_SCALE_FACTOR=2 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+    /usr/lib/qt6/bin/qml omarchy-plugin/tests/render-visualiser.qml -- $mode "$PWD/docs/omarchy-plugin-visualiser-$mode.png"
+done
 ```

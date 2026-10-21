@@ -28,8 +28,12 @@ class Appearance : public QObject {
     Q_PROPERTY(bool coverInDeck READ coverInDeck WRITE setCoverInDeck NOTIFY changed)
     Q_PROPERTY(QString bigBackground READ bigBackground WRITE setBigBackground NOTIFY changed)
     Q_PROPERTY(bool bigLyrics READ bigLyrics WRITE setBigLyrics NOTIFY changed)
+    // The big view's visualiser runs edge to edge and fades out to its ends
+    // and its top, instead of sitting in a band inside the margins.
+    Q_PROPERTY(bool bigVisualiserFade READ bigVisualiserFade WRITE setBigVisualiserFade NOTIFY changed)
     // The large now playing bar's visualiser: where it sits ("off",
-    // "behind" the seek bar, along the "edge", "beside" the cover), its own
+    // "behind" the seek bar, behind the whole bar ("full"), along the
+    // "edge", "beside" the cover), its own
     // style or "" to share the player's, and the style in effect.
     Q_PROPERTY(QString barVisualiser READ barVisualiser WRITE setBarVisualiser NOTIFY changed)
     Q_PROPERTY(QString barVisualiserStyle READ barVisualiserStyle WRITE setBarVisualiserStyle NOTIFY changed)
@@ -63,6 +67,8 @@ public:
     void setBigBackground(const QString &kind);
     bool bigLyrics() const { return m_bigLyrics; }
     void setBigLyrics(bool on);
+    bool bigVisualiserFade() const { return m_bigVisualiserFade; }
+    void setBigVisualiserFade(bool on);
     QString barVisualiser() const { return m_barVisualiser; }
     void setBarVisualiser(const QString &place);
     QString barVisualiserStyle() const { return m_barVisualiserStyle; }
@@ -72,8 +78,9 @@ public:
     void setIdleVisualiser(const QString &kind);
     bool reduceMotion() const { return m_reduceMotion; }
     void setReduceMotion(bool on);
-    // "off", "behind", "edge", "beside".
-    static QStringList barPlacements() { return {"off", "behind", "edge", "beside"}; }
+    // "off", "behind", "full" (behind the whole bar, fading out to its
+    // edges), "edge", "beside".
+    static QStringList barPlacements() { return {"off", "behind", "full", "edge", "beside"}; }
 
     LayoutPrefs *layout() const { return m_layout; }
 
@@ -118,6 +125,7 @@ private:
     bool m_coverInDeck = true;
     QString m_bigBackground = "blur";
     bool m_bigLyrics = true;
+    bool m_bigVisualiserFade = false;
     QString m_barVisualiser = "behind";
     QString m_barVisualiserStyle;
     QString m_idleVisualiser = "calm";

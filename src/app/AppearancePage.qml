@@ -99,6 +99,13 @@ ScrollView {
             checked: appearance.bigLyrics
             onClicked: appearance.bigLyrics = checked
         }
+        CheckBox {
+            objectName: "bigVisualiserFade"
+            text: qsTr("Run the big view's visualiser edge to edge, fading out at the sides and the top")
+            font.pixelSize: 13
+            checked: appearance.bigVisualiserFade
+            onClicked: appearance.bigVisualiserFade = checked
+        }
 
         Heading { text: qsTr("Mini player") }
         Note {

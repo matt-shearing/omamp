@@ -26,8 +26,9 @@ Rectangle {
 
     readonly property bool playing: backend.state === "playing"
     // Where the visualiser sits (Settings > Appearance): "off", "behind" the
-    // transport and seek bar, along the "edge" that faces the library, or
-    // "beside" the cover. The edge strip makes the bar a little taller.
+    // transport and seek bar, behind the whole bar ("full"), along the
+    // "edge" that faces the library, or "beside" the cover. The edge strip
+    // makes the bar a little taller.
     readonly property string visPlace: appearance.barVisualiser
     readonly property bool atTop: appearance.layout.barPosition === "top"
     readonly property int edgeHeight: visPlace === "edge" ? 24 : 0
@@ -40,7 +41,8 @@ Rectangle {
         return (h > 0 ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (s < 10 ? "0" : "") + s
     }
 
-    implicitHeight: 96 + edgeHeight
+    // Behind the whole bar, a little more height gives the picture room.
+    implicitHeight: 96 + edgeHeight + (visPlace === "full" ? 16 : 0)
     color: skin.panel
     border.width: 1
     border.color: skin.panelBorder
@@ -58,6 +60,10 @@ Rectangle {
         implicitHeight: implicitWidth
         radius: width / 2
         color: big ? bar.skin.accent : hover.hovered ? Qt.alpha(bar.skin.text, 0.12) : "transparent"
+        // Over the whole-bar visualiser, a ring in the bar's colour keeps
+        // the play button apart from what moves behind it.
+        border.width: big && bar.visPlace === "full" ? 3 : 0
+        border.color: bar.skin.panel
         Text {
             anchors.centerIn: parent
             text: String.fromCodePoint(rb.glyph)
@@ -98,6 +104,33 @@ Rectangle {
         visible: bar.visPlace === "edge" && !(idle && appearance.idleVisualiser === "hide")
     }
 
+    // Behind the whole bar: edge to edge under the cover, the words, the
+    // buttons and the volume. It fades out towards the bar's ends and the
+    // library, centres on the play button, and is dimmed under the words,
+    // the times and the controls on the right so they stay easy to read.
+    BarVisualiser {
+        id: fullVis
+        objectName: "barVisualiserFull"
+        skin: bar.skin
+        x: 1
+        y: 1
+        width: bar.width - 2
+        height: bar.height - 2
+        cycles: false
+        fade: true
+        quietEdge: bar.atTop ? "bottom" : "top"
+        centre: row.x + middle.x + transport.x + playButton.x + playButton.width / 2 - x
+        quietAreas: [
+            Qt.rect(row.x + leftSide.x + words.x - x, row.y + leftSide.y + words.y - y, words.width, words.height),
+            Qt.rect(row.x + middle.x + seekRow.x + timeLeft.x - x, row.y + middle.y + seekRow.y + timeLeft.y - y,
+                    timeLeft.width, timeLeft.height),
+            Qt.rect(row.x + middle.x + seekRow.x + timeRight.x - x, row.y + middle.y + seekRow.y + timeRight.y - y,
+                    timeRight.width, timeRight.height),
+            Qt.rect(row.x + rightSide.x - x, row.y + rightSide.y - y, rightSide.width, rightSide.height)
+        ]
+        visible: bar.visPlace === "full" && !(idle && appearance.idleVisualiser === "hide")
+    }
+
     RowLayout {
         id: row
         anchors { fill: parent; leftMargin: 12; rightMargin: 14
@@ -106,6 +139,7 @@ Rectangle {
 
         // Left: the cover and the words.
         RowLayout {
+            id: leftSide
             Layout.preferredWidth: Math.max(220, bar.width * 0.28)
             Layout.maximumWidth: Math.max(220, bar.width * 0.28)
             Layout.fillHeight: true
@@ -123,6 +157,7 @@ Rectangle {
                 HoverHandler { id: coverHover }
             }
             ColumnLayout {
+                id: words
                 Layout.fillWidth: true
                 spacing: 2
                 Text {
@@ -208,6 +243,7 @@ Rectangle {
                 RoundButton { glyph: 0xF049D; lit: backend.shuffle; tip: qsTr("Shuffle (S)"); onClicked: backend.shuffle = !backend.shuffle }
                 RoundButton { glyph: 0xF04AE; tip: qsTr("Previous (Z)"); onClicked: backend.previous() }
                 RoundButton {
+                    id: playButton
                     objectName: "bigBarPlay"
                     big: true
                     glyph: bar.playing ? 0xF03E4 : 0xF040A
@@ -224,6 +260,7 @@ Rectangle {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 8
                 Text {
+                    id: timeLeft
                     Layout.preferredWidth: 48
                     horizontalAlignment: Text.AlignRight
                     visible: !backend.live
@@ -242,6 +279,7 @@ Rectangle {
                     onReleased: (v) => backend.seek(v * backend.duration)
                 }
                 Text {
+                    id: timeRight
                     Layout.preferredWidth: 48
                     visible: !backend.live
                     text: (bar.showRemaining ? "-" + bar.clock(backend.duration - backend.position) : bar.clock(backend.duration))
@@ -260,6 +298,7 @@ Rectangle {
 
         // Right: the panel switches and the volume.
         RowLayout {
+            id: rightSide
             Layout.alignment: Qt.AlignVCenter
             spacing: 2
             RoundButton { objectName: "bigBarLyrics"; glyph: 0xF036C; tip: qsTr("Lyrics"); onClicked: bar.showLyrics() }

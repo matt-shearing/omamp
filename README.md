@@ -87,7 +87,8 @@ of every track list; rows come compact, comfortable or large, and columns
 move when you drag their headers. The sidebar's sections fold, hide and
 change order. The now playing bar can be the slim strip or a large bar like
 Spotify's, at the top or the bottom, with a visualiser behind its seek bar,
-along its edge or beside the cover, in any of twelve styles. **Settings → Appearance → Layout** has
+behind the whole bar (fading out to its ends), along its edge or beside the
+cover, in any of twelve styles. **Settings → Appearance → Layout** has
 all of it, and **Reset layout** puts it back. The sidebar is on unless you
 switch it off. See
 [docs/library.md](docs/library.md#the-art-column).

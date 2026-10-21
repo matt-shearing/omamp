@@ -36,7 +36,7 @@ enum class Service { MusicBrainz, AcoustId, CoverArt, Lrclib, ListenBrainz, Last
 // "wikidata", "wikipedia".
 QString serviceName(Service service);
 
-// "Omamp/0.3.2 ( https://github.com/matt-shearing/omamp )", as MusicBrainz
+// "Omamp/0.3.3 ( https://github.com/matt-shearing/omamp )", as MusicBrainz
 // and ListenBrainz ask.
 QString userAgent();
 QString version();

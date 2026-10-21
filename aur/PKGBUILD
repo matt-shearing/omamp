@@ -1,6 +1,6 @@
 # Maintainer: Matt Shearing (https://github.com/matt-shearing)
 pkgname=omamp
-pkgver=0.3.2
+pkgver=0.3.3
 pkgrel=1
 pkgdesc='A Winamp-style music player and library manager that wears the Omarchy theme'
 arch=('x86_64' 'aarch64')

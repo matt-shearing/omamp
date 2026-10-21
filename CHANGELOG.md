@@ -2,6 +2,26 @@
 
 What changed in each release of Omamp, newest first.
 
+## 0.3.3
+
+- **A visualiser picker.** A waveform button in the large bar, the big Now
+  Playing view and the deck opens a gallery of live previews of every style,
+  with where the large bar's visualiser sits. The mouse wheel over any
+  visualiser flips through the styles.
+- **Behind the whole bar.** A new placement runs the visualiser edge to edge
+  behind the large now playing bar, fading out at both ends and softening under
+  the words. Synthwave was redrawn for it. The big Now Playing view can run its
+  visualiser edge to edge too.
+- **A mini visualiser in the Omarchy bar.** The bar plugin draws a faint
+  version of your visualiser behind the track, from levels Omamp shares over a
+  local socket while music plays. Each side has an on/off switch.
+- **The setup asks bold or subtle** for the large bar's visualiser.
+- **Floating windows fixed.** On Hyprland, switching views and finishing the
+  setup no longer leave the window too small or with a gap; Omamp now sizes
+  floating windows through Hyprland.
+- **The README** alternates dark and light pictures, and there is a one-page
+  website in `site/`.
+
 ## 0.3.2
 
 - **A short first-run setup.** On a new install, Omamp walks you through where

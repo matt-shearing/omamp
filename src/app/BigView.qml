@@ -93,11 +93,13 @@ Rectangle {
             visible: view.inLibrary
             onClicked: appearance.bigLyrics = !appearance.bigLyrics
         }
-        BigButton {
+        // Opens the visualiser picker; it says the style in use.
+        VisualiserButton {
             objectName: "bigVisualiserButton"
-            text: appearance.visualiserName(appearance.visualiser)
-            tip: qsTr("Next visualiser (Shift+V, or click it)")
-            onClicked: appearance.nextVisualiser()
+            where: "big"
+            label: appearance.visualiserName(appearance.visualiser)
+            ink: view.skin.bigText
+            accent: view.skin.accent
         }
         BigButton {
             objectName: "bigFullScreenButton"

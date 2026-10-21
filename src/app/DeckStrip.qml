@@ -57,7 +57,7 @@ Rectangle {
 
         // Clock and analyser share one LCD, as on the deck.
         Rectangle {
-            Layout.preferredWidth: 222
+            Layout.preferredWidth: 248
             Layout.fillHeight: true
             color: theme.c.darker_background
             border.width: 1
@@ -89,8 +89,19 @@ Rectangle {
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: strip.clockClicked() }
             }
             Analyser {
-                anchors { left: time.right; leftMargin: 4; right: parent.right; rightMargin: 8
+                anchors { left: time.right; leftMargin: 4; right: stripVisButton.left; rightMargin: 6
                           top: parent.top; bottom: parent.bottom; margins: 7 }
+            }
+            // The visualiser picker, beside the analyser.
+            VisualiserButton {
+                id: stripVisButton
+                objectName: "stripVisualiserButton"
+                where: "strip"
+                edgeItem: strip
+                size: 24
+                anchors { right: parent.right; rightMargin: 7; verticalCenter: parent.verticalCenter }
+                ink: theme.c.light_foreground
+                accent: theme.accent
             }
         }
 

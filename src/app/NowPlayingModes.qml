@@ -170,6 +170,7 @@ QtObject {
         p.addAction("fullscreen", qsTr("Fullscreen Now Playing"), ["full screen", "big", "display", "tv"], "F11")
         p.addAction("mini-player", qsTr("Mini player on or off"), ["compact", "small", "miniplayer", "windowshade"], "Ctrl+M")
         p.addAction("micro-player", qsTr("Micro player on or off (Winamp windowshade)"), ["compact", "tiny", "microplayer", "windowshade", "shade"], "Ctrl+Shift+M")
+        p.addAction("choose-visualiser", qsTr("Choose visualiser…"), ["visualizer", "analyser", "analyzer", "spectrum", "style", "picker", "gallery"], "")
         p.addAction("next-visualiser", qsTr("Next visualiser style"), ["visualizer", "analyser", "analyzer", "spectrum", "oscilloscope", "scope", "fire", "milkdrop"], "Shift+V")
         p.addAction("big-lyrics", qsTr("Lyrics in the big view on or off"), ["words", "karaoke", "lrc"], "Shift+L")
         p.addAction("settings-appearance", qsTr("Appearance: deck style, visualiser, big view…"), ["skin", "theme", "classic", "silver", "winamp", "mediamonkey", "look"], "")
@@ -196,6 +197,10 @@ QtObject {
         // The library's large bar has its own style when one is chosen.
         case "next-visualiser": appearance.cycleVisualiser(barVisualiserShown()); return true
         case "big-lyrics": appearance.bigLyrics = !appearance.bigLyrics; return true
+        // The picker, in the middle of the window, for the visualiser in view.
+        case "choose-visualiser":
+            appearance.choosePicker(null, barVisualiserShown() ? "bar" : bigView ? "big" : "player")
+            return true
         }
         if (id === "reduce-motion") {
             appearance.reduceMotion = !appearance.reduceMotion

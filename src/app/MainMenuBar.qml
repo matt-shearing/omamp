@@ -284,6 +284,7 @@ MenuBar {
                 onObjectRemoved: (index, object) => deckStyleMenu.removeItem(object)
             }
         }
+        Entry { objectName: "menuChooseVisualiser"; text: qsTr("Choose visualiser…"); command: "choose-visualiser" }
         BarMenu {
             id: visualiserMenu
             host: bar.window

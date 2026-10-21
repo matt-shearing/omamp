@@ -1,6 +1,8 @@
 <RCC>
     <qresource prefix="/">
         <file alias="Main.qml">Main.qml</file>
+        <file alias="VisualiserButton.qml">VisualiserButton.qml</file>
+        <file alias="VisualiserPicker.qml">VisualiserPicker.qml</file>
         <file alias="MainMenuBar.qml">MainMenuBar.qml</file>
         <file alias="LiveBar.qml">LiveBar.qml</file>
         <file alias="RadioView.qml">RadioView.qml</file>

@@ -269,6 +269,33 @@ class VisualiserTests : public QObject {
 
     void setEnv(const char *name, const QString &value) { qputenv(name, value.toUtf8()); }
 
+    static void click(Window &w, QQuickItem *item) {
+        QVERIFY(item);
+        QTest::mouseClick(w.window, Qt::LeftButton, {}, item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint());
+    }
+    // A turn of the mouse wheel at a point in the window (120 is one notch,
+    // negative is towards the user).
+    static void wheelAt(Window &w, QPointF at, int angle) {
+        QWheelEvent event(at, w.window->mapToGlobal(at.toPoint()), QPoint(), QPoint(0, angle), Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(w.window, &event);
+    }
+    static QList<QQuickItem *> all(Window &w, const QString &name) {
+        QList<QQuickItem *> out;
+        Window::findAll(w.window->contentItem(), name, &out);
+        return out;
+    }
+    static void writeConf(const QString &path, bool advanced, const QString &barSize) {
+        QSettings conf(path, QSettings::IniFormat);
+        conf.setValue("window/advanced", advanced);
+        conf.setValue("window/libraryHintDone", true);
+        conf.setValue("window/advancedWidth", 1400);
+        conf.setValue("window/advancedHeight", 800);
+        conf.setValue("layout/barSize", barSize);
+        conf.setValue("layout/barPosition", "bottom");
+    }
+
+
 private slots:
     void initTestCase() {
         QVERIFY(m_dir.isValid());
@@ -806,6 +833,290 @@ private slots:
         QCOMPARE(appearance->barVisualiser(), QString("behind"));
         QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("bar-visualiser:full")));
         QCOMPARE(appearance->barVisualiser(), QString("full"));
+    }
+
+    // ---- The visualiser picker ------------------------------------------
+
+    // The large bar's button opens the picker beside it: a live tile for
+    // every style the build has, the bar's places and its own style, Reduce
+    // motion and the way to Settings. Picking applies and is saved; the
+    // keys move, pick and close; the previews go when it closes.
+    void pickerInTheLargeBar() {
+        QTemporaryDir dir;
+        writeConf(dir.filePath("window.conf"), true, "large");
+        Window w(dir);
+        QVERIFY(w.load());
+        Appearance *appearance = w.appearance();
+        QTRY_VERIFY(w.shown("bigBarVisualiserButton"));
+        QObject *picker = w.window->findChild<QObject *>("visualiserPicker");
+        QVERIFY(picker);
+        QVERIFY(!picker->property("visible").toBool());
+        QVERIFY(all(w, "pickerPreview").isEmpty());
+
+        QQuickItem *button = w.find("bigBarVisualiserButton");
+        click(w, button);
+        QTRY_VERIFY(picker->property("opened").toBool());
+        QCOMPARE(picker->property("where").toString(), QString("bar"));
+        QCOMPARE(appearance->pickerAnchor(), button);
+        QVERIFY(button->property("active").toBool());
+        // Beside the button, inside the window.
+        auto *box = qobject_cast<QQuickItem *>(picker->property("contentItem").value<QObject *>());
+        QVERIFY(box);
+        const QRectF shown = box->mapRectToScene(QRectF(0, 0, box->width(), box->height()));
+        QVERIFY(shown.left() >= 0 && shown.right() <= w.window->width());
+        QVERIFY(shown.top() >= 0 && shown.bottom() <= w.window->height());
+        QVERIFY(shown.bottom() <= button->mapToScene(QPointF(0, 0)).y()); // the bar is at the bottom: above it
+
+        // A tile per style, read from the build, each drawing.
+        const QStringList styles = Appearance::visualisers();
+        QTRY_COMPARE(all(w, "pickerPreview").size(), styles.size());
+        for (const QString &style : styles) {
+            QVERIFY2(w.shown("pickerTile_" + style), qPrintable(style));
+            QCOMPARE(w.find("pickerTile_" + style)->property("chosen").toBool(), style == appearance->barStyle());
+        }
+        for (QQuickItem *preview : all(w, "pickerPreview"))
+            QTRY_VERIFY2(qobject_cast<Visualiser *>(preview)->frames() > 1, qPrintable(preview->property("style").toString()));
+        QVERIFY(picker->property("previewing").toBool());
+
+        // A click picks: shared, so the player's style changes, and it's saved.
+        click(w, w.find("pickerTile_synthwave"));
+        QCOMPARE(appearance->visualiser(), QString("synthwave"));
+        QCOMPARE(appearance->barStyle(), QString("synthwave"));
+        QVERIFY(picker->property("opened").toBool());
+        QVERIFY(w.find("pickerTile_synthwave")->property("chosen").toBool());
+        QTRY_COMPARE(QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value("appearance/visualiser").toString(),
+                     QString("synthwave"));
+        // Its own style: starts from the one in use, then only the bar's moves.
+        click(w, w.find("pickerOwn"));
+        QCOMPARE(appearance->barVisualiserStyle(), QString("synthwave"));
+        click(w, w.find("pickerTile_led"));
+        QCOMPARE(appearance->barVisualiserStyle(), QString("led"));
+        QCOMPARE(appearance->visualiser(), QString("synthwave"));
+        QTRY_COMPARE(QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value("appearance/barVisualiserStyle").toString(),
+                     QString("led"));
+        click(w, w.find("pickerShared"));
+        QCOMPARE(appearance->barVisualiserStyle(), QString());
+        QCOMPARE(appearance->barStyle(), QString("synthwave"));
+
+        // The places.
+        for (const QString &place : QStringList{"full", "edge", "beside", "off", "behind"}) {
+            click(w, w.find("pickerPlace_" + place));
+            QCOMPARE(appearance->barVisualiser(), place);
+            QVERIFY(w.find("pickerPlace_" + place)->property("chosen").toBool());
+            QVERIFY(picker->property("opened").toBool());
+        }
+        QTRY_COMPARE(QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value("appearance/barVisualiser").toString(),
+                     QString("behind"));
+        // Reduce motion reaches the previews.
+        click(w, w.find("pickerReduceMotion"));
+        QVERIFY(appearance->reduceMotion());
+        QTRY_VERIFY(qobject_cast<Visualiser *>(all(w, "pickerPreview").first())->reduceMotion());
+        click(w, w.find("pickerReduceMotion"));
+        QVERIFY(!appearance->reduceMotion());
+
+        // The keys: arrows move, Space picks and stays, Enter picks and closes.
+        const int at = styles.indexOf("synthwave");
+        QCOMPARE(picker->property("cursor").toInt(), at);
+        QTest::keyClick(w.window, Qt::Key_Right);
+        QCOMPARE(picker->property("cursor").toInt(), at + 1);
+        QVERIFY(w.find("pickerTile_" + styles[at + 1])->property("atCursor").toBool());
+        QCOMPARE(appearance->visualiser(), QString("synthwave")); // moving doesn't pick
+        QTest::keyClick(w.window, Qt::Key_Up);
+        QCOMPARE(picker->property("cursor").toInt(), at + 1 - 4);
+        QTest::keyClick(w.window, Qt::Key_Left);
+        QCOMPARE(picker->property("cursor").toInt(), at - 4);
+        QTest::keyClick(w.window, Qt::Key_Space);
+        QCOMPARE(appearance->visualiser(), styles[at - 4]);
+        QVERIFY(picker->property("opened").toBool());
+        QTest::keyClick(w.window, Qt::Key_Down);
+        QCOMPARE(picker->property("cursor").toInt(), at);
+        // Space while it's open is not the window's play key.
+        QCOMPARE(w.engine.rootContext()->contextProperty("backend").value<QObject *>()->property("state").toString(),
+                 QString("stopped"));
+        QTest::keyClick(w.window, Qt::Key_Return);
+        QCOMPARE(appearance->visualiser(), QString("synthwave"));
+        QTRY_VERIFY(!picker->property("visible").toBool());
+        // The previews are gone with it.
+        QVERIFY(!picker->property("previewing").toBool());
+        QTRY_VERIFY(all(w, "pickerPreview").isEmpty());
+        QVERIFY(appearance->pickerAnchor() == nullptr);
+        QVERIFY(!button->property("active").toBool());
+
+        // Esc closes; the button again closes it too.
+        click(w, button);
+        QTRY_VERIFY(picker->property("opened").toBool());
+        QTest::keyClick(w.window, Qt::Key_Escape);
+        QTRY_VERIFY(!picker->property("visible").toBool());
+        click(w, button);
+        QTRY_VERIFY(picker->property("opened").toBool());
+        click(w, button);
+        QTRY_VERIFY(!picker->property("visible").toBool());
+        QTest::qWait(400);
+        QVERIFY(!picker->property("visible").toBool());
+
+        // The palette's action opens it in the middle of the window, for the bar.
+        QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("choose-visualiser")));
+        QTRY_VERIFY(picker->property("opened").toBool());
+        QCOMPARE(picker->property("where").toString(), QString("bar"));
+        QVERIFY(appearance->pickerAnchor() == nullptr);
+        const QRectF middle = box->mapRectToScene(QRectF(0, 0, box->width(), box->height()));
+        QVERIFY(qAbs(middle.center().x() - w.window->width() / 2.0) < 30);
+        // More settings… opens Settings > Appearance.
+        click(w, w.find("pickerMoreSettings"));
+        QTRY_VERIFY(!picker->property("visible").toBool());
+        QTRY_VERIFY(w.window->findChild<QObject *>("barVisualiserSettings"));
+        QTRY_COMPARE(w.window->property("lastAction").toString(), QString("settings-appearance"));
+    }
+
+    // The big view, the deck and the strip each have the button; the
+    // picker there chooses the shared style and has no bar places.
+    void pickerInTheOtherPlaces() {
+        QTemporaryDir dir;
+        writeConf(dir.filePath("window.conf"), false, "compact");
+        Window w(dir);
+        QVERIFY(w.load());
+        Appearance *appearance = w.appearance();
+        QObject *picker = w.window->findChild<QObject *>("visualiserPicker");
+        QVERIFY(picker);
+        struct Place { QString button, where, view; };
+        const QList<Place> places = {{"deckVisualiserButton", "player", "view-player"},
+                                     {"stripVisualiserButton", "strip", "view-library"},
+                                     {"bigVisualiserButton", "big", "big-view"}};
+        QStringList styles = Appearance::visualisers();
+        int n = 0;
+        for (const Place &p : places) {
+            QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant(p.view)));
+            QTRY_VERIFY2(w.shown(p.button), qPrintable(p.button));
+            QQuickItem *button = w.find(p.button);
+            click(w, button);
+            QTRY_VERIFY2(picker->property("opened").toBool(), qPrintable(p.button));
+            QCOMPARE(picker->property("where").toString(), p.where);
+            QCOMPARE(appearance->pickerAnchor(), button);
+            QVERIFY(!w.shown("pickerPlace_full"));
+            QVERIFY(!w.shown("pickerOwn"));
+            QTRY_COMPARE(all(w, "pickerPreview").size(), styles.size());
+            const QString style = styles[(3 + 4 * n++) % styles.size()];
+            click(w, w.find("pickerTile_" + style));
+            QCOMPARE(appearance->visualiser(), style);
+            // The palette's action from here chooses for the same visualiser.
+            QTest::keyClick(w.window, Qt::Key_Escape);
+            QTRY_VERIFY(!picker->property("visible").toBool());
+            QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("choose-visualiser")));
+            QTRY_VERIFY(picker->property("opened").toBool());
+            QCOMPARE(picker->property("where").toString(), p.where == "strip" ? QString("player") : p.where);
+            QTest::keyClick(w.window, Qt::Key_Escape);
+            QTRY_VERIFY(!picker->property("visible").toBool());
+        }
+        // The big view's button names the style in use.
+        QCOMPARE(w.find("bigVisualiserButton")->property("label").toString(), appearance->visualiserName(appearance->visualiser()));
+        // The View menu has the entry.
+        QObject *entry = w.window->findChild<QObject *>("menuChooseVisualiser");
+        QVERIFY(entry);
+        QCOMPARE(entry->property("command").toString(), QString("choose-visualiser"));
+    }
+
+    // The mouse wheel over a visualiser goes through the styles: down goes
+    // on, up goes back; the large bar's own style when it has one; a
+    // touchpad's small steps add up to one.
+    void wheelCyclesStyles() {
+        QTemporaryDir dir;
+        writeConf(dir.filePath("window.conf"), true, "large");
+        Window w(dir);
+        QVERIFY(w.load());
+        Appearance *appearance = w.appearance();
+        appearance->setVisualiser("skyline");
+        QTRY_VERIFY(w.shown("barVisualiserBehind"));
+        QQuickItem *behind = w.find("barVisualiserBehind");
+        // A corner clear of the buttons and the seek bar.
+        auto corner = [&w](QQuickItem *item) {
+            const QPointF at = item->mapToScene(QPointF(6, 4));
+            return [&w, at](int angle) { wheelAt(w, at, angle); };
+        };
+        auto spin = corner(behind);
+        spin(-120);
+        QCOMPARE(appearance->visualiser(), QString("ribbon"));
+        spin(120);
+        spin(120);
+        QCOMPARE(appearance->visualiser(), QString("fire"));
+        // Small steps: three of 40 make a notch.
+        spin(-40);
+        spin(-40);
+        QCOMPARE(appearance->visualiser(), QString("fire"));
+        spin(-40);
+        QCOMPARE(appearance->visualiser(), QString("skyline"));
+        // Round the end of the list.
+        appearance->setVisualiser("bars");
+        spin(120);
+        QCOMPARE(appearance->visualiser(), QString("stars"));
+        // The bar's own style.
+        appearance->setBarVisualiserStyle("led");
+        spin(-120);
+        QCOMPARE(appearance->barVisualiserStyle(), QString("synthwave"));
+        QCOMPARE(appearance->visualiser(), QString("stars"));
+        // Behind the whole bar too, where clicks belong to the bar.
+        appearance->setBarVisualiser("full");
+        QTRY_VERIFY(w.shown("barVisualiserFull"));
+        QQuickItem *full = w.find("barVisualiserFull");
+        auto spinFull = [&](int angle) { wheelAt(w, full->mapToScene(QPointF(full->width() * 0.62, full->height() - 4)), angle); };
+        spinFull(-120);
+        QCOMPARE(appearance->barVisualiserStyle(), QString("stars"));
+        QTRY_COMPARE(QSettings(dir.filePath("window.conf"), QSettings::IniFormat).value("appearance/barVisualiserStyle").toString(),
+                     QString("stars"));
+        // The deck's analyser: the shared style.
+        QMetaObject::invokeMethod(w.window, "runAction", Q_ARG(QVariant, QVariant("view-player")));
+        QQuickItem *deckAnalyser = nullptr;
+        QTRY_VERIFY([&] {
+            for (QQuickItem *a : all(w, "analyser"))
+                if (a->isVisible() && a->width() > 0) { deckAnalyser = a; return true; }
+            return false;
+        }());
+        auto spinDeck = corner(deckAnalyser);
+        spinDeck(-120);
+        QCOMPARE(appearance->visualiser(), QString("bars"));
+        QCOMPARE(appearance->barVisualiserStyle(), QString("stars"));
+    }
+
+    // OMAMP_VIS_BENCH=1: the whole process's CPU with the picker open (twelve
+    // previews) and closed, playing the fixture into the analyser's place.
+    void cpuPickerOpen() {
+        if (qEnvironmentVariableIntValue("OMAMP_VIS_BENCH") <= 0)
+            QSKIP("OMAMP_VIS_BENCH=1 measures the picker's CPU");
+        QTemporaryDir dir;
+        writeTheme(dir.path(), kNightRide);
+        writeConf(dir.filePath("window.conf"), true, "large");
+        Window w(dir);
+        QVERIFY(w.load());
+        QObject *picker = w.window->findChild<QObject *>("visualiserPicker");
+        QTRY_VERIFY(w.shown("bigBarVisualiserButton"));
+        QTest::qWait(1500);
+        QTextStream out(stdout);
+        out << "\nthe visualiser picker, 1,400 x 800, nothing playing (the previews play their sample)\n";
+        for (bool open : {false, true, false}) {
+            if (open) {
+                click(w, w.find("bigBarVisualiserButton"));
+                QTRY_VERIFY(picker->property("opened").toBool());
+            } else if (picker->property("visible").toBool()) {
+                QTest::keyClick(w.window, Qt::Key_Escape);
+                QTRY_VERIFY(!picker->property("visible").toBool());
+            }
+            QTest::qWait(500);
+            QList<int> before;
+            const QList<QQuickItem *> previews = all(w, "pickerPreview");
+            for (QQuickItem *p : previews)
+                before << qobject_cast<Visualiser *>(p)->frames();
+            const double cpu = processCpuSeconds();
+            QElapsedTimer wall;
+            wall.start();
+            QTest::qWait(5000);
+            const double elapsed = wall.nsecsElapsed() / 1e9;
+            const double used = processCpuSeconds() - cpu;
+            int frames = 0;
+            for (int i = 0; i < previews.size(); ++i)
+                frames += qobject_cast<Visualiser *>(previews[i])->frames() - before[i];
+            out << QString("%1  CPU %2 %  preview frames per second, all tiles: %3\n")
+                       .arg(open ? "open  " : "closed").arg(100 * used / elapsed, 5, 'f', 1).arg(frames / elapsed, 6, 'f', 0);
+            out.flush();
+        }
     }
 
     // OMAMP_VIS_BENCH=1: each style behind the whole bar in the library

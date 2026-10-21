@@ -301,6 +301,16 @@ Rectangle {
             id: rightSide
             Layout.alignment: Qt.AlignVCenter
             spacing: 2
+            VisualiserButton {
+                objectName: "bigBarVisualiserButton"
+                where: "bar"
+                edgeItem: bar
+                round: true
+                size: 34
+                ink: bar.skin.text
+                accent: bar.skin.accent
+                Layout.rightMargin: 4
+            }
             RoundButton { objectName: "bigBarLyrics"; glyph: 0xF036C; tip: qsTr("Lyrics"); onClicked: bar.showLyrics() }
             RoundButton { objectName: "bigBarQueue"; glyph: 0xF0CB8; lit: bar.queueOn; tip: qsTr("Now Playing list"); onClicked: bar.showQueue() }
             RoundButton { objectName: "bigBarSidebar"; glyph: 0xF10AB; lit: bar.sidebarOn; tip: qsTr("Sidebar (I)"); onClicked: bar.toggleSidebar() }

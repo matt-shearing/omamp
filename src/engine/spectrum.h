@@ -19,6 +19,9 @@ public:
     // the oscilloscope. Each point is the strongest sample of its stretch,
     // so short peaks survive the thinning.
     QList<qreal> waveform() const { return m_wave; }
+    // The same stretch per channel, left then right (wavePoints each), for
+    // the waveform ribbon. A mono source repeats its one channel.
+    QList<qreal> stereoWaveform() const { return m_stereo; }
     static constexpr int wavePoints = 128;
 
     // Exposed for tests: band levels for mono samples at a sample rate.
@@ -26,6 +29,7 @@ public:
 
 private:
     int m_bands;
-    QList<qreal> m_levels, m_peaks, m_wave;
+    QList<qreal> m_levels, m_peaks, m_wave, m_stereo;
     void takeWave(const QList<float> &mono);
+    void takeStereo(const QAudioBuffer &buffer, int start, int take);
 };

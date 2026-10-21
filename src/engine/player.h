@@ -34,6 +34,8 @@ class Player : public QObject {
     Q_PROPERTY(QList<qreal> peaks READ peaks NOTIFY levelsChanged)
     // The sound itself, for the oscilloscope: 128 points from -1 to 1.
     Q_PROPERTY(QList<qreal> waveform READ waveform NOTIFY levelsChanged)
+    // Left then right, Spectrum::wavePoints each, for the waveform ribbon.
+    Q_PROPERTY(QList<qreal> stereoWaveform READ stereoWaveform NOTIFY levelsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     // Playing, but waiting for a stream to arrive; statusText says so in
     // words ("Buffering…"), empty otherwise.
@@ -42,6 +44,9 @@ class Player : public QObject {
     // The current entry is a live radio station (radio://…): no length and
     // no seeking; position is how long it has been listened to.
     Q_PROPERTY(bool live READ live NOTIFY trackChanged)
+    // The current entry plays in another program (Spotify), so no sound
+    // reaches the analyser: the visualisers show their idle animation.
+    Q_PROPERTY(bool playsElsewhere READ playsElsewhere NOTIFY trackChanged)
     // Which engine plays ("qt" or "native") and whether it joins tracks
     // without a gap. Chosen at start: OMAMP_ENGINE, else playback/engine in
     // omamp.conf beside the state file, else "qt".
@@ -102,9 +107,11 @@ public:
     QList<qreal> levels() const { return m_spectrum.levels(); }
     QList<qreal> peaks() const { return m_spectrum.peaks(); }
     QList<qreal> waveform() const { return m_spectrum.waveform(); }
+    QList<qreal> stereoWaveform() const { return m_spectrum.stereoWaveform(); }
     QString error() const { return m_error; }
     bool buffering() const { return m_engine->buffering(); }
     bool live() const;
+    bool playsElsewhere() const;
     // What a live station is playing now, from the radio's metadata (its
     // feed or the stream's ICY titles). Shown as the title, artist and
     // album wherever the playing track shows, and sent over MPRIS. Ignored

@@ -39,6 +39,16 @@ Appearance::Appearance(const QString &settingsPath, Theme *theme, QObject *paren
         if (bg == "blur" || bg == "theme")
             m_bigBackground = bg;
         m_bigLyrics = s.value("bigLyrics", m_bigLyrics).toBool();
+        const QString place = s.value("barVisualiser", m_barVisualiser).toString();
+        if (barPlacements().contains(place))
+            m_barVisualiser = place;
+        const QString barStyle = s.value("barVisualiserStyle").toString();
+        if (visualisers().contains(barStyle))
+            m_barVisualiserStyle = barStyle;
+        const QString idle = s.value("idleVisualiser", m_idleVisualiser).toString();
+        if (idle == "calm" || idle == "hide")
+            m_idleVisualiser = idle;
+        m_reduceMotion = s.value("reduceMotion", m_reduceMotion).toBool();
     }
     if (m_theme)
         connect(m_theme, &Theme::changed, this, &Appearance::rebuild);
@@ -46,7 +56,9 @@ Appearance::Appearance(const QString &settingsPath, Theme *theme, QObject *paren
 }
 
 QStringList Appearance::deckStyles() { return {"omarchy", "classic", "silver"}; }
-QStringList Appearance::visualisers() { return {"bars", "peaks", "mirror", "scope", "fire"}; }
+QStringList Appearance::visualisers() {
+    return {"bars", "peaks", "mirror", "scope", "fire", "skyline", "ribbon", "line", "pulse", "led", "synthwave", "stars"};
+}
 
 QString Appearance::deckStyleName(const QString &style) const {
     if (style == "classic")
@@ -65,7 +77,31 @@ QString Appearance::visualiserName(const QString &style) const {
         return tr("Oscilloscope");
     if (style == "fire")
         return tr("Fire");
+    if (style == "skyline")
+        return tr("Skyline");
+    if (style == "ribbon")
+        return tr("Waveform ribbon");
+    if (style == "line")
+        return tr("Spectrum line");
+    if (style == "pulse")
+        return tr("Pulse");
+    if (style == "led")
+        return tr("LED matrix");
+    if (style == "synthwave")
+        return tr("Synthwave");
+    if (style == "stars")
+        return tr("Star field");
     return tr("Bars with peaks");
+}
+
+QString Appearance::barPlacementName(const QString &place) const {
+    if (place == "behind")
+        return tr("Behind the seek bar");
+    if (place == "edge")
+        return tr("Along the edge");
+    if (place == "beside")
+        return tr("Beside the cover");
+    return tr("Off");
 }
 
 void Appearance::save(const QString &key, const QVariant &value) {
@@ -96,6 +132,51 @@ QString Appearance::nextVisualiser() {
     const QStringList all = visualisers();
     setVisualiser(all.value((all.indexOf(m_visualiser) + 1) % all.size()));
     return m_visualiser;
+}
+
+QString Appearance::nextBarVisualiser() {
+    if (m_barVisualiserStyle.isEmpty())
+        return nextVisualiser();
+    const QStringList all = visualisers();
+    setBarVisualiserStyle(all.value((all.indexOf(m_barVisualiserStyle) + 1) % all.size()));
+    return m_barVisualiserStyle;
+}
+
+QString Appearance::cycleVisualiser(bool inBar) {
+    return inBar && m_barVisualiser != "off" ? nextBarVisualiser() : nextVisualiser();
+}
+
+void Appearance::setBarVisualiser(const QString &place) {
+    if (place == m_barVisualiser || !barPlacements().contains(place))
+        return;
+    m_barVisualiser = place;
+    save("barVisualiser", place);
+    emit changed();
+}
+
+// "" shares the player's style.
+void Appearance::setBarVisualiserStyle(const QString &style) {
+    if (style == m_barVisualiserStyle || (!style.isEmpty() && !visualisers().contains(style)))
+        return;
+    m_barVisualiserStyle = style;
+    save("barVisualiserStyle", style);
+    emit changed();
+}
+
+void Appearance::setIdleVisualiser(const QString &kind) {
+    if (kind == m_idleVisualiser || (kind != "calm" && kind != "hide"))
+        return;
+    m_idleVisualiser = kind;
+    save("idleVisualiser", kind);
+    emit changed();
+}
+
+void Appearance::setReduceMotion(bool on) {
+    if (on == m_reduceMotion)
+        return;
+    m_reduceMotion = on;
+    save("reduceMotion", on);
+    emit changed();
 }
 
 void Appearance::setCoverInDeck(bool on) {

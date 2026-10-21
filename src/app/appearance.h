@@ -28,6 +28,18 @@ class Appearance : public QObject {
     Q_PROPERTY(bool coverInDeck READ coverInDeck WRITE setCoverInDeck NOTIFY changed)
     Q_PROPERTY(QString bigBackground READ bigBackground WRITE setBigBackground NOTIFY changed)
     Q_PROPERTY(bool bigLyrics READ bigLyrics WRITE setBigLyrics NOTIFY changed)
+    // The large now playing bar's visualiser: where it sits ("off",
+    // "behind" the seek bar, along the "edge", "beside" the cover), its own
+    // style or "" to share the player's, and the style in effect.
+    Q_PROPERTY(QString barVisualiser READ barVisualiser WRITE setBarVisualiser NOTIFY changed)
+    Q_PROPERTY(QString barVisualiserStyle READ barVisualiserStyle WRITE setBarVisualiserStyle NOTIFY changed)
+    Q_PROPERTY(QString barStyle READ barStyle NOTIFY changed)
+    // While no sound reaches Omamp (paused, stopped, Spotify): "calm" keeps
+    // a slow idle animation in the large bar, "hide" hides its visualiser.
+    Q_PROPERTY(QString idleVisualiser READ idleVisualiser WRITE setIdleVisualiser NOTIFY changed)
+    // Slower, calmer visualisers with no beat flashes.
+    Q_PROPERTY(bool reduceMotion READ reduceMotion WRITE setReduceMotion NOTIFY changed)
+    Q_PROPERTY(QStringList barPlacements READ barPlacements CONSTANT)
     Q_PROPERTY(QVariantMap deck READ deck NOTIFY paletteChanged)
     Q_PROPERTY(QVariantMap plain READ plain NOTIFY paletteChanged)
     Q_PROPERTY(QStringList deckStyles READ deckStyles CONSTANT)
@@ -51,6 +63,17 @@ public:
     void setBigBackground(const QString &kind);
     bool bigLyrics() const { return m_bigLyrics; }
     void setBigLyrics(bool on);
+    QString barVisualiser() const { return m_barVisualiser; }
+    void setBarVisualiser(const QString &place);
+    QString barVisualiserStyle() const { return m_barVisualiserStyle; }
+    void setBarVisualiserStyle(const QString &style);
+    QString barStyle() const { return m_barVisualiserStyle.isEmpty() ? m_visualiser : m_barVisualiserStyle; }
+    QString idleVisualiser() const { return m_idleVisualiser; }
+    void setIdleVisualiser(const QString &kind);
+    bool reduceMotion() const { return m_reduceMotion; }
+    void setReduceMotion(bool on);
+    // "off", "behind", "edge", "beside".
+    static QStringList barPlacements() { return {"off", "behind", "edge", "beside"}; }
 
     LayoutPrefs *layout() const { return m_layout; }
 
@@ -59,11 +82,19 @@ public:
 
     // "omarchy", "classic", "silver".
     static QStringList deckStyles();
-    // "bars", "peaks", "mirror", "scope", "fire".
+    // "bars", "peaks", "mirror", "scope", "fire", then the ones made for
+    // the large bar: "skyline", "ribbon", "line", "pulse", "led",
+    // "synthwave", "stars".
     static QStringList visualisers();
 
     // The next visualiser after the current one, round the list.
     Q_INVOKABLE QString nextVisualiser();
+    // The large bar's next style: its own when it has one, else the shared one.
+    Q_INVOKABLE QString nextBarVisualiser();
+    // Shift+V: the large bar's style when the bar's visualiser is what
+    // shows (inBar), else the shared one.
+    Q_INVOKABLE QString cycleVisualiser(bool inBar);
+    Q_INVOKABLE QString barPlacementName(const QString &place) const;
     // A style's name for the window ("Omarchy", "Classic", "Silver").
     Q_INVOKABLE QString deckStyleName(const QString &style) const;
     Q_INVOKABLE QString visualiserName(const QString &style) const;
@@ -87,6 +118,10 @@ private:
     bool m_coverInDeck = true;
     QString m_bigBackground = "blur";
     bool m_bigLyrics = true;
+    QString m_barVisualiser = "behind";
+    QString m_barVisualiserStyle;
+    QString m_idleVisualiser = "calm";
+    bool m_reduceMotion = false;
     QVariantMap m_deck, m_plain;
     LayoutPrefs *m_layout = nullptr;
 };

@@ -9,6 +9,40 @@ void Spectrum::reset() {
     m_levels = QList<qreal>(m_bands, 0.0);
     m_peaks = QList<qreal>(m_bands, 0.0);
     m_wave = QList<qreal>(wavePoints, 0.0);
+    m_stereo = QList<qreal>(2 * wavePoints, 0.0);
+}
+
+// The left and right channels over the scope's stretch, each point the
+// strongest sample of its share, as takeWave does for the mono line.
+void Spectrum::takeStereo(const QAudioBuffer &buffer, int start, int take) {
+    const QAudioFormat format = buffer.format();
+    const int channels = format.channelCount();
+    const int frames = qMin(take, 512);
+    const int first = start + take - frames;
+    if (frames < wavePoints)
+        return;
+    auto sample = [&](int frame, int channel) -> float {
+        const int s = frame * channels + qMin(channel, channels - 1);
+        switch (format.sampleFormat()) {
+        case QAudioFormat::Float: return buffer.constData<float>()[s];
+        case QAudioFormat::Int16: return buffer.constData<qint16>()[s] / 32768.f;
+        case QAudioFormat::Int32: return buffer.constData<qint32>()[s] / 2147483648.f;
+        case QAudioFormat::UInt8: return (buffer.constData<quint8>()[s] - 128) / 128.f;
+        default: return 0.f;
+        }
+    };
+    for (int c = 0; c < 2; ++c) {
+        for (int i = 0; i < wavePoints; ++i) {
+            const int from = first + i * frames / wavePoints, to = first + (i + 1) * frames / wavePoints;
+            float best = 0;
+            for (int k = from; k < to; ++k) {
+                const float v = sample(k, c);
+                if (std::abs(v) > std::abs(best))
+                    best = v;
+            }
+            m_stereo[c * wavePoints + i] = best;
+        }
+    }
 }
 
 void Spectrum::takeWave(const QList<float> &mono) {
@@ -55,6 +89,7 @@ void Spectrum::feed(const QAudioBuffer &buffer) {
         mono[i] = sum / channels;
     }
     takeWave(mono);
+    takeStereo(buffer, start, take);
     analyse(mono, format.sampleRate());
 }
 
@@ -94,5 +129,7 @@ void Spectrum::decay() {
     }
     // Between buffers the line settles towards silence.
     for (qreal &v : m_wave)
+        v *= 0.85;
+    for (qreal &v : m_stereo)
         v *= 0.85;
 }

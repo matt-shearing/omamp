@@ -452,6 +452,10 @@ bool Player::live() const {
     return m_current >= 0 && m_current < m_playlist.count() && Streaming::isLive(m_playlist.at(m_current).path);
 }
 
+bool Player::playsElsewhere() const {
+    return m_current >= 0 && m_current < m_playlist.count() && m_playlist.at(m_current).path.startsWith("spotify:");
+}
+
 void Player::setLiveInfo(const QString &title, const QString &artist, const QString &album) {
     if (!live() || (title == m_title && artist == m_artist && album == m_album))
         return;

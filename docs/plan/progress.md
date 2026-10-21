@@ -5537,3 +5537,106 @@ artist picture.
   first sight, one request per album.
 - **Up next** follows list order, as the big view does, even with shuffle on.
 - **Translations**: the new strings are English only.
+
+## First-run setup and the sidebar on by default (21 October 2026)
+
+Matt asked for the sidebar on by default, and "a first setup process where
+you select all this stuff … but not too many!" Both are built.
+
+```
+src/app/firstrun.{h,cpp}      new install or older one; [setup] in window.conf; the sidebar switched on once
+src/app/SetupWizard.qml       the five steps, over the real window
+src/app/SetupActions.qml      opens it at start, Help → Run setup again…, the palette action, the banner
+tests/setup_tests.cpp         OMAMP_TESTS=setup
+```
+
+### What was built
+
+- **Sidebar on by default.** `FirstRun` reads `window.conf` before anything
+  else does. Once per install (`setup/migration`), it writes
+  `window/infoVisible=true`: a new install starts with the sidebar, and an
+  older one gets it switched on once. After that the person's own choice
+  stands. **Reset layout** now leaves the sidebar on.
+- **The setup.** Five steps in a panel at the bottom of the window (at the
+  top while the library's large bar sits at the bottom, so the bar shows):
+  Start (player or library, with small drawings of each), Look (player style
+  and visualiser, with moving previews fed by made-up levels), Layout
+  (Classic, Spotify-like, Minimal, and four switches), Your music (add a
+  folder through the portal, Spotify on after Finish, a line each on radio
+  and Navidrome), and Done (four keys). Every choice goes through the
+  existing settings (`appearance`, `appearance.layout`, the window's
+  `prefs`), so it shows at once and is saved as it would be from the menus.
+  Look shows the deck behind the panel, Layout the library, the other steps
+  the chosen start view. The panel dims nothing and takes the keys: `Enter`
+  is Next, `Esc` asks before skipping. The visualiser list is
+  `appearance.visualisers`, so styles added later appear by themselves.
+- **When it opens.** A new install (no `window.conf`, or an empty one) opens
+  it at start until it is finished or skipped; quitting half-way brings it
+  back. An older install never gets it forced: a banner ("New: a short setup
+  to choose your look and layout") offers it until it is run or closed.
+  **Help → Run setup again…** and the palette's **Run setup again…** open it
+  at any time; `omamp mini` and `omamp micro` never open it.
+- **Skip puts things back.** Skipping restores the start view, deck style,
+  visualiser, covers, sidebar, column browser and bar exactly as they were
+  when the setup opened, so a re-run that is skipped changes nothing.
+
+### Test results
+
+`tests/setup_tests.cpp` (OMAMP_TESTS=setup), offscreen in software with no
+audio device, each window with its own `window.conf`:
+
+- a new install is due for the setup, keeps being due after a half-way quit,
+  and is done after `markCompleted()`;
+- an older install gets the banner, not the setup; the sidebar comes on once
+  and stays off once switched off; other settings are untouched; closing the
+  banner is remembered;
+- the real window opens the setup on first start; each step applies live
+  (start view, deck style, every visualiser drawn and chosen, the three
+  presets, the switches, the panel moving to the top and back); `Enter`,
+  Back and Finish; Finish saves everything and the next start opens no setup;
+- `Esc` asks, a second `Esc` cancels, Skip restores the defaults;
+- an older install: no setup, banner once, Help's entry and the palette
+  action open it, and skipping a re-run changes nothing;
+- the banner's **Run setup** opens it, and finishing clears the banner;
+- it fits the deck's smallest window (440 × 460).
+
+`tests/nowplaying_context.h` gives every other window test an in-memory
+`FirstRun` that counts as set up, so the setup never opens over them. The
+layout test now expects the sidebar on after Reset layout.
+
+`bin/test` with JOBS=4: 32 Totals lines, 462 passed, 0 failed, 6 skipped
+(the existing opt-in benchmarks and live web test). The menu test that runs
+every entry caught the setup switching views through `runAction()`, which
+overwrote the action it was opened by; it now calls `setAdvanced()`.
+
+### Screenshots
+
+`docs/setup-{start,look,layout,music,done}-{light,dark}.png`, in OneQode
+Light Glass and Night Ride (copies of the theme files in a throwaway HOME),
+from `tests/make-demo-library`, captured with `OMAMP_DEMO` and
+`OMAMP_SCREENSHOT`, offscreen in software, with no session bus and no audio.
+Looking at them led to: the player styles as a compact list with a short
+note each (they wrapped badly in a flow), the panel sized to each step
+instead of a fixed height, visible step dots in the light theme, the top
+position below the menu bar, and a shorter Navidrome line.
+
+### Decisions
+
+- **No forced setup for existing users.** The banner is enough, and nothing
+  of theirs changes unless they run it and change something.
+- **The sidebar migration is in C++, before the window loads.** The QML
+  default stays off so the other window tests keep their layout; real starts
+  always go through `FirstRun`.
+- **Spotify switches on at Finish, not live.** Switching it on starts its
+  checks and sign-in flow; the setup only records the wish and opens the
+  Spotify page afterwards.
+- **"Start in" is the existing remembered mode.** Omamp already opens in the
+  view it closed in; the setup sets that.
+
+### Known gaps
+
+- **Not seen on a real screen** or driven with a real mouse outside the
+  offscreen tests.
+- **Radio has no off switch**, so the setup only mentions it.
+- **Translations**: the new strings are English only.
+- Navidrome is a line of text pointing at the Library menu, not a button.

@@ -51,6 +51,9 @@ class Appearance : public QObject {
     // The library window's layout (layoutprefs.h): the Art column, the
     // sidebar's sections and the now playing bar.
     Q_PROPERTY(LayoutPrefs *layout READ layout CONSTANT)
+    // The visualiser picker (VisualiserPicker.qml): the button it opened
+    // from while it shows, so that button can light up; null otherwise.
+    Q_PROPERTY(QObject *pickerAnchor READ pickerAnchor WRITE setPickerAnchor NOTIFY pickerAnchorChanged)
 
 public:
     // settingsPath: the window.conf file; empty keeps everything in memory
@@ -95,9 +98,12 @@ public:
     static QStringList visualisers();
 
     // The next visualiser after the current one, round the list.
-    Q_INVOKABLE QString nextVisualiser();
+    Q_INVOKABLE QString nextVisualiser() { return stepVisualiser(1); }
     // The large bar's next style: its own when it has one, else the shared one.
-    Q_INVOKABLE QString nextBarVisualiser();
+    Q_INVOKABLE QString nextBarVisualiser() { return stepBarVisualiser(1); }
+    // The same, `delta` styles on (negative goes back), for the mouse wheel.
+    Q_INVOKABLE QString stepVisualiser(int delta);
+    Q_INVOKABLE QString stepBarVisualiser(int delta);
     // Shift+V: the large bar's style when the bar's visualiser is what
     // shows (inBar), else the shared one.
     Q_INVOKABLE QString cycleVisualiser(bool inBar);
@@ -106,6 +112,15 @@ public:
     Q_INVOKABLE QString deckStyleName(const QString &style) const;
     Q_INVOKABLE QString visualiserName(const QString &style) const;
 
+    // Asks the window to show the visualiser picker beside `anchor` (null
+    // centres it). `where` says which visualiser it chooses for: "bar" (the
+    // large now playing bar, with its places and its own style), "big" or
+    // "player" (the shared style). Main.qml's picker answers
+    // pickerRequested(); the buttons need no path to it.
+    Q_INVOKABLE void choosePicker(QObject *anchor, const QString &where) { emit pickerRequested(anchor, where); }
+    QObject *pickerAnchor() const { return m_pickerAnchor; }
+    void setPickerAnchor(QObject *anchor);
+
     // The named colours for a style. The omarchy style needs the theme's
     // palette (Theme::colors()) and rounding.
     static QVariantMap palette(const QString &style, const QVariantMap &themeColors, int themeRadius, bool themeLight);
@@ -113,6 +128,8 @@ public:
 signals:
     void changed();
     void paletteChanged();
+    void pickerRequested(QObject *anchor, const QString &where);
+    void pickerAnchorChanged();
 
 private:
     void rebuild();
@@ -132,4 +149,5 @@ private:
     bool m_reduceMotion = false;
     QVariantMap m_deck, m_plain;
     LayoutPrefs *m_layout = nullptr;
+    QPointer<QObject> m_pickerAnchor;
 };

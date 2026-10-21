@@ -296,6 +296,18 @@ ColumnLayout {
                 DeckButton { skin: deck.skin; glyph: 0xF04AD; onClicked: backend.next() }
                 Item { width: 4 }
                 DeckButton { skin: deck.skin; glyph: 0xF01EA; implicitWidth: 32; onClicked: backend.openFolder() }
+                Item { width: 4 }
+                // The visualiser picker, under the analyser; lit while open.
+                DeckButton {
+                    id: deckVisButton
+                    objectName: "deckVisualiserButton"
+                    skin: deck.skin
+                    glyph: 0xF147D // waveform
+                    implicitWidth: 34
+                    lit: appearance.pickerAnchor === deckVisButton
+                    tip: qsTr("Visualiser (Shift+V)")
+                    onClicked: appearance.choosePicker(deckVisButton, "player")
+                }
                 Item { Layout.fillWidth: true }
                 ToggleLamp { skin: deck.skin; label: qsTr("SHUFFLE"); on: backend.shuffle; onToggled: backend.shuffle = !backend.shuffle }
                 ToggleLamp { skin: deck.skin; label: qsTr("REPEAT"); on: backend.repeat; onToggled: backend.repeat = !backend.repeat }

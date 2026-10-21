@@ -131,18 +131,32 @@ void Appearance::setVisualiser(const QString &style) {
     emit changed();
 }
 
-QString Appearance::nextVisualiser() {
-    const QStringList all = visualisers();
-    setVisualiser(all.value((all.indexOf(m_visualiser) + 1) % all.size()));
+namespace {
+// The style `delta` places from `from`, round the list either way.
+QString stepped(const QString &from, int delta) {
+    const QStringList all = Appearance::visualisers();
+    const int n = int(all.size());
+    return all.value(((all.indexOf(from) + delta) % n + n) % n);
+}
+} // namespace
+
+QString Appearance::stepVisualiser(int delta) {
+    setVisualiser(stepped(m_visualiser, delta));
     return m_visualiser;
 }
 
-QString Appearance::nextBarVisualiser() {
+QString Appearance::stepBarVisualiser(int delta) {
     if (m_barVisualiserStyle.isEmpty())
-        return nextVisualiser();
-    const QStringList all = visualisers();
-    setBarVisualiserStyle(all.value((all.indexOf(m_barVisualiserStyle) + 1) % all.size()));
+        return stepVisualiser(delta);
+    setBarVisualiserStyle(stepped(m_barVisualiserStyle, delta));
     return m_barVisualiserStyle;
+}
+
+void Appearance::setPickerAnchor(QObject *anchor) {
+    if (anchor == m_pickerAnchor)
+        return;
+    m_pickerAnchor = anchor;
+    emit pickerAnchorChanged();
 }
 
 QString Appearance::cycleVisualiser(bool inBar) {

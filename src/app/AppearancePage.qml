@@ -57,7 +57,7 @@ ScrollView {
         }
 
         Heading { text: qsTr("Visualiser") }
-        Note { text: qsTr("On the deck, the strip, the mini player and the big view. Click the visualiser, or press Shift+V, to try the next one.") }
+        Note { text: qsTr("On the deck, the strip, the mini player and the big view. Click the visualiser, turn the mouse wheel over it, or press Shift+V, to try the next one; its waveform button shows them all.") }
         Flow {
             Layout.fillWidth: true
             spacing: 4
@@ -75,6 +75,8 @@ ScrollView {
         }
         // The large bar's visualiser, the idle animation and Reduce motion.
         BarVisualiserSettings { Layout.fillWidth: true }
+        // Sharing it with the Omarchy bar plugin.
+        BarFeedSettings { Layout.fillWidth: true }
 
         Heading { text: qsTr("Big Now Playing view") }
         Note { text: qsTr("Press N for the big view, F11 for fullscreen, Esc to come back.") }

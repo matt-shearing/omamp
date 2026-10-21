@@ -20,7 +20,7 @@ HEADERS += mockhttp.h fake_hyprctl.h audiohttp.h spotify_fakes.h ../src/app/artp
            ../src/app/djcontroller.h ../src/app/playlistitemsmodel.h ../src/app/playlistscontroller.h ../src/app/playrecorder.h ../src/app/rulebuilder.h ../src/app/settingscontroller.h \
            ../src/app/webcontroller.h ../src/app/nascontroller.h ../src/app/devicescontroller.h mocksubsonic.h ../src/app/streamresolver.h \
            ../src/app/appearance.h ../src/app/nowplaying.h ../src/app/visualiser.h ../src/app/mpris.h nowplaying_context.h ../src/app/spotifycontroller.h ../src/app/radiocontroller.h radiohttp.h ../src/app/windowplacement.h \
-           ../src/app/layoutprefs.h ../src/app/aboutcontroller.h ../src/app/firstrun.h
+           ../src/app/layoutprefs.h ../src/app/aboutcontroller.h ../src/app/firstrun.h ../src/app/levelsfeed.h
 SOURCES += main.cpp omamp_tests.cpp library_tests.cpp query_tests.cpp palette_tests.cpp watcher_tests.cpp \
            librarywindow_tests.cpp mask_tests.cpp tidy_tests.cpp playlist_tests.cpp engine_tests.cpp web_tests.cpp tidywindow_tests.cpp \
            nas_tests.cpp subsonic_tests.cpp p3window_tests.cpp p45window_tests.cpp streaming_tests.cpp sync_tests.cpp nowplaying_tests.cpp radio_tests.cpp \
@@ -37,7 +37,8 @@ SOURCES += main.cpp omamp_tests.cpp library_tests.cpp query_tests.cpp palette_te
            ../src/app/spotifycontroller.cpp spotify_tests.cpp mixed_tests.cpp \
            ../src/app/radiocontroller.cpp ../src/app/windowplacement.cpp menu_tests.cpp \
            ../src/app/layoutprefs.cpp ../src/app/aboutcontroller.cpp layout_tests.cpp visualiser_tests.cpp \
-           ../src/app/firstrun.cpp setup_tests.cpp
+           ../src/app/firstrun.cpp setup_tests.cpp \
+           ../src/app/levelsfeed.cpp levelsfeed_tests.cpp
 
 # The real window, for the keyboard test of advanced mode.
 RESOURCES += ../src/app/resources.qrc

@@ -76,7 +76,8 @@ move when you drag their headers. The sidebar's sections fold, hide and
 change order. The now playing bar can be the slim strip or a large bar like
 Spotify's, at the top or the bottom, with a visualiser behind its seek bar,
 behind the whole bar (fading out to its ends), along its edge or beside the
-cover, in any of twelve styles. **Settings → Appearance → Layout** has
+cover, in any of twelve styles. A waveform button beside every visualiser
+opens a picker with a live preview of each style. **Settings → Appearance → Layout** has
 all of it, and **Reset layout** puts it back. The sidebar is on unless you
 switch it off. See
 [docs/library.md](docs/library.md#the-art-column).
@@ -216,6 +217,7 @@ window.
 | `Z` `X` `C` `V` `B` | Previous, play, pause, stop, next |
 | `Tab` | Switch between the deck and the library |
 | `N` | The big Now Playing view |
+| `Shift+V` | Next visualiser style; the waveform button by each visualiser shows them all |
 | `Ctrl+M` / `Ctrl+Shift+M` | The mini player / the micro player |
 | `/` | Search the library |
 | `Ctrl+K` | The command palette |

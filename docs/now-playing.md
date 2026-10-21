@@ -54,7 +54,7 @@ in Now Playing. The view fills the window with:
 | `N` | Open or close the big view |
 | `F11` | Fullscreen, and back |
 | `Esc` | Leave fullscreen, then the big view |
-| `Shift+V` | Next visualiser style |
+| `Shift+V` | Next visualiser style; the waveform button at the top opens the [picker](#choosing-a-visualiser) |
 | `Shift+L` | Lyrics on or off |
 
 The background is the cover blurred, under a shade of the style's colour.
@@ -174,7 +174,9 @@ tiling when you leave the player, as a new window would.
 ![The five original visualiser styles](visualisers.png)
 
 The deck, the strip, the mini player and the big view share one visualiser
-style. Click a visualiser, or press `Shift+V`, to move on to the next. The
+style. Click a visualiser, or press `Shift+V`, to move on to the next; turn
+the mouse wheel over it to go forwards (down) or back (up). The
+[visualiser picker](#choosing-a-visualiser) shows every style at once. The
 first five follow the analyser as it updates, about 30 times a second:
 
 - **Bars**: the analyser's bars, rising from green through cyan to the
@@ -213,6 +215,49 @@ All of them are drawn on the CPU with QPainter, and their colours come from
 the deck style, so the Omarchy style follows the theme. On a 1,600 × 60
 strip each costs well under a millisecond a frame; see
 [the measurements](plan/progress.md#large-bar-visualisers-21-october-2026).
+
+### Choosing a visualiser
+
+Every place with a visualiser has a button with a waveform on it: among the
+buttons on the right of the large now playing bar, beside **Hide lyrics** at
+the top of the big view, after the eject button on the deck, and at the right
+end of the strip's clock. Its tooltip says **Visualiser (Shift+V)**, and it
+takes the accent colour when you point at it and while its picker is open.
+**Choose visualiser…** in the palette (`Ctrl+K`) and in the **View** menu
+opens the same picker in the middle of the window.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="visualiser-picker-dark.png">
+  <img alt="The visualiser picker open above the large now playing bar: twelve live previews, the bar's places and Reduce motion" src="visualiser-picker-light.png">
+</picture>
+
+The picker shows each style as a small live preview with its name, the one
+in use ticked. The previews follow what is playing; while nothing plays
+through Omamp they play a made-up sample, so each style shows what it does.
+Choosing a style applies it at once and keeps it, as **Settings >
+Appearance** does.
+
+| Key or action | Does |
+| --- | --- |
+| Click a preview | Use that style; the picker stays open |
+| Arrow keys | Move between the previews |
+| `Space` | Use the style under the outline; the picker stays open |
+| `Enter` | Use the style under the outline and close |
+| `Esc`, or click outside | Close |
+
+Opened from the large bar, the picker also has the bar's places (**Whole
+bar**, **Seek bar**, **Edge**, **Beside cover**, **Off**) and whether the bar
+uses the **Same as the player** style or its **Own style**. With its own
+style, the previews choose the bar's style only. **Reduce motion** and
+**More settings…** (Settings > Appearance) are along the bottom of every
+picker.
+
+![The picker in the big Now Playing view](visualiser-picker-big-dark.png)
+
+The previews exist only while the picker is open: they are made when it
+opens and removed when it closes. Open, the twelve previews cost about five
+per cent of one CPU core on the software renderer; see
+[the measurements](plan/progress.md#visualiser-picker-21-october-2026).
 
 ### In the large now playing bar
 
@@ -254,9 +299,11 @@ with the LED matrix's unlit cells left out. A click on the bar's empty
 space does nothing here, so `Shift+V` moves the style on.
 
 The bar shares the player's style unless **Style in the bar** picks another.
-Click the bar's visualiser, or press `Shift+V` while the library shows, to
-move the bar's style on; with no style of its own, that moves the shared
-style. The palette (`Ctrl+K`) has **Large bar visualiser: Along the edge**
+Click the bar's visualiser, turn the mouse wheel over it, or press `Shift+V`
+while the library shows, to move the bar's style on; with no style of its
+own, that moves the shared style. The wheel works behind the whole bar too,
+over any part that is not a button or a slider. The bar's waveform button
+opens the [picker](#choosing-a-visualiser) with its places and its style. The palette (`Ctrl+K`) has **Large bar visualiser: Along the edge**
 and the rest.
 
 ### Edge to edge in the big view
@@ -278,6 +325,19 @@ Omamp** hides the bar's instead.
 
 **Reduce motion** slows every new style down, drops the beat flashes, runs
 at 30 frames a second, and shows a still picture while idle.
+
+### In the Omarchy bar
+
+The Omamp widget in the Omarchy bar (see
+[omarchy-plugin/README.md](../omarchy-plugin/README.md#the-visualiser-behind-the-track))
+draws a small, faint copy of the player's visualiser behind the track's
+name, in the style chosen above. **Settings > Appearance > Share the
+visualiser with the Omarchy bar** controls it on Omamp's side; it is on by
+default and sends nothing unless the bar is connected and music plays
+through Omamp. The widget has its own settings to turn it off, to keep it to
+bars or a line, and to show it more strongly.
+
+![The bar widget with each small visualiser style behind the track](omarchy-plugin-visualiser-dark.png)
 
 ## Deck styles
 

@@ -39,7 +39,7 @@ ApplicationWindow {
                                       || identifySheet.opened || coverChooser.opened || volumesSheet.opened
                                       || nasGuideSheet.opened || remoteSheet.opened || devicesSheet.opened
                                       || radioUi.sheetOpen || mainMenu.anyOpen || aboutDialog.opened
-                                      || setupUi.sheetOpen
+                                      || setupUi.sheetOpen || visPicker.visible
     // Party mode: what guests may do (PartyMode's action names).
     function may(action) { void library.dj.partyOn; return library.dj.allowed(action) }
     // Asks first; says so when party mode locks it.
@@ -1044,6 +1044,10 @@ ApplicationWindow {
             target: library.web
             function onCoverChanged() { if (library.web.coverState === "choose" && !coverChooser.opened) coverChooser.open() }
         }
+
+        // The visualiser picker, opened by the visualiser buttons, the
+        // palette and the View menu through appearance.choosePicker().
+        VisualiserPicker { id: visPicker; onOpenSettings: win.runAction("settings-appearance"); onClosed: win.backToList() }
 
         // Help → About Omamp.
         Dialog {

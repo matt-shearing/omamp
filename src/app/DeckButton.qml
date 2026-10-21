@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 
 // A chunky transport button with a bevel, like the original deck: a light
 // edge on top, a dark one underneath, pressed in when held. Its colours
@@ -64,4 +65,7 @@ Item {
         cursorShape: Qt.PointingHandCursor
         onClicked: button.clicked()
     }
+    ToolTip.visible: area.containsMouse && tip !== ""
+    ToolTip.delay: 600
+    ToolTip.text: tip
 }

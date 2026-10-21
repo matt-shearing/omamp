@@ -1,6 +1,8 @@
 <RCC>
     <qresource prefix="/">
         <file alias="Main.qml">Main.qml</file>
+        <file alias="VisualiserButton.qml">VisualiserButton.qml</file>
+        <file alias="VisualiserPicker.qml">VisualiserPicker.qml</file>
         <file alias="MainMenuBar.qml">MainMenuBar.qml</file>
         <file alias="LiveBar.qml">LiveBar.qml</file>
         <file alias="RadioView.qml">RadioView.qml</file>
@@ -11,6 +13,7 @@
         <file alias="SetupActions.qml">SetupActions.qml</file>
         <file alias="SetupWizard.qml">SetupWizard.qml</file>
         <file alias="Panel.qml">Panel.qml</file>
+        <file alias="BarFeedSettings.qml">BarFeedSettings.qml</file>
         <file alias="DeckButton.qml">DeckButton.qml</file>
         <file alias="ToggleLamp.qml">ToggleLamp.qml</file>
         <file alias="Bar.qml">Bar.qml</file>

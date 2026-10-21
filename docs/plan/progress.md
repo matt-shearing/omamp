@@ -6014,3 +6014,294 @@ Glass), dark is Night Ride. Looking at them led to:
   themes with two colours look richer.
 - **Deck and strip** keep their framed visualiser (see above).
 - **Translations**: the new strings are English only.
+
+## Visualiser picker (21 October 2026)
+
+Matt asked for "a little shortcut to choose visualiser … that stands out, so
+people can really easily change the visualiser to all the different things."
+Every visualiser now has a waveform button beside it that opens a picker of
+live previews, and the mouse wheel over a visualiser moves through the
+styles. User documentation is in
+[docs/now-playing.md](../now-playing.md#choosing-a-visualiser).
+
+### What was built
+
+```
+src/app/VisualiserPicker.qml  the picker: live tiles, the bar's places and style, Reduce motion, More settings…
+src/app/VisualiserButton.qml  the waveform button for the large bar, the big view and the strip
+src/app/appearance.{h,cpp}    stepVisualiser/stepBarVisualiser (the wheel); choosePicker(), pickerRequested, pickerAnchor
+src/app/Analyser.qml          the wheel over any visualiser; behind the whole bar it takes the wheel only
+src/app/BarVisualiser.qml     the wheel steps the bar's own style when it has one
+src/app/BigBar.qml            the button first among the right-hand controls
+src/app/BigView.qml           the top line's style button opens the picker instead of moving on
+src/app/DeckView.qml          a DeckButton after eject, lit while the picker is open
+src/app/DeckButton.qml        shows its tooltip (it had a `tip` but never showed it)
+src/app/DeckStrip.qml         the button at the right of the LCD (the LCD is 26 px wider)
+src/app/NowPlayingModes.qml   the palette's "Choose visualiser…"
+src/app/MainMenuBar.qml       View → Choose visualiser…
+src/app/Main.qml              one picker instance; it counts as a sheet, so the window's keys wait
+tests/visualiser_tests.cpp    three tests and an opt-in CPU measurement
+```
+
+- **One picker, asked for by signal.** The buttons call
+  `appearance.choosePicker(button, where)`; the picker in Main.qml listens
+  for `pickerRequested` and opens beside that button, so no signal has to
+  be threaded through AdvancedView or the bar. `where` is `bar` (the large
+  bar: places and own style), `big`, `player` or `strip` (the shared style;
+  the strip's previews use the plain palette its analyser wears). From the
+  palette or the menu it opens in the middle of the window for whichever
+  visualiser is in view, using `barVisualiserShown()` as `Shift+V` does.
+- **Placement.** Above or below the button's `edgeItem` (the whole large
+  bar, or the strip), so it never covers the bar it controls; right edges
+  line up in the right half of the window. Four columns of 132 px tiles, or
+  three or two in a narrow window (the deck is 500 px wide).
+- **Tiles.** A `Visualiser` 116 × 44 inside a 120 × 48 screen in the
+  deck's LCD colour, the style's name under it; the style in use is tinted
+  and ticked, the keyboard's tile outlined in the accent. The tiles sit in a
+  `Loader` that is active only while the picker is visible, so closing it
+  destroys them and nothing animates in the background.
+- **Sound.** The previews take `backend.levels` while Omamp is playing its
+  own sound; otherwise a 30 Hz timer in the picker makes up a signal (a
+  beat in the bass and wandering bands, as the setup wizard's previews do),
+  so the first five styles are not empty while paused or on Spotify.
+- **Choosing.** A click or `Space` applies and leaves the picker open, so
+  the real visualiser can be watched behind it; `Enter` applies and closes;
+  arrows only move the outline. **Own style** copies the current shared
+  style into `barVisualiserStyle`, so nothing jumps; **Same as the player**
+  clears it.
+- **Toggle.** Clicking the button while the picker is open closes it. The
+  press outside closes the popup before the click arrives, so the picker
+  remembers when it closed and ignores a request from the same button within
+  300 ms, unless it was closed by a key.
+- **Wheel.** One style per 120 units of `angleDelta`, adding up smaller
+  touchpad steps; down goes on, up goes back, wrapping both ways. Behind the
+  whole bar the visualiser's MouseArea now accepts no buttons instead of
+  being disabled, so clicks still reach the bar and the wheel reaches it.
+- **Looks.** The button is a waveform (`md-waveform`) on a faint tint of
+  the bar's text colour with a thin border; hovered it takes the accent,
+  and it stays accented while its picker is open (`appearance.pickerAnchor`).
+  Chips and tiles take focus only from Tab, so a click leaves the arrows and
+  `Space` on the tiles.
+
+### Tests
+
+`tests/visualiser_tests.cpp` (OMAMP_TESTS=visualiser), offscreen, software,
+no audio device, temporary XDG home:
+
+- `pickerInTheLargeBar`: the button is in the bar; a click opens the picker
+  above the bar, inside the window, with the button lit; one tile per style
+  in `Appearance::visualisers()`, each preview painting; a click picks the
+  shared style and it is saved; **Own style** then picks only the bar's, and
+  **Same as the player** goes back; each place chip sets and saves the place;
+  Reduce motion reaches the previews; arrows move the outline without
+  picking, `Space` picks and stays, `Space` does not start playback,
+  `Enter` picks and closes; closed, the previews are gone and the button is
+  no longer lit; `Esc` closes; the button closes an open picker; the
+  palette's action opens it centred for the bar; **More settings…** opens
+  Settings > Appearance.
+- `pickerInTheOtherPlaces`: the deck, the strip and the big view each have
+  the button, open the picker for the shared style without the bar's
+  controls, and pick; the palette from each view chooses for the same
+  visualiser; the big view's button names the style; the View menu has the
+  entry.
+- `wheelCyclesStyles`: down and up over the bar's visualiser, three small
+  touchpad steps make one, wrapping at the end, the bar's own style, behind
+  the whole bar, and over the deck's analyser (the shared style), saved.
+- `cpuPickerOpen` (opt-in, `OMAMP_VIS_BENCH=1`): below.
+
+`menu_tests`' check that every menu entry is a palette action covers the new
+entry.
+
+`bin/test` with JOBS=4: 33 Totals lines, 479 passed, 0 failed, 9 skipped (the
+existing opt-in benchmarks and live web test, and the three opt-in CPU
+measurements).
+
+### CPU
+
+`OMAMP_VIS_BENCH=1 OMAMP_TESTS=visualiser build/tests/omamp_tests cpuPickerOpen`:
+the library window at 1,400 × 800, Night Ride, large bar, nothing playing
+(so the previews run on the made-up signal, the heavier case), five seconds
+each. Software renderer, Ryzen 9 7950X3D, load average about 5.
+
+| Picker | CPU (one core) | Preview frames a second, all twelve |
+|---|---:|---:|
+| Closed | 2.7 % | 0 |
+| Open | 7.7 % | 588 |
+| Closed again | 4.4 % | 0 |
+
+Open, the picker adds about five per cent of a core: seven animated tiles at
+60 frames a second, five repainting on the 30 Hz signal, and the software
+renderer redrawing their small areas. The second closed figure is noise from
+other work on the machine; the tiles no longer exist then.
+
+### Screenshots
+
+`docs/visualiser-picker-{light,dark}.png` (the picker above the large bar,
+Synthwave behind the whole bar) and `docs/visualiser-picker-big-dark.png`
+(the big view). Made-up library from `tests/make-demo-library`, playing
+Neon Coast's Night Drive on the native engine into a buffer
+(`OMAMP_NO_AUDIO_DEVICE`), opened with `OMAMP_DEMO=click:…`, captured with
+`OMAMP_SCREENSHOT` offscreen in software in a private mount and network
+namespace with a throwaway home. Light is a copy of the desktop's current
+theme (OneQode Light Glass), dark is Night Ride. Looking at them led to:
+
+- the picker opening above the whole bar rather than just above the button,
+  where it covered the bar's visualiser;
+- borders drawn in a faint foreground colour, because the light theme's
+  `lighter_background` is white and the tiles and chips had no edges;
+- fewer columns in a narrow window, after the deck's picker ran off its
+  500 px window;
+- the keys moved onto the content column, after a spare zero-size item left
+  a gap above the footer.
+
+### Decisions
+
+- **A picker, not a menu.** Names alone don't say what Pulse or Skyline look
+  like; a live tile does, and the menus still list the names.
+- **Stays open on click.** Trying styles one after another is the point; the
+  real visualiser changes behind the picker as each is chosen.
+- **The big view's style button now opens the picker** rather than moving to
+  the next style; `Shift+V` and a click on the visualiser still do that.
+- **Main.qml**: one line for the picker and one term in `sheetOpen`, nothing
+  else, to stay clear of the setup work going on there.
+
+### Known gaps
+
+- **Not seen on a real screen** or on the GPU renderer.
+- **The deck's button** sits in the transport row, not inside the LCD beside
+  the analyser: the LCD has no free corner while the clock and the LIVE
+  badge share it.
+- **The mini and micro players** have no button; the wheel and `Shift+V`
+  work there. The palette's action would open the picker inside a window
+  64 px high, which it does not fit.
+- **Party mode** does not lock the picker, as it does not lock `Shift+V`.
+- **Translations**: the new strings are English only.
+
+## Bar plugin visualiser (21 October 2026)
+
+The Omamp widget in the Omarchy bar now draws a small, faint copy of
+Omamp's visualiser behind "Artist – Title", and a larger one behind the
+title, artist and album in its panel. It follows the style chosen in Omamp,
+fades out at both ends and towards the bottom, and disappears while nothing
+plays through Omamp. Omamp sends the levels on a local socket.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../omarchy-plugin-visualiser-dark.png">
+  <img alt="The bar widget with each small visualiser style behind the track" src="../omarchy-plugin-visualiser-light.png">
+</picture>
+
+### What was built
+
+- **`src/app/levelsfeed.{h,cpp}`**: `LevelsFeed` listens on
+  `$XDG_RUNTIME_DIR/omamp-levels.sock` (user-only access;
+  `OMAMP_LEVELS_SOCKET` overrides it) and writes one compact JSON line per
+  frame: `{"style","reduceMotion","active","levels":[16 x 0..100]}`. The 24
+  analyser bands fold to 16, each the loudest of the bands it covers. A
+  client gets one frame on connecting, one when playing stops (`active`
+  false, no levels), one when the style or Reduce motion changes, and up to
+  20 a second while music plays (10 with Reduce motion). A frame identical
+  to the last is skipped, so silence costs nothing either. The frame timer
+  runs only while a client is connected and music plays through Omamp; the
+  levels are not even read otherwise. Writes never wait: a client more than
+  64 KB behind is dropped. A second Omamp finds the first answering on the
+  socket and stays quiet; a stale socket file from a crash is replaced.
+- **`main.cpp`** feeds it `player.levels()`, the shared visualiser style
+  (`appearance.visualiser`, the one the deck and the big view use), Reduce
+  motion, and "active" = playing and not Spotify. It is the context
+  property `levelsFeed`.
+- **Settings > Appearance > Share the visualiser with the Omarchy bar**
+  (`BarFeedSettings.qml`, one line in `AppearancePage.qml`), stored as
+  `shareWithBar` under `[appearance]` in `window.conf`. On by default.
+- **Plugin**: `MiniVisualiser.qml` (a Canvas that draws only when a frame
+  arrives), eight small styles, `Service.qml` owns the one `Socket` for
+  every monitor's copy, three new settings (`showVisualiser`,
+  `visualiserStyle`, `visualiserStrength`), and `status` now reports the
+  feed. `Model.js` gained the parsing, style mapping, throttle and geometry
+  helpers; `tests/render-visualiser.qml` renders the README pictures.
+
+### Decisions
+
+- **A Unix socket, not D-Bus or a CLI.** Quickshell 0.3.2 has no general
+  D-Bus client for QML (only MPRIS, the tray menu and its own services), so
+  a custom `org.omamp.Visualiser` interface would need a helper process to
+  reach the bar. A `omamp levels --stream` CLI read through `Process` would
+  run a second Omamp binary, with its library and Qt start-up, just to relay
+  bytes. Quickshell's `Socket` + `SplitParser` reads a local socket directly
+  in the shell process, with no extra process, no polling and no file
+  writes, and Qt's `QLocalServer` costs Omamp nothing until someone
+  connects. Omamp throttles at the source; the plugin also drops frames
+  closer than 40 ms in case of a misbehaving sender.
+- **The plugin connects on events, not on a timer.** Every failed connect
+  logs a `quickshell.io.socket` warning in the journal, so a steady retry
+  while sharing is off would fill it. The widget connects when it first
+  shows a track (and once more 1.5 s later, as Omamp opens the socket just
+  after it appears on MPRIS), when music starts and when the track changes.
+- **On by default on both sides, and subtle.** Matt asked for it, and both
+  ends cost nothing until music plays: Omamp's socket sits idle and the
+  widget draws nothing while there are no levels. Subtle is 32 % opacity
+  (26 % for the blocky Bars, Skyline and LED), Normal 55 % (44 %); the
+  pictures show the words stay clear over every style in light and dark.
+- **"Same as Omamp" follows the shared style**, not the large bar's own
+  style, because the deck, the big view and the mini players all show it.
+- **Twelve styles fold into eight.** The oscilloscope and the waveform
+  ribbon need the waveform, which the feed does not carry, so both become a
+  band drawn from the levels about the middle. Fire becomes bars;
+  the mirrored spectrum becomes the skyline. Anything unknown is bars.
+- **No "Off" in the style setting.** The on/off switch is its own setting,
+  so a fourth style choice would only duplicate it.
+- **The LED matrix draws columns, then cuts the row gaps**: a few dozen
+  canvas operations a frame instead of one per cell (about 600), which
+  halved its cost.
+
+### CPU cost
+
+- **Omamp**: one frame (fold the bands, write the JSON line) takes about
+  2 µs and is 114 bytes, so 20 frames a second is about 40 µs and 2.3 KB a
+  second. Measured end to end on the built binary (offscreen, no audio
+  device, private D-Bus, temporary XDG folders) playing a test tone: 4 clock
+  ticks in 3 s with nobody connected, 6 with a reader taking 20.7 frames a
+  second, which is inside the noise of one 10 ms tick.
+- **Plugin**: a 260 x 22 canvas fed 20 frames a second for 10 s, offscreen
+  in software, used 0.07 s of CPU with nothing drawn and 0.11–0.16 s with
+  each style drawn, so each frame costs about 0.2–0.4 ms, under 1 % of one
+  core. Nothing is drawn while idle.
+
+### Test results
+
+- `OMAMP_TESTS=levelsfeed` (15 tests): the cost of a frame, the band folding and the line
+  format; nothing listens until started and enabled, and turning it off
+  removes the socket; the setting persists in `window.conf`; with no client
+  the clock never runs and the levels are never read; a new client gets one
+  idle frame and nothing more; playing sends at most 20 frames a second;
+  identical frames are skipped; style and Reduce motion changes arrive at
+  once and Reduce motion halves the rate; stopping sends one idle frame and
+  stops the clock; the clock stops when the last client leaves; a second
+  Omamp leaves the first one feeding; a stale socket file is replaced; the
+  Appearance check box turns the feed off.
+- Plugin: `node omarchy-plugin/tests/model.test.mjs` passes (15 new cases);
+  `qmllint` reports only the unqualified-access warnings the files already
+  had and nothing for `MiniVisualiser.qml`; `omarchy plugin validate`
+  passes on the folder.
+- An offscreen Quickshell 0.3.2 check confirmed that `Socket` reconnects by
+  toggling `connected`, reads lines through `SplitParser`, and reports a
+  closed peer.
+
+### Known gaps
+
+- **Not seen in the live bar.** The pictures are the pill drawn by the
+  render harness with `MiniVisualiser.qml`, laid out as `Widget.qml` lays
+  it out; the shell's `qs.*` modules are not available offscreen. The panel
+  copy was not rendered.
+- **Turning sharing back on in Omamp** shows in the bar with the next track
+  or the next press of play, not at once.
+- **A second Omamp** does not take over the socket when the first quits.
+- **Translations**: the new strings are English only.
+
+### After merging
+
+- Rebuild and reinstall Omamp; the running copy has no socket.
+- `omarchy restart shell`: the plugin has a new file (`MiniVisualiser.qml`)
+  and new manifest settings, which a hot reload does not pick up. Then check
+  `journalctl --user --since '2 min ago'` for errors from `contra.omamp`,
+  and `omarchy-shell contra.omamp status` for `visualiser.connected` while
+  music plays.

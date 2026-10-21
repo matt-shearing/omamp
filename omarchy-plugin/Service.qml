@@ -111,6 +111,91 @@ Item {
     onTriggered: colorsFile.reload()
   }
 
+  // ---------------------------------------------------------- the visualiser
+  // Omamp shares its analyser on a local socket (src/app/levelsfeed.h). The
+  // bar widgets that want it register here (vizSet); the socket is open only
+  // while one does and Omamp runs, and Omamp sends only while music plays,
+  // so an idle bar costs nothing. Every monitor's copy reads these.
+  readonly property string vizPath: Model.vizSocketPath(Quickshell.env("XDG_RUNTIME_DIR"))
+  property var vizClients: []
+  readonly property bool vizWanted: vizClients.length > 0 && running && vizPath !== ""
+  readonly property bool vizConnected: vizSocket.connected
+  property string vizStyle: ""
+  property bool vizReduceMotion: false
+  property bool vizActive: false
+  property var vizLevels: []
+  property int vizFrames: 0
+  property real vizLastFrame: 0
+
+  // A widget asks for the levels (on) or lets them go (off).
+  function vizSet(client, on) {
+    var list = []
+    for (var i = 0; i < vizClients.length; i++)
+      if (vizClients[i] !== client && vizClients[i] !== null && vizClients[i] !== undefined) list.push(vizClients[i])
+    if (on) list.push(client)
+    vizClients = list
+  }
+
+  function vizRead(line) {
+    var f = Model.parseVizFrame(line)
+    if (!f) return
+    if (f.style !== "") vizStyle = f.style
+    vizReduceMotion = f.reduceMotion
+    if (!f.active) {
+      vizActive = false
+      vizLevels = []
+      return
+    }
+    var now = Date.now()
+    // Omamp sends 20 a second at most; anything faster is dropped here.
+    if (vizActive && !Model.frameDue(vizLastFrame, now, 40)) return
+    vizLastFrame = now
+    vizActive = true
+    vizLevels = f.levels
+    vizFrames++
+  }
+
+  function vizReset() {
+    vizActive = false
+    vizLevels = []
+  }
+
+  // Connects when asked. A missing socket logs a warning in the journal, so
+  // there is no steady retry: it tries when a widget first wants it (and
+  // once more a moment later, as Omamp opens the socket just after it
+  // appears on MPRIS), when music starts and when the track changes.
+  function vizConnect() {
+    if (!vizWanted || vizSocket.connected) return
+    vizSocket.connected = false
+    vizSocket.connected = true
+  }
+
+  onVizWantedChanged: {
+    if (vizWanted) {
+      vizConnect()
+      vizRetry.restart()
+    } else {
+      vizRetry.stop()
+      vizSocket.connected = false
+      vizReset()
+    }
+  }
+  onPlayingChanged: if (playing) vizConnect()
+  onLineChanged: vizConnect()
+
+  Socket {
+    id: vizSocket
+    path: root.vizPath
+    parser: SplitParser { onRead: data => root.vizRead(data) }
+    onConnectionStateChanged: if (!connected) root.vizReset()
+  }
+
+  Timer {
+    id: vizRetry
+    interval: 1500
+    onTriggered: root.vizConnect()
+  }
+
   // ------------------------------------------------------------------ actions
   function playPause() {
     if (!running) return false
@@ -217,7 +302,15 @@ Item {
       volume: Math.round(root.volume * 100),
       shuffle: root.shuffle,
       repeat: root.repeat,
-      green: String(root.green)
+      green: String(root.green),
+      visualiser: {
+        wanted: root.vizWanted,
+        connected: root.vizConnected,
+        active: root.vizActive,
+        style: root.vizStyle,
+        reduceMotion: root.vizReduceMotion,
+        frames: root.vizFrames
+      }
     })
   }
 

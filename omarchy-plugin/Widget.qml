@@ -35,6 +35,10 @@ Panel {
   readonly property bool showThumbnail: setting("showThumbnail", true) !== false
   readonly property string coverMode: Model.coverMode(setting("coverSize", "Large"))
   readonly property bool showLcd: setting("showLcd", false) === true
+  // A faint copy of Omamp's visualiser behind the track (MiniVisualiser.qml).
+  readonly property bool showVisualiser: setting("showVisualiser", true) !== false
+  readonly property string vizChoice: Model.vizChoice(setting("visualiserStyle", "Same as Omamp"))
+  readonly property string vizStrength: String(setting("visualiserStrength", "Subtle"))
 
   // ------------------------------------------------------------------- state
   readonly property bool running: service ? service.running : false
@@ -61,6 +65,18 @@ Panel {
 
   readonly property bool shown: running || showWhenClosed
 
+  // ------------------------------------------------------------ visualiser
+  // Asks the service for Omamp's levels while this copy shows a track; the
+  // service opens the socket only while some copy asks.
+  readonly property bool vizWanted: showVisualiser && running && !vertical && visible
+  readonly property string vizStyle: Model.miniStyle(service ? service.vizStyle : "", vizChoice)
+  readonly property bool vizCalm: Style.reduceMotion || (service ? service.vizReduceMotion === true : false)
+  function vizRegister() { if (service) service.vizSet(root, vizWanted) }
+  onVizWantedChanged: vizRegister()
+  onServiceChanged: vizRegister()
+  Component.onCompleted: vizRegister()
+  Component.onDestruction: if (service) service.vizSet(root, false)
+
   // ---------------------------------------------------------------- bar entry
   visible: shown
   readonly property real labelSlot: labelClip.visible ? labelClip.width + content.spacing : 0
@@ -68,6 +84,25 @@ Panel {
   readonly property real thumbSlot: thumb.visible ? thumb.width + content.spacing : 0
   implicitWidth: !shown ? 0 : (vertical ? barSize : Math.round(thumbSlot + glyph.implicitWidth + labelSlot + clockSlot + Style.space(12)))
   implicitHeight: !shown ? 0 : (vertical ? Math.round(glyph.implicitHeight + Style.space(10)) : barSize)
+
+  // Behind the words, a little wider than them, the bar's full height.
+  MiniVisualiser {
+    id: barViz
+    readonly property real pad: Style.space(6)
+    visible: labelClip.visible && opacity > 0.001
+    x: content.x + labelClip.x - pad
+    y: Style.space(2)
+    width: labelClip.width + pad * 2
+    height: root.height - Style.space(4)
+    levels: root.vizWanted && root.service ? root.service.vizLevels : []
+    active: root.vizWanted && root.service ? root.service.vizActive === true : false
+    style: root.vizStyle
+    reduceMotion: root.vizCalm
+    strength: Model.vizOpacity(root.vizStrength, root.vizStyle)
+    low: root.green
+    high: Commons.Color.accent
+    barWidth: 3
+  }
 
   Row {
     id: content
@@ -316,9 +351,29 @@ Panel {
           spacing: Style.space(3)
 
           Text {
+            id: panelTitle
             width: parent.width
             textFormat: Text.PlainText
             text: root.service ? (root.service.title || "Unknown title") : ""
+
+            // A larger copy behind the title, artist and album. A child of
+            // the title, drawn under it, so the Column does not place it.
+            MiniVisualiser {
+              z: -1
+              x: -Style.space(4)
+              y: -Style.space(2)
+              width: parent.width + Style.space(8)
+              height: panelTitle.parent.height + Style.space(4)
+              levels: popup.visible && root.vizWanted && root.service ? root.service.vizLevels : []
+              active: popup.visible && root.vizWanted && root.service ? root.service.vizActive === true : false
+              style: root.vizStyle
+              reduceMotion: root.vizCalm
+              strength: Model.vizOpacity(root.vizStrength, root.vizStyle)
+              low: root.green
+              high: Commons.Color.accent
+              barWidth: 5
+              edgeFade: 0.12
+            }
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: root.coverMode === "large" ? Style.font.title : Style.font.subtitle

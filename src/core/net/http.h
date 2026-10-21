@@ -36,7 +36,7 @@ enum class Service { MusicBrainz, AcoustId, CoverArt, Lrclib, ListenBrainz, Last
 // "wikidata", "wikipedia".
 QString serviceName(Service service);
 
-// "Thrum/0.3.3 ( https://github.com/matt-shearing/thrum )", as MusicBrainz
+// "Thrum/0.4.0 ( https://github.com/matt-shearing/thrum )", as MusicBrainz
 // and ListenBrainz ask.
 QString userAgent();
 QString version();

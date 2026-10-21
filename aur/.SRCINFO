@@ -1,6 +1,6 @@
 pkgbase = thrum
 	pkgdesc = A Winamp-style music player and library manager that wears the Omarchy theme
-	pkgver = 0.3.3
+	pkgver = 0.4.0
 	pkgrel = 1
 	url = https://github.com/matt-shearing/thrum
 	arch = x86_64
@@ -28,8 +28,10 @@ pkgbase = thrum
 	optdepends = hyprland: hyprctl, to match the window rounding of the desktop
 	optdepends = quickshell: the Omarchy bar plugin in /usr/share/thrum/omarchy-plugin
 	optdepends = spotify-player: Spotify beside your own music (Settings > Spotify)
+	conflicts = omamp
+	replaces = omamp
 	options = !lto
-	source = thrum-0.3.3.tar.gz::https://github.com/matt-shearing/thrum/archive/refs/tags/v0.3.3.tar.gz
-	sha256sums = 7ab1162bcfb1acc04e3eb8755f46244d4053c011b81ec40b0dd55f22463003e5
+	source = thrum-0.4.0.tar.gz::https://github.com/matt-shearing/thrum/archive/refs/tags/v0.4.0.tar.gz
+	sha256sums = SKIP
 
 pkgname = thrum

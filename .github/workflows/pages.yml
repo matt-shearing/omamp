@@ -1,15 +1,13 @@
 name: Website (GitHub Pages)
 
-# Publishes the one-page site in site/ to GitHub Pages.
-#
-# Inert on purpose: it runs only when started by hand, and it does nothing
-# useful until Pages is switched on for this repository with "GitHub Actions"
-# as the source. To publish on every change to the site, add this under `on:`:
-#
-#   push:
-#     branches: [main]
-#     paths: ["site/**", ".github/workflows/pages.yml"]
+# Publishes the one-page site in site/ to GitHub Pages
+# (https://matt-shearing.github.io/thrum/) on every change to the site, and
+# when started by hand. Pages must be switched on for this repository with
+# "GitHub Actions" as the source.
 on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:

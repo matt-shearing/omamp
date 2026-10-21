@@ -1,9 +1,11 @@
 pkgname=thrum
-pkgver=0.3.3
+pkgver=0.4.0
 pkgrel=1
 pkgdesc='A Winamp-style music player that wears the Omarchy theme'
 arch=('x86_64' 'aarch64')
 license=('MIT')
+conflicts=('omamp')
+replaces=('omamp')
 depends=('qt6-base' 'qt6-declarative' 'qt6-multimedia' 'qt6-wayland' 'xdg-desktop-portal' 'ttf-jetbrains-mono-nerd' 'taglib' 'sqlite' 'ffmpeg')
 makedepends=('gcc' 'make' 'pkgconf' 'cargo')
 # makepkg's default LTO breaks the ring crate's C objects in the Spotify helper.

@@ -52,9 +52,9 @@ existing one when adding another.
 
 ## Publishing
 
-`.github/workflows/pages.yml` publishes this folder to GitHub Pages. It runs
-only when started by hand, and only after Pages is switched on for the
-repository, so merging it changes nothing in public. The planned address is
-`https://matt-shearing.github.io/thrum/`, which is also written into the page's
-canonical link and social tags; change those three places in `index.html` if
-the site moves.
+`.github/workflows/pages.yml` publishes this folder to GitHub Pages on every
+push to `main` that changes `site/`, and when started by hand. Nothing is
+published until Pages is switched on for the repository with GitHub Actions as
+the source. The address is `https://matt-shearing.github.io/thrum/`, which is
+also written into the page's canonical link and social tags; change those three
+places in `index.html` if the site moves.

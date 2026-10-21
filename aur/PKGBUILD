@@ -1,11 +1,13 @@
 # Maintainer: Matt Shearing (https://github.com/matt-shearing)
 pkgname=thrum
-pkgver=0.3.3
+pkgver=0.4.0
 pkgrel=1
 pkgdesc='A Winamp-style music player and library manager that wears the Omarchy theme'
 arch=('x86_64' 'aarch64')
 url='https://github.com/matt-shearing/thrum'
 license=('MIT')
+conflicts=('omamp')
+replaces=('omamp')
 depends=(
   'bash'
   'glibc'
@@ -35,7 +37,7 @@ makedepends=('pkgconf' 'cargo')
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/matt-shearing/thrum/archive/refs/tags/v$pkgver.tar.gz")
 # Run updpkgsums once the v$pkgver tag is on GitHub.
-sha256sums=('7ab1162bcfb1acc04e3eb8755f46244d4053c011b81ec40b0dd55f22463003e5')
+sha256sums=('SKIP')
 
 prepare() {
   cd "$pkgname-$pkgver"

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "contra.thrum",
   "name": "Thrum",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "contra",
   "license": "MIT",
   "description": "Thrum in the bar: the cover and what is playing while Thrum is open, a faint copy of Thrum's visualiser behind the track, and a panel led by a large cover, with the track, seek, transport, stop, shuffle, repeat, Thrum's volume, and a button that brings its window forward.",

@@ -465,6 +465,10 @@ static QColor withAlpha(QColor c, qreal a) {
     return c;
 }
 
+// Where the synthwave horizon sits: low in a thin strip, which has room for
+// the sun and the city but not much floor.
+static qreal synthHorizon(qreal h) { return h < 32 ? h * 0.8 : h * 0.58; }
+
 // A soft round glow in one colour, as a small image stretched when drawn:
 // cheaper than a radial gradient over the whole strip every frame.
 static QImage glowImage(const QColor &colour) {
@@ -520,7 +524,7 @@ void Visualiser::ensureCaches() {
         if (m_style == "synthwave") {
             // The sun: the upper half of a disc, from the top colour to the
             // middle one, with the gaps that widen towards the horizon.
-            const int r = qMax(4, int(qMin(h * 0.58 * 0.92, w * 0.07)));
+            const int r = qMax(4, int(qMin(synthHorizon(h) * 0.92, w * 0.07)));
             m_sun = QImage(2 * r, r, QImage::Format_ARGB32_Premultiplied);
             m_sun.fill(Qt::transparent);
             QPainter p(&m_sun);
@@ -540,13 +544,14 @@ void Visualiser::ensureCaches() {
             }
             // The haze and the lines from the vanishing point never move:
             // drawn once here.
-            const qreal cx = w / 2, horizon = h * 0.58;
+            const qreal cx = w / 2, horizon = synthHorizon(h);
             m_backdrop = QImage(qMax(1, int(std::ceil(w))), qMax(1, int(std::ceil(h))), QImage::Format_ARGB32_Premultiplied);
             m_backdrop.fill(Qt::transparent);
             QPainter b(&m_backdrop);
             b.fillRect(QRectF(0, 0, w, h), m_skyBrush);
             b.setRenderHint(QPainter::Antialiasing);
-            const int spokes = qBound(6, int(w / 60), 40);
+            // A strip too thin for a floor gets none.
+            const int spokes = h - horizon < 6 ? -1 : qBound(6, int(w / 60), 40);
             for (int i = -spokes; i <= spokes; ++i) {
                 const qreal top = cx + i * (w * 0.5 / spokes) * 0.18, bottom = cx + i * (w * 0.5 / spokes) * 1.6;
                 QPen pen(withAlpha(m_mid, 0.40), 1);
@@ -762,7 +767,7 @@ void Visualiser::paintLed(QPainter *p) {
 // spectrum bars either side of it, and a grid rolling towards the viewer,
 // faster with the music.
 void Visualiser::paintSynthwave(QPainter *p) {
-    const qreal w = width(), h = height(), cx = w / 2, horizon = h * 0.58;
+    const qreal w = width(), h = height(), cx = w / 2, horizon = synthHorizon(h);
     p->drawImage(QPointF(0, 0), m_backdrop);
     const qreal r = m_sun.width() / 2.0;
     // The city: bars rising from the horizon, the bass nearest the sun.
@@ -784,7 +789,7 @@ void Visualiser::paintSynthwave(QPainter *p) {
     p->drawImage(QPointF(cx - r, horizon - r), m_sun);
     // The ground: rows rolling forward over the lines from the vanishing point.
     const qreal ground = h - horizon;
-    const int rowsN = 6;
+    const int rowsN = ground < 6 ? 0 : 6;
     for (int i = 0; i < rowsN; ++i) {
         const qreal z = std::fmod(i + m_scroll * rowsN, qreal(rowsN)) / rowsN;
         const qreal y = horizon + ground * z * z;
@@ -803,10 +808,10 @@ void Visualiser::paintStars(QPainter *p) {
     p->setRenderHint(QPainter::Antialiasing, false);
     for (const Star &s : m_stars) {
         const qreal band = m_smooth.value(qMin(s.band, bands - 1));
-        const qreal glow = qBound(0.0, 0.3 + 0.25 * (0.5 + 0.5 * std::sin(m_time * 2 + s.twinkle)) + 0.75 * band
+        const qreal glow = qBound(0.0, 0.4 + 0.25 * (0.5 + 0.5 * std::sin(m_time * 2 + s.twinkle)) + 0.75 * band
                                            + 0.35 * m_kick,
                                   1.0);
-        const QColor colour = s.size > 2 ? m_high : band > 0.55 ? m_peak : s.size > 1.2 ? m_mid : m_low;
+        const QColor colour = s.size > 2 ? m_high : band > 0.55 ? m_peak : m_mid;
         const qreal trail = push * s.speed * 0.05;
         if (trail > 2)
             p->fillRect(QRectF(s.x - trail, s.y, trail, qMax(1.0, s.size * 0.6)), withAlpha(colour, glow * 0.25));

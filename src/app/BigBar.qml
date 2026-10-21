@@ -30,7 +30,7 @@ Rectangle {
     // "beside" the cover. The edge strip makes the bar a little taller.
     readonly property string visPlace: appearance.barVisualiser
     readonly property bool atTop: appearance.layout.barPosition === "top"
-    readonly property int edgeHeight: visPlace === "edge" ? 16 : 0
+    readonly property int edgeHeight: visPlace === "edge" ? 24 : 0
     readonly property var info: library.playingTrackId > 0 && library.revision >= 0 ? library.trackInfo(library.playingTrackId) : ({})
 
     function clock(ms) {
@@ -72,16 +72,17 @@ Rectangle {
         ToolTip.text: tip
     }
 
-    // Behind the transport and the seek bar: a wide band across the middle,
-    // faint enough that the buttons and the times stay easy to read.
+    // Behind the seek bar: a wide band from the middle of the transport
+    // buttons down, faint enough that the buttons, the position and the
+    // times stay easy to read.
     BarVisualiser {
         objectName: "barVisualiserBehind"
         skin: bar.skin
         x: row.x + middle.x
-        y: 3
+        y: Math.max(3, row.y + middle.y + transport.y + transport.height / 2)
         width: middle.width
-        height: bar.height - 6
-        opacity: 0.38
+        height: bar.height - y - 3
+        opacity: 0.6
         visible: bar.visPlace === "behind" && !(idle && appearance.idleVisualiser === "hide")
     }
 
@@ -201,6 +202,7 @@ Rectangle {
             Layout.alignment: Qt.AlignVCenter
             spacing: 4
             RowLayout {
+                id: transport
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 10
                 RoundButton { glyph: 0xF049D; lit: backend.shuffle; tip: qsTr("Shuffle (S)"); onClicked: backend.shuffle = !backend.shuffle }
@@ -216,6 +218,7 @@ Rectangle {
                 RoundButton { glyph: 0xF0456; lit: backend.repeat; tip: qsTr("Repeat (R)"); onClicked: backend.repeat = !backend.repeat }
             }
             RowLayout {
+                id: seekRow
                 Layout.fillWidth: true
                 Layout.maximumWidth: 720
                 Layout.alignment: Qt.AlignHCenter

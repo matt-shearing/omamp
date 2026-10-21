@@ -15,10 +15,7 @@
 
 </div>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/hero-dark.png">
-  <img alt="The Omamp library: the menu bar, the playing track with its cover and analyser, the column browser, an album grid of covers and the info panel" src="docs/hero-light.png">
-</picture>
+<img alt="The Omamp library: the menu bar, the playing track with its cover and analyser, the column browser, an album grid of covers and the info panel" src="docs/hero-dark.png">
 
 <p align="center"><sub>Every picture here is the real app, drawn offscreen with a made-up library. They follow GitHub's light or dark mode, as Omamp follows the Omarchy theme.</sub></p>
 
@@ -52,16 +49,10 @@ with its key.
 <table>
   <tr>
     <td width="50%" align="center">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/deck-dark.png">
-        <img alt="The deck playing Midnight Highway by Neon Coast, with its cover, the clock and the analyser" src="docs/deck-light.png" width="400">
-      </picture>
+      <img alt="The deck playing Midnight Highway by Neon Coast, with its cover, the clock and the analyser" src="docs/deck-light.png" width="400">
     </td>
     <td width="50%" align="center">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/menu-open-dark.png">
-        <img alt="The View menu open over the deck, listing the views and their keys" src="docs/menu-open-light.png" width="400">
-      </picture>
+      <img alt="The View menu open over the deck, listing the views and their keys" src="docs/menu-open-dark.png" width="400">
     </td>
   </tr>
 </table>
@@ -75,10 +66,7 @@ next. Search takes plain words or a query such
 as `artist:"neon coast" year:1990..1999 rating:4..`, and stays quick with
 200,000 tracks.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/library-dark.png">
-  <img alt="The library with Synthwave chosen in the column browser, the track list and the info panel" src="docs/library-light.png">
-</picture>
+<img alt="The library with Synthwave chosen in the column browser, the track list and the info panel" src="docs/library-light.png">
 
 ### Your layout
 
@@ -93,15 +81,11 @@ all of it, and **Reset layout** puts it back. The sidebar is on unless you
 switch it off. See
 [docs/library.md](docs/library.md#the-art-column).
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/sidebar-dark.png">
-  <img alt="The library with the Art column, the sidebar with notes about a made-up artist, and its album's own liner notes" src="docs/sidebar-light.png">
-</picture>
+<img alt="The library with the Art column, the sidebar with notes about a made-up artist, and its album's own liner notes" src="docs/sidebar-dark.png">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/big-bar-bottom-dark.png">
-  <img alt="The large now playing bar across the bottom of the library" src="docs/big-bar-bottom-light.png">
-</picture>
+<img alt="The large now playing bar across the bottom of the library" src="docs/big-bar-bottom-light.png">
+
+<img alt="The Synthwave visualiser behind the whole now playing bar, fading out at both ends" src="docs/fullbar-synthwave-dark.png">
 
 ### Now Playing, big and small
 
@@ -109,21 +93,12 @@ switch it off. See
 visualiser, with `F11` for fullscreen. `Ctrl+M` and `Ctrl+Shift+M` shrink
 Omamp to a mini player or to Winamp's windowshade.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/now-playing-big-dark.png">
-  <img alt="The big Now Playing view with the cover, timed lyrics and the analyser" src="docs/now-playing-big-light.png">
-</picture>
+<img alt="The big Now Playing view with the cover, timed lyrics and the analyser" src="docs/now-playing-big-light.png">
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/mini-player-dark.png">
-    <img alt="The mini player" src="docs/mini-player-light.png">
-  </picture>
+  <img alt="The mini player" src="docs/mini-player-dark.png">
   &nbsp;&nbsp;
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/micro-player-dark.png">
-    <img alt="The micro player" src="docs/micro-player-light.png">
-  </picture>
+  <img alt="The micro player" src="docs/micro-player-light.png">
 </p>
 
 ### Tags and files
@@ -134,10 +109,7 @@ MusicBrainz. Every change can be undone. Files to Edit lists the tracks with
 missing or inconsistent tags, and the duplicate finder can match an MP3 and a
 FLAC of the same recording by how they sound.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/tag-editor-dark.png">
-  <img alt="The tag editor with three tracks chosen; fields they share are filled and the title keeps each track's own" src="docs/tag-editor-light.png">
-</picture>
+<img alt="The tag editor with three tracks chosen; fields they share are filled and the title keeps each track's own" src="docs/tag-editor-dark.png">
 
 ### Playlists that mix your files and Spotify
 
@@ -145,10 +117,7 @@ Playlists, auto-playlists that update themselves, collections, Auto-DJ and
 party mode. With Spotify switched on, a playlist can hold Spotify tracks
 beside your own files; they play on Spotify when their turn comes.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/mixed-playlist-dark.png">
-  <img alt="A playlist of nine entries, four of them Spotify tracks marked with Spotify's logo" src="docs/mixed-playlist-light.png">
-</picture>
+<img alt="A playlist of nine entries, four of them Spotify tracks marked with Spotify's logo" src="docs/mixed-playlist-light.png">
 
 ### Spotify
 
@@ -158,10 +127,7 @@ add them to an Omamp or a Spotify playlist. Omamp never sees your Spotify
 password: it drives [spotify_player](https://github.com/aome510/spotify-player),
 which keeps its own sign-in. Playing needs Spotify Premium.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/spotify-multiselect-dark.png">
-  <img alt="Five Spotify tracks chosen in Liked Songs, with the Add to playlist menu open" src="docs/spotify-multiselect-light.png">
-</picture>
+<img alt="Five Spotify tracks chosen in Liked Songs, with the Add to playlist menu open" src="docs/spotify-multiselect-dark.png">
 
 ### Internet radio
 
@@ -169,10 +135,7 @@ Every Nightride FM and Rekt Network channel is built in, each showing the song
 on air now. `Shift+R` opens the picker and `[` `]` change channel. Any other
 station can be found on radio-browser.info or added by its address.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/radio-channels-dark.png">
-  <img alt="The Nightride FM channels, with Darksynth on air and its song on the deck" src="docs/radio-channels-light.png">
-</picture>
+<img alt="The Nightride FM channels, with Darksynth on air and its song on the deck" src="docs/radio-channels-light.png">
 
 ### In the Omarchy bar
 
@@ -180,10 +143,7 @@ A bar plugin shows a small cover, the play state and the track. Click it for a
 panel led by a large cover, with seek, transport, shuffle, repeat and volume.
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/omarchy-plugin-dark.png">
-    <img alt="The Omamp bar widget and its panel" src="docs/omarchy-plugin-light.png" width="380">
-  </picture>
+  <img alt="The Omamp bar widget and its panel" src="docs/omarchy-plugin-dark.png" width="380">
 </p>
 
 There is more in the guides: [device sync](docs/sync.md) to a phone, a USB

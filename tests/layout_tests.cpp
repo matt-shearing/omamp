@@ -472,8 +472,9 @@ private slots:
         QTRY_VERIFY(!panel->property("visible").toBool());
         QVERIFY(!layout->sidebarShown());
 
-        // Reset layout: everything as it starts, the sidebar off.
+        // Reset layout: everything as it starts, the sidebar on.
         layout->reset();
+        QTRY_VERIFY(layout->sidebarShown());
         QTRY_VERIFY(w.find("deckStrip"));
         QVERIFY(w.find("topBarSlot")->property("active").toBool());
         QCOMPARE(pane->property("rowH").toInt(), 24);

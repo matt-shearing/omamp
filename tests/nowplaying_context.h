@@ -10,6 +10,7 @@
 #include <QQmlEngine>
 
 #include "appearance.h"
+#include "firstrun.h"
 #include "nowplaying.h"
 #include "spotifycontroller.h"
 #include "radiocontroller.h"
@@ -34,4 +35,7 @@ inline void installNowPlaying(QQmlEngine &engine, Theme *theme, Player *player, 
     engine.rootContext()->setContextProperty("radio", radio);
     // Never asks the real Hyprland: the window is never tiled in tests.
     engine.rootContext()->setContextProperty("windowPlacement", new WindowPlacement(&engine, "/nonexistent/hyprctl"));
+    // Already set up, in memory: the first-run setup never opens over a test's
+    // window unless the test gives it a window.conf of its own.
+    engine.rootContext()->setContextProperty("firstRun", new FirstRun({}, &engine));
 }

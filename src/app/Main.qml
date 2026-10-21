@@ -36,6 +36,7 @@ ApplicationWindow {
                                       || identifySheet.opened || coverChooser.opened || volumesSheet.opened
                                       || nasGuideSheet.opened || remoteSheet.opened || devicesSheet.opened
                                       || radioUi.sheetOpen || mainMenu.anyOpen || aboutDialog.opened
+                                      || setupUi.sheetOpen
     // Party mode: what guests may do (PartyMode's action names).
     function may(action) { void library.dj.partyOn; return library.dj.allowed(action) }
     // Asks first; says so when party mode locks it.
@@ -62,6 +63,8 @@ ApplicationWindow {
         property bool browserVisible: false
         property string browserArtistMode: "albumartist"
         property int browserHeight: 214
+        // On for everyone since the setup came: FirstRun writes it once
+        // into window.conf (firstrun.h), so this default is for tests only.
         property bool infoVisible: false
         property int infoWidth: 340
         property bool gridVisible: false
@@ -190,7 +193,9 @@ ApplicationWindow {
         registerActions()
         modes.registerActions(commandPalette)
         radioUi.registerActions(commandPalette)
+        setupUi.registerActions(commandPalette)
         modes.start(typeof startMode === "string" ? startMode : "")
+        setupUi.start(typeof startMode === "string" ? startMode : "")
     }
 
     // Now playing: the big view, fullscreen, and the mini and micro players.
@@ -203,7 +208,7 @@ ApplicationWindow {
         target: appearance.layout
         function onSidebarToggleRequested() { win.toggleInfo() }
         function onResetRequested() {
-            prefs.infoVisible = false
+            prefs.infoVisible = true
             prefs.infoWidth = 340
             prefs.browserVisible = false
             prefs.gridVisible = false
@@ -523,7 +528,7 @@ ApplicationWindow {
                         "spotify": "library", "spotify-search": "library", "spotify-like": "settings",
                         "spotify-section:playlists": "library", "spotify-section:liked": "library",
                         "spotify-section:albums": "library", "spotify-section:artists": "library",
-                        "settings-spotify": "settings", "toggle-menu-bar": "settings" })
+                        "settings-spotify": "settings", "toggle-menu-bar": "settings", "setup": "settings" })
     function lockFor(id) {
         if (actionLocks[id] !== undefined) return actionLocks[id]
         if (id.startsWith("radio:")) return "play"
@@ -543,6 +548,7 @@ ApplicationWindow {
         if (modes.runAction(id)) return
         if (radioUi.runAction(id)) return
         if (spotifyHooks.runAction(id)) return
+        if (setupUi.runAction(id)) return
         switch (id) {
         case "play-pause": backend.toggle(); break
         case "play": backend.play(); break
@@ -1046,6 +1052,14 @@ ApplicationWindow {
 
         // Internet radio: its keys, palette actions and sheets (RadioActions.qml).
         RadioActions { id: radioUi; window: win }
+        // The first-run setup, Help → Run setup again… and its banner (SetupActions.qml).
+        SetupActions {
+            id: setupUi
+            window: win
+            prefs: prefs
+            modes: modes
+            bottomOffset: libraryHint.visible ? libraryHint.height + 8 : 0
+        }
         Connections {
             target: radio
             function onToast(text) { toast.show(text) }

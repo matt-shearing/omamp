@@ -114,7 +114,9 @@ Popup {
         showStep()
     }
     function showView(view) {
-        if (window) window.runAction(view === "library" ? "view-library" : "view-player")
+        // Straight to the window, not through runAction(), so the action
+        // that opened the setup stays the last one run.
+        if (window) window.setAdvanced(view === "library")
     }
     // The window behind shows what the step is about: the deck for Look,
     // the library for Layout, and the chosen start view otherwise.

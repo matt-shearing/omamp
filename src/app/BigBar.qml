@@ -25,6 +25,12 @@ Rectangle {
     signal openPlayer()
 
     readonly property bool playing: backend.state === "playing"
+    // Where the visualiser sits (Settings > Appearance): "off", "behind" the
+    // transport and seek bar, along the "edge" that faces the library, or
+    // "beside" the cover. The edge strip makes the bar a little taller.
+    readonly property string visPlace: appearance.barVisualiser
+    readonly property bool atTop: appearance.layout.barPosition === "top"
+    readonly property int edgeHeight: visPlace === "edge" ? 16 : 0
     readonly property var info: library.playingTrackId > 0 && library.revision >= 0 ? library.trackInfo(library.playingTrackId) : ({})
 
     function clock(ms) {
@@ -34,7 +40,7 @@ Rectangle {
         return (h > 0 ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (s < 10 ? "0" : "") + s
     }
 
-    implicitHeight: 96
+    implicitHeight: 96 + edgeHeight
     color: skin.panel
     border.width: 1
     border.color: skin.panelBorder
@@ -66,8 +72,35 @@ Rectangle {
         ToolTip.text: tip
     }
 
+    // Behind the transport and the seek bar: a wide band across the middle,
+    // faint enough that the buttons and the times stay easy to read.
+    BarVisualiser {
+        objectName: "barVisualiserBehind"
+        skin: bar.skin
+        x: row.x + middle.x
+        y: 3
+        width: middle.width
+        height: bar.height - 6
+        opacity: 0.38
+        visible: bar.visPlace === "behind" && !(idle && appearance.idleVisualiser === "hide")
+    }
+
+    // Along the edge that faces the library: the bottom when the bar is at
+    // the top, the top when it is at the bottom.
+    BarVisualiser {
+        objectName: "barVisualiserEdge"
+        skin: bar.skin
+        x: 10
+        width: bar.width - 20
+        y: bar.atTop ? bar.height - height - 3 : 3
+        height: bar.edgeHeight - 2
+        visible: bar.visPlace === "edge" && !(idle && appearance.idleVisualiser === "hide")
+    }
+
     RowLayout {
-        anchors { fill: parent; leftMargin: 12; rightMargin: 14; topMargin: 8; bottomMargin: 8 }
+        id: row
+        anchors { fill: parent; leftMargin: 12; rightMargin: 14
+                  topMargin: 8 + (bar.atTop ? 0 : bar.edgeHeight); bottomMargin: 8 + (bar.atTop ? bar.edgeHeight : 0) }
         spacing: 14
 
         // Left: the cover and the words.
@@ -141,8 +174,29 @@ Rectangle {
             }
         }
 
+        // Beside the cover and the words: a small panel of its own, when
+        // the window is wide enough to spare it.
+        Rectangle {
+            objectName: "barVisualiserPanel"
+            visible: bar.visPlace === "beside" && bar.width >= 1000
+                     && !(appearance.idleVisualiser === "hide" && (backend.state !== "playing" || backend.playsElsewhere))
+            Layout.preferredWidth: Math.min(240, bar.width * 0.14)
+            Layout.preferredHeight: 64
+            Layout.alignment: Qt.AlignVCenter
+            radius: Math.min(6, theme.radius)
+            color: Qt.alpha(bar.skin.text, 0.04)
+            border.width: 1
+            border.color: Qt.alpha(bar.skin.text, 0.08)
+            BarVisualiser {
+                objectName: "barVisualiserBeside"
+                skin: bar.skin
+                anchors { fill: parent; margins: 5 }
+            }
+        }
+
         // Middle: the transport, and the position under it.
         ColumnLayout {
+            id: middle
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             spacing: 4

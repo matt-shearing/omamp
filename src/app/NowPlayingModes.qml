@@ -173,8 +173,17 @@ QtObject {
         p.addAction("next-visualiser", qsTr("Next visualiser style"), ["visualizer", "analyser", "analyzer", "spectrum", "oscilloscope", "scope", "fire", "milkdrop"], "Shift+V")
         p.addAction("big-lyrics", qsTr("Lyrics in the big view on or off"), ["words", "karaoke", "lrc"], "Shift+L")
         p.addAction("settings-appearance", qsTr("Appearance: deck style, visualiser, big view…"), ["skin", "theme", "classic", "silver", "winamp", "mediamonkey", "look"], "")
+        for (const place of appearance.barPlacements)
+            p.addAction("bar-visualiser:" + place, qsTr("Large bar visualiser: %1").arg(appearance.barPlacementName(place)), ["visualizer", "analyser", "spectrum", "now playing bar"], "")
+        p.addAction("reduce-motion", qsTr("Reduce motion on or off"), ["animation", "calm", "visualiser", "accessibility"], "")
         for (const style of appearance.deckStyles)
             p.addAction("deck-style:" + style, qsTr("Deck style: %1").arg(appearance.deckStyleName(style)), ["skin", "theme", "look", "winamp", "mediamonkey"], "")
+    }
+
+    // Whether the visualiser in view is the large bar's: the library shows
+    // with the large bar, and neither the big view nor a compact player.
+    function barVisualiserShown() {
+        return window.advanced === true && compact === "" && !bigView && appearance.layout.barSize === "large"
     }
 
     // Runs one of the actions above; false when the id isn't one of them.
@@ -184,8 +193,17 @@ QtObject {
         case "fullscreen": toggleFullScreen(); return true
         case "mini-player": setCompact("mini"); return true
         case "micro-player": setCompact("micro"); return true
-        case "next-visualiser": appearance.nextVisualiser(); return true
+        // The library's large bar has its own style when one is chosen.
+        case "next-visualiser": appearance.cycleVisualiser(barVisualiserShown()); return true
         case "big-lyrics": appearance.bigLyrics = !appearance.bigLyrics; return true
+        }
+        if (id === "reduce-motion") {
+            appearance.reduceMotion = !appearance.reduceMotion
+            return true
+        }
+        if (id.startsWith("bar-visualiser:")) {
+            appearance.barVisualiser = id.slice(15)
+            return true
         }
         if (id.startsWith("deck-style:")) {
             appearance.deckStyle = id.slice(11)

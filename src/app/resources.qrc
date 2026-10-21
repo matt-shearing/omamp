@@ -19,6 +19,8 @@
         <file alias="SideSection.qml">SideSection.qml</file>
         <file alias="SectionOrder.qml">SectionOrder.qml</file>
         <file alias="BigBar.qml">BigBar.qml</file>
+        <file alias="BarVisualiser.qml">BarVisualiser.qml</file>
+        <file alias="BarVisualiserSettings.qml">BarVisualiserSettings.qml</file>
         <file alias="ArtThumb.qml">ArtThumb.qml</file>
         <file alias="LayoutSettings.qml">LayoutSettings.qml</file>
         <file alias="Analyser.qml">Analyser.qml</file>

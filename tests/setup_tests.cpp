@@ -83,10 +83,18 @@ class SetupTests : public QObject {
                         return found;
             return nullptr;
         }
+        // Walking the whole tree is slow, so each name is looked up once
+        // (again only when what was found has gone).
+        mutable QHash<QString, QPointer<QObject>> found;
         QObject *find(const QString &name) const {
-            if (QObject *o = findIn(window, name))
+            if (QObject *o = found.value(name))
                 return o;
-            return findIn(window->contentItem(), name);
+            QObject *o = findIn(window, name);
+            if (!o)
+                o = findIn(window->contentItem(), name);
+            if (o)
+                found.insert(name, o);
+            return o;
         }
         QObject *wizard() const { return find("setupWizard"); }
         bool wizardOpen() const {
@@ -638,6 +646,57 @@ private slots:
         QVERIFY(batches(dir.path()).isEmpty());
         // The tile's size isn't kept as the library's floating size.
         QVERIFY(w.saved("window/advancedWidth").toInt() != 1700);
+    }
+
+    // With the large bar, Layout offers its visualiser bold or subtle (and
+    // off), from the placements the build has; the real bar behind shows
+    // it at once, Skip puts it back, Finish keeps it.
+    void largeBarVisualiserChoice() {
+        QTemporaryDir dir;
+        {
+            Window w(dir);
+            QVERIFY(w.load());
+            QTRY_VERIFY(w.wizardOpen());
+            QMetaObject::invokeMethod(w.wizard(), "goTo", Q_ARG(QVariant, 2));
+            QTRY_COMPARE(w.step(), 2);
+            auto *full = qobject_cast<QQuickItem *>(w.find("setupBarVisualiser_full"));
+            auto *behind = qobject_cast<QQuickItem *>(w.find("setupBarVisualiser_behind"));
+            QVERIFY(full && behind);
+            // Compact bar: no choice to make.
+            QVERIFY(!full->isVisible());
+            QVERIFY(w.click("setupPreset_spotify"));
+            QTRY_VERIFY(full->isVisible());
+            QVERIFY(behind->isVisible());
+            QCOMPARE(w.appearance()->property("barVisualiser").toString(), QString("behind"));
+            QVERIFY(behind->property("chosen").toBool());
+            QVERIFY(w.click("setupBarVisualiser_full"));
+            QTRY_COMPARE(w.appearance()->property("barVisualiser").toString(), QString("full"));
+            QTRY_VERIFY(full->property("chosen").toBool());
+            QTRY_COMPARE(w.find("bigBar")->property("visPlace").toString(), QString("full"));
+            QVERIFY(w.click("setupBarVisualiser_off"));
+            QTRY_COMPARE(w.appearance()->property("barVisualiser").toString(), QString("off"));
+            QVERIFY(w.click("setupBarVisualiser_full"));
+            QTRY_VERIFY2(w.panelOutside().isEmpty(), qPrintable(w.panelOutside()));
+            // Skip: back to the default.
+            QTest::keyClick(w.window, Qt::Key_Escape);
+            QTest::keyClick(w.window, Qt::Key_Return);
+            QTRY_VERIFY(!w.wizardOpen());
+            QCOMPARE(w.appearance()->property("barVisualiser").toString(), QString("behind"));
+        }
+        // Run again and finish: kept.
+        Window w(dir);
+        QVERIFY(w.load());
+        w.run("setup");
+        QTRY_VERIFY(w.wizardOpen());
+        QMetaObject::invokeMethod(w.wizard(), "goTo", Q_ARG(QVariant, 2));
+        QVERIFY(w.click("setupPreset_spotify"));
+        QTRY_VERIFY(w.find("setupBarVisualiser_full")->property("visible").toBool());
+        QVERIFY(w.click("setupBarVisualiser_full"));
+        QMetaObject::invokeMethod(w.wizard(), "goTo", Q_ARG(QVariant, 4));
+        QTRY_COMPARE(w.step(), 4);
+        QVERIFY(w.click("setupNext"));
+        QTRY_VERIFY(!w.wizardOpen());
+        QTRY_COMPARE(w.saved("appearance/barVisualiser").toString(), QString("full"));
     }
 
     // The setup fits the deck's smallest window.

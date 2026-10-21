@@ -99,7 +99,8 @@ Popup {
         return {
             advanced: prefs.advanced, deckStyle: appearance.deckStyle, visualiser: appearance.visualiser,
             artColumn: layoutPrefs.artColumn, sidebar: prefs.infoVisible, barSize: layoutPrefs.barSize,
-            barPosition: layoutPrefs.barPosition, browser: prefs.browserVisible
+            barPosition: layoutPrefs.barPosition, browser: prefs.browserVisible,
+            barVisualiser: appearance.barVisualiser
         }
     }
     function restore(s) {
@@ -110,6 +111,7 @@ Popup {
         layoutPrefs.barSize = s.barSize
         layoutPrefs.barPosition = s.barPosition
         prefs.browserVisible = s.browser
+        appearance.barVisualiser = s.barVisualiser
     }
     function openWizard() {
         saved = snapshot()
@@ -198,6 +200,17 @@ Popup {
             && layoutPrefs.barPosition === p.barPosition
     }
 
+    // ---- The large bar's visualiser ---------------------------------------------
+
+    // The two looks offered, in this order, of the placements the build has
+    // (appearance.barPlacements): bold or subtle. Off is a link beside them.
+    readonly property var barLooks: {
+        const notes = { full: qsTr("Bold: the visualiser fills the bar behind everything."),
+                        behind: qsTr("Subtle: only behind the seek bar. The default.") }
+        return ["full", "behind"].filter(p => appearance.barPlacements.indexOf(p) >= 0)
+                                 .map(p => ({ id: p, name: appearance.barPlacementName(p), text: notes[p] }))
+    }
+
     // ---- The visualiser previews' made-up music --------------------------------
 
     property real phase: 0
@@ -207,7 +220,7 @@ Popup {
     Timer {
         interval: 50
         repeat: true
-        running: wiz.opened && wiz.stepId === "look"
+        running: wiz.opened && (wiz.stepId === "look" || (wiz.stepId === "layout" && wiz.layoutPrefs.barSize === "large"))
         triggeredOnStart: true
         onTriggered: {
             wiz.phase += 0.18
@@ -588,6 +601,76 @@ Popup {
                                 font.pixelSize: 13
                                 checked: wiz.layoutPrefs.barPosition === "bottom"
                                 onClicked: wiz.layoutPrefs.barPosition = checked ? "bottom" : "top"
+                            }
+                        }
+                        // The large bar's visualiser: bold or subtle, shown
+                        // live in the bar behind the panel.
+                        RowLayout {
+                            visible: wiz.layoutPrefs.barSize === "large" && wiz.barLooks.length > 0
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 18; Layout.rightMargin: 18; Layout.topMargin: 2
+                            Sub { Layout.fillWidth: true; text: qsTr("Visualiser in the large bar") }
+                            Button {
+                                objectName: "setupBarVisualiser_off"
+                                visible: appearance.barPlacements.indexOf("off") >= 0
+                                text: appearance.barVisualiser === "off" ? qsTr("Off ✓") : appearance.barPlacementName("off")
+                                flat: true
+                                font.pixelSize: 12
+                                implicitHeight: 28; topInset: 0; bottomInset: 0
+                                onClicked: appearance.barVisualiser = "off"
+                            }
+                        }
+                        Flow {
+                            visible: wiz.layoutPrefs.barSize === "large" && wiz.barLooks.length > 0
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 18; Layout.rightMargin: 18
+                            spacing: 8
+                            Repeater {
+                                model: wiz.barLooks
+                                Card {
+                                    id: lookCard
+                                    required property var modelData
+                                    objectName: "setupBarVisualiser_" + modelData.id
+                                    width: Math.max(180, Math.min(300, (scroller.availableWidth - 46) / 2))
+                                    chosen: appearance.barVisualiser === modelData.id
+                                    onClicked: appearance.barVisualiser = modelData.id
+                                    contentItem: ColumnLayout {
+                                        spacing: 4
+                                        // A small bar: the cover, the title and the seek
+                                        // bar, with the visualiser where this look puts it.
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: 40
+                                            radius: Math.min(3, theme.radius)
+                                            color: theme.c.darker_background
+                                            border.width: 1
+                                            border.color: theme.c.lighter_background
+                                            clip: true
+                                            Visualiser {
+                                                readonly property bool full: lookCard.modelData.id === "full"
+                                                x: full ? 0 : 40
+                                                y: full ? 0 : 22
+                                                width: full ? parent.width : parent.width - 52
+                                                height: full ? parent.height : 14
+                                                opacity: full ? 0.55 : 0.8
+                                                style: appearance.barStyle
+                                                levels: wiz.fakeLevels
+                                                peaks: wiz.fakePeaks
+                                                waveform: wiz.fakeWave
+                                                low: appearance.deck.visLow
+                                                mid: appearance.deck.visMid
+                                                high: appearance.deck.visHigh
+                                                peak: appearance.deck.visPeak
+                                                spacing: 1
+                                            }
+                                            Rectangle { x: 6; y: 6; width: 28; height: 28; radius: 2; color: Qt.alpha(theme.accent, 0.6) }
+                                            Rectangle { x: 40; y: 8; width: parent.width * 0.4; height: 4; color: theme.c.light_foreground }
+                                            Rectangle { x: 40; y: 30; width: parent.width - 52; height: 2; color: theme.c.light_foreground; opacity: 0.6 }
+                                        }
+                                        Sub { text: lookCard.modelData.name }
+                                        Text { Layout.fillWidth: true; wrapMode: Text.Wrap; text: lookCard.modelData.text; font.pixelSize: 12; color: theme.c.light_foreground }
+                                    }
+                                }
                             }
                         }
                     }

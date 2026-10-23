@@ -101,7 +101,8 @@ class FakeMpris : public QObject {
 
 public:
     FakeMpris(const QString &address, const QString &name) : m_bus(QDBusConnection::connectToBus(address, "fake-mpris")) {
-        m_bus.registerObject("/org/mpris/MediaPlayer2", this, QDBusConnection::ExportAllProperties);
+        m_bus.registerObject("/org/mpris/MediaPlayer2", this,
+                             QDBusConnection::ExportAllProperties | QDBusConnection::ExportScriptableSlots);
         m_registered = m_bus.registerService(name);
         m_name = name;
     }
@@ -136,6 +137,14 @@ public:
         m_positionUs = positionMs * 1000;
         announce({{"PlaybackStatus", m_status}});
     }
+    int pauses() const { return m_pauses; }
+
+public slots:
+    // MPRIS Pause, as Thrum calls it when it quits.
+    Q_SCRIPTABLE void Pause() {
+        ++m_pauses;
+        setStatus("Paused", m_positionUs / 1000);
+    }
 
 private:
     void announce(const QVariantMap &changed) {
@@ -152,6 +161,7 @@ private:
     QVariantMap m_metadata;
     qint64 m_positionUs = 0;
     double m_volume = 1.0;
+    int m_pauses = 0;
 };
 
 // Counts the playback-state reads in the fake's log: each one is a Spotify
@@ -1266,6 +1276,56 @@ private slots:
         // All of that without one read of Spotify's playback state.
         QCOMPARE(stateReads(fake.calls()), 0);
         player.stop();
+    }
+
+    // Quitting Thrum while its Spotify entry plays in spotify_player pauses
+    // it there, at once; with a local track current, Spotify playing on its
+    // own is left alone.
+    void quittingPausesOnlyThrumsEntry() {
+        PrivateBus bus;
+        if (!bus.ok())
+            QSKIP("dbus-daemon isn't available");
+        FakeSpotify fake;
+        fake.set("THRUM_SPOTIFY_MPRIS_BUS", bus.address);
+        fake.set("THRUM_SPOTIFY_MPRIS_NAME", "org.mpris.MediaPlayer2.spotify_player");
+        FakeMpris mpris(bus.address, "org.mpris.MediaPlayer2.spotify_player");
+        QVERIFY2(mpris.registered(), qPrintable(mpris.why() + " at " + bus.address));
+        QTemporaryDir dir;
+        auto *engine = new FakeEngine;
+        SpotifyController c(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c.playback()->setTimings(100, 4000);
+        Player player(new HandoffEngine(engine, c.playback()), QString(),
+                      [](const QString &path, qint64, QString *) { return QUrl(path); });
+        c.setPlayer(&player);
+        c.setEnabled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(c.running() && !c.checking(), 8000);
+        QTRY_COMPARE_WITH_TIMEOUT(c.followMode(), QString("mpris"), 3000);
+        c.openSection("liked");
+        QTRY_COMPARE_WITH_TIMEOUT(c.items()->count(), 8, 5000);
+
+        // A local track is current; Spotify plays something of its own.
+        player.playTracks({{dir.filePath("a.flac"), "Local A", "Me", 1000, 0}}, 0);
+        QCOMPARE(player.state(), QString("playing"));
+        mpris.show("Something Else", "Someone", "Elsewhere", 200000, "Playing", 1000);
+        QTest::qWait(200);
+        c.playback()->pauseForQuit(200);
+        QTest::qWait(300);
+        QCOMPARE(mpris.pauses(), 0);
+
+        // Thrum's Spotify entry plays there.
+        const QString one = fake.id("track:Tail Lights");
+        const Spotify::Item tail = c.knownTrack(one);
+        player.playTracks({{"spotify://track/" + one, "Tail Lights", "Lunar Drive", tail.durationMs, 0}}, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(fake.calls().contains("playback start track --id " + one), 5000);
+        mpris.show("Tail Lights", "Lunar Drive", tail.album, tail.durationMs, "Playing", 1000);
+        QTRY_VERIFY_WITH_TIMEOUT(!player.buffering(), 3000);
+        QCOMPARE(player.state(), QString("playing"));
+        // The call blocks until spotify_player answers. The fake answers on
+        // this same thread, so only once the wait has run out; the real one
+        // is another process and answers within it.
+        c.playback()->pauseForQuit(200);
+        QTRY_COMPARE_WITH_TIMEOUT(mpris.pauses(), 1, 2000);
+        QCOMPARE(mpris.playbackStatus(), QString("Paused"));
     }
 
     void withoutMprisItPollsSlowly() {

@@ -3,6 +3,18 @@
 What changed in each release of Thrum, newest first. Thrum was called Omamp
 until 0.4.0, so the entries before it use the old name.
 
+## Unreleased
+
+- **Thrum plays Spotify itself.** With the session helper installed, a
+  Spotify track plays through Thrum's own engine instead of on
+  spotify_player's Connect device, at 320 kbps. The visualisers move, and
+  the volume, equaliser, ReplayGain (from Spotify's loudness figures),
+  output device and gapless joins with local tracks all work. It needs
+  Spotify Premium. A whole playlist queued as one entry, and every Spotify
+  track without the helper, still plays on spotify_player.
+- **Quitting Thrum stops Spotify.** Thrum's own Spotify playback ends with
+  it, and spotify_player is paused if it was playing Thrum's entry.
+
 ## 0.4.0
 
 - **Omamp is now Thrum.** The program, its package, the command, the window,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QPointer>
+#include <functional>
 
 #include "audioengine.h"
 
@@ -36,6 +37,11 @@ public:
     virtual void setVolume(qreal linear) { Q_UNUSED(linear); }
     // title, artist, album, as AudioEngine::metaData().
     virtual QVariantMap metaData() const = 0;
+    // Whether the sound comes out of Thrum after all (an engine of Thrum's
+    // own plays it: EnginePlayback), so the visualisers have it.
+    virtual bool playsInThrum() const { return false; }
+    // The equaliser and ReplayGain settings, for a playback that has them.
+    virtual void setSettings(const AudioEngine::Settings &settings) { Q_UNUSED(settings); }
 
 signals:
     void positionChanged(qint64 ms);
@@ -47,6 +53,47 @@ signals:
     void finished();
     // The track could not be played; detail says why, for the person.
     void failed(const QString &path, const QString &detail);
+    // Sound for the analyser, from a playback that plays in Thrum.
+    void pcmTapped(const QAudioBuffer &buffer);
+};
+
+// Spotify tracks played by one of Thrum's own engines (a NativeEngine, made
+// when first needed) beside an engine that can't open them (the Qt
+// engine). With the native engine chosen, Spotify tracks need no handoff:
+// it plays them itself, gaplessly beside local files.
+class EnginePlayback : public ExternalPlayback {
+    Q_OBJECT
+public:
+    using Factory = std::function<AudioEngine *()>;
+    explicit EnginePlayback(Factory make, QObject *parent = nullptr);
+
+    bool handles(const QString &path) const override;
+    bool playsInThrum() const override { return true; }
+    void load(const QString &path) override;
+    void unload() override;
+    QString source() const override { return m_engine ? m_engine->source() : QString(); }
+    void play() override;
+    void pause() override;
+    void stop() override;
+    void seek(qint64 ms) override;
+    qint64 position() const override { return m_engine ? m_engine->position() : 0; }
+    qint64 duration() const override { return m_engine ? m_engine->duration() : 0; }
+    AudioEngine::State state() const override { return m_engine ? m_engine->state() : AudioEngine::Stopped; }
+    bool buffering() const override { return m_engine && m_engine->buffering(); }
+    void setVolume(qreal linear) override;
+    QVariantMap metaData() const override { return m_engine ? m_engine->metaData() : QVariantMap(); }
+    void setSettings(const AudioEngine::Settings &settings) override;
+
+    AudioEngine *engine() const { return m_engine; }
+
+private:
+    AudioEngine *ensure();
+
+    Factory m_make;
+    AudioEngine *m_engine = nullptr;
+    qreal m_volume = 1.0;
+    bool m_haveSettings = false;
+    AudioEngine::Settings m_settings;
 };
 
 // An AudioEngine that puts an ExternalPlayback beside the real engine, so
@@ -57,9 +104,10 @@ signals:
 //   Spotify → local: when Spotify reports the track finished, the real
 //     engine loads and plays the next file.
 //
-// Gapless joins, crossfades, ReplayGain, the equaliser and the analyser
-// stay inside the real engine: they don't cross the boundary. The volume
-// slider and mute act on Thrum's own sound only.
+// Gapless joins and crossfades stay inside the real engine: they don't
+// cross the boundary. The volume reaches both sides; the equaliser,
+// ReplayGain and the analyser reach an outside playback that plays in Thrum
+// (EnginePlayback).
 class HandoffEngine : public AudioEngine {
     Q_OBJECT
 public:
@@ -71,6 +119,9 @@ public:
     AudioEngine *inner() const { return m_inner; }
     // Whether the current track plays outside.
     bool externalActive() const { return m_external; }
+    // Whether path plays with its sound in Thrum: by the real engine, or by
+    // a playback that plays in Thrum.
+    bool canPlay(const QString &path) const override;
 
     QString name() const override { return m_inner->name(); }
     bool gapless() const override { return m_inner->gapless(); }
@@ -98,7 +149,10 @@ public:
     void setSettings(const Settings &settings) override;
 
 private:
-    bool isExternal(const QString &path) const { return m_ext && m_ext->handles(path); }
+    // Handed over: the outside playback takes it and the real engine can't.
+    bool isExternal(const QString &path) const {
+        return m_ext && m_ext->handles(path) && !m_inner->canPlay(path);
+    }
     // Gives the real engine what follows, or nothing when Spotify does.
     void applyQueue();
     void connectExternal();

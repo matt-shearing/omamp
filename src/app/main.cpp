@@ -21,6 +21,9 @@
 #include "devhooks.h"
 #include "firstrun.h"
 #include "handoffengine.h"
+#include "nativeengine.h"
+#include "spotifyaudio.h"
+#include "spotifysession.h"
 #include "librarycontroller.h"
 #include "mpris.h"
 #include "nowplaying.h"
@@ -97,13 +100,31 @@ int main(int argc, char *argv[]) {
     RadioController radio;
     streams.setRadioResolver([&radio](const QString &path, QString *error) { return radio.resolve(path, error); });
     // Spotify (docs/spotify.md), off until switched on in Settings. Its
-    // tracks sit in Now Playing and play on the backend's Spotify Connect
-    // device: HandoffEngine passes them over and pauses Thrum's own engine.
+    // tracks sit in Now Playing. Thrum plays them itself when the session
+    // sidecar is there (spotifyaudio.h): the native engine opens them like
+    // files, and beside the Qt engine a native engine of their own does
+    // (EnginePlayback). What it can't play (a whole playlist played as one,
+    // or everything without the sidecar) plays on spotify_player's Spotify
+    // Connect device: HandoffEngine passes it over and pauses Thrum's own.
     SpotifyController spotify;
+    std::shared_ptr<SpotifyAudio> spotifyAudio;
+    if (const QString sidecar = Spotify::SessionReader::findProgram(); !sidecar.isEmpty()) {
+        spotifyAudio = std::make_shared<SpotifyAudio>(sidecar, Spotify::SpotifyPlayerBackend::cacheFolder() +
+                                                                   "/credentials.json");
+        SpotifyAudio::install(spotifyAudio);
+        spotifyAudio->setEnabled(spotify.enabled());
+        QObject::connect(&spotify, &SpotifyController::settingsChanged, &spotify,
+                         [&] { spotifyAudio->setEnabled(spotify.enabled()); });
+    }
     const QString statePath =
         QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/thrum/state.json";
-    Player player(new HandoffEngine(Player::createEngine(statePath), spotify.playback()), statePath,
-                  streams.function());
+    AudioEngine *ownEngine = Player::createEngine(statePath);
+    if (spotifyAudio && ownEngine->name() != QLatin1String("native")) {
+        auto *side = new EnginePlayback([] { return new NativeEngine; });
+        ownEngine = new HandoffEngine(ownEngine, side);
+        side->setParent(ownEngine);
+    }
+    Player player(new HandoffEngine(ownEngine, spotify.playback()), statePath, streams.function());
     spotify.setPlayer(&player);
     QObject::connect(&player, &Player::folderRequested, &picker, &FolderPicker::pickFolders);
     QObject::connect(&picker, &FolderPicker::picked, &player, &Player::addPicked);
@@ -159,7 +180,14 @@ int main(int argc, char *argv[]) {
     library.dj()->loadSaved(library.databasePath());
     library.recorder()->flushIfConfigured();
     // Quitting part-way through a track still counts what was heard.
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, &player, [&player] { player.finishPlay(false); });
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &player, [&] {
+        player.finishPlay(false);
+        // Spotify must not play on after Thrum: spotify_player is paused if
+        // it plays Thrum's entry, and Thrum's own sidecar is stopped.
+        spotify.playback()->pauseForQuit();
+        if (spotifyAudio)
+            spotifyAudio->shutdown();
+    });
 
     // Spotify in the palette, the tree and the deck's cover.
     spotify.setPalette(library.palette());
@@ -245,5 +273,7 @@ int main(int argc, char *argv[]) {
         });
     }
 
-    return app.exec();
+    const int code = app.exec();
+    SpotifyAudio::install(nullptr);
+    return code;
 }

@@ -453,7 +453,11 @@ bool Player::live() const {
 }
 
 bool Player::playsElsewhere() const {
-    return m_current >= 0 && m_current < m_playlist.count() && m_playlist.at(m_current).path.startsWith("spotify:");
+    if (m_current < 0 || m_current >= m_playlist.count())
+        return false;
+    const QString &path = m_playlist.at(m_current).path;
+    // Spotify played by Thrum itself is heard here like any file.
+    return path.startsWith("spotify:") && !m_engine->canPlay(path);
 }
 
 void Player::setLiveInfo(const QString &title, const QString &artist, const QString &album) {

@@ -243,20 +243,43 @@ thrum spotify pause|resume
 `status` prints the next step when something is missing, for example
 `sign in, in a terminal: spotify_player authenticate`.
 
-## What crosses over and what doesn't
+## Who plays Spotify
 
-Spotify's sound never passes through Thrum. Spotify plays on its own Spotify
-Connect device (spotify_player's, named `spotify-player` unless its
-`app.toml` says otherwise) and Thrum pauses its own engine. So:
+**Thrum plays Spotify tracks itself** when `thrum-spotify-session` is
+installed (it is built with Thrum when `cargo` is there). The helper's
+`audio` mode signs in with the sign-in spotify_player keeps
+(`~/.cache/spotify-player/credentials.json`, read only), fetches each track
+as librespot's own player does, at 320 kbps Ogg Vorbis when Spotify has it,
+and hands Thrum the decoded sound. Thrum's native engine opens a Spotify
+track like a file. So Spotify tracks get everything local tracks get:
 
-- **No gapless join, crossfade, ReplayGain or equaliser** between a local
-  track and a Spotify track, or between two Spotify tracks. Starting each
-  Spotify track takes about a second.
-- **The visualiser rests** while Spotify plays; it has no sound to draw.
-- **The volume slider and mute** act on Thrum's own sound. Spotify's volume
-  is Spotify's.
-- **Like** acts on the playing track only: spotify_player's command line can
-  save or remove nothing else.
+- **Gapless joins and crossfades** between Spotify tracks and local tracks,
+  in either direction. The next Spotify track is opened while the current
+  one plays.
+- **The visualisers, the volume slider, mute, the equaliser and the output
+  device** behave as for any file.
+- **ReplayGain** uses Spotify's own loudness figures for the track and its
+  album. Spotify's normalisation is otherwise off.
+- **Quitting Thrum stops Spotify**, because the sound is Thrum's.
+
+With the Qt engine chosen (Settings → Playback), Spotify tracks play in a
+native engine of their own beside it, without gapless joins across the
+change. Playing Spotify in Thrum needs Spotify Premium; a Free account gets
+a message saying so.
+
+**spotify_player plays the rest:** a whole playlist, album or artist queued
+as one entry (Spotify plays it itself), and every Spotify track when the
+helper isn't installed or can't sign in. Then Spotify plays on its own
+Spotify Connect device (spotify_player's, named `spotify-player` unless its
+`app.toml` says otherwise) and Thrum pauses its own engine:
+
+- **No gapless join, crossfade, ReplayGain or equaliser** across the
+  change, and starting each track takes about a second.
+- **The visualiser rests**; it has no sound to draw.
+- **The volume slider** sets spotify_player's volume over MPRIS.
+- **Quitting Thrum pauses spotify_player** if it is playing Thrum's entry,
+  over MPRIS (`Pause`, waiting up to a second). Spotify playing something
+  you started elsewhere is left alone.
 - **Position and pauses** come from the backend's MPRIS service:
   `org.mpris.MediaPlayer2.spotify_player` (spotify_player, with
   `enable_media_control = true`, its default on Linux) or
@@ -264,8 +287,45 @@ Connect device (spotify_player's, named `spotify-player` unless its
   MPRIS, Thrum asks the backend every 5 seconds, and only while a Spotify
   track plays in Thrum.
 - **A pause from another device** shows as paused in Thrum, as soon as
-  spotify_player hears of it. If someone
-  starts something else in Spotify, Thrum pauses its queue and says so.
+  spotify_player hears of it. If someone starts something else in Spotify,
+  Thrum pauses its queue and says so.
+
+**spotify_player is still needed** for everything but playing: signing in
+(the helper reads its credential), your library, playlists, search, Like and
+playlist edits, all through its daemon and command line. Spotify Connect
+(controlling Thrum's Spotify playback from a phone) is not done yet.
+
+**Like** acts on the track spotify_player is playing, so while Thrum plays
+Spotify itself it doesn't follow Thrum's track.
+
+### The audio helper's protocol
+
+`thrum-spotify-session --credentials <file> audio` reads one JSON request a
+line on stdin and writes frames on stdout. A frame is a little-endian
+`u32` length, then that many bytes: a JSON header, a newline, and for a read
+the samples. Its first frame is `{"ready":true,"rate":44100,"channels":2,…}`,
+or `{"ready":false,"error":…}`.
+
+```
+{"id":1,"cmd":"open","stream":7,"track":"<base62>","position_ms":0}
+   → {"id":1,"ok":true,"duration_ms":…,"bitrate":320,"format":"OGG_VORBIS_320",
+      "title":…,"artists":[…],"album":…,"track_gain_db":…,"track_peak":…, …}
+{"id":2,"cmd":"read","stream":7,"frames":4096}
+   → {"id":2,"ok":true,"frames":n,"end":false} + n × 2 float32 LE samples
+{"id":3,"cmd":"seek","stream":7,"position_ms":60000} → {"id":3,"ok":true,"position_ms":…}
+{"id":4,"cmd":"close","stream":7}                    → {"id":4,"ok":true}
+{"id":5,"cmd":"ping"}                                → {"id":5,"ok":true}
+{"cmd":"quit"}
+```
+
+Thrum pulls: it reads when its engine wants sound, so pausing is not
+reading, and the helper never touches a sound card. Each stream runs on a
+thread of its own, so a track opened ahead never holds up the one playing.
+A refused open has `"ok":false`, `"error"` and, when known, `"reason"`:
+`"premium"` or `"unavailable"`. Thrum starts one helper for all streams
+(`src/engine/spotifyaudio.{h,cpp}`), as a child of a thread that lives
+exactly as long as it, with `PR_SET_PDEATHSIG`, and quits it (killing it
+after 1.5 seconds) when Thrum quits.
 
 ## The two backends
 
@@ -289,6 +349,14 @@ is packaged for Arch, runs as a daemon, and answers on its command line in
 JSON: library, search, playback state, play, pause, seek, Like, add to a
 playlist and choose a device. That gives the whole feature without Thrum ever
 touching a credential.
+
+**Since October 2026 Thrum plays Spotify tracks itself.** Handing sound to
+another program cost the visualiser, the equaliser, gapless joins, and
+control of what happens when Thrum quits. librespot now lives in the Rust
+helper beside Thrum, not in Thrum, and it reads spotify_player's credential
+rather than keeping one, so Thrum still holds no sign-in of its own.
+spotify_player stays for the library, search and sign-in, and as the player
+when the helper can't play.
 
 **Spotifast is a second choice, for control only.** It is a good Spotify app,
 but its command line plays a link, pauses, seeks and
@@ -387,6 +455,14 @@ that doesn't exist. The client ID writer is tested on `app.toml` files in
 temporary folders. `tests/mixed_tests.cpp` covers choosing rows, adding them
 to Thrum playlists, dragging them onto the tree, mixed playlists, playing
 them and the command line, against the same fake.
+
+`tests/spotifyaudio_tests.cpp` covers Thrum playing Spotify itself, against
+`tests/fake-spotify/thrum-spotify-audio` (Python), which speaks the audio
+protocol and "decodes" every track to a sine tone: one helper for all
+tracks, a refused sign-in remembered, the visualiser moving and resting,
+pause, seek, a Spotify track followed by a local file and by another Spotify
+track opened ahead, the Premium message, the Qt engine's side engine, and no
+helper process left afterwards.
 
 ## Things to check by hand
 

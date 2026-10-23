@@ -33,6 +33,8 @@ public:
     QString name() const override { return QStringLiteral("native"); }
     bool gapless() const override { return true; }
     bool skipsUnplayable() const override { return true; }
+    // Spotify tracks too, when Thrum plays Spotify itself.
+    bool canPlay(const QString &path) const override;
 
     void load(const QString &path, const QUrl &url = {}) override;
     void queueNext(const QString &path, const QUrl &url = {}) override;

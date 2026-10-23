@@ -46,6 +46,11 @@ public:
     // stops on it, as Thrum always has.
     virtual bool skipsUnplayable() const = 0;
 
+    // Whether this engine can open path itself. A Spotify track
+    // (spotify://…) only the native engine opens, when Thrum plays Spotify
+    // itself (spotifyaudio.h); everything else is tried, and may fail.
+    virtual bool canPlay(const QString &path) const { return !path.startsWith(QLatin1String("spotify:")); }
+
     // Replaces the current file and stops. An empty path unloads.
     //
     // path is the track's name in the play queue: a local file, or a

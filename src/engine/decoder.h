@@ -6,6 +6,9 @@
 #include <QVariantMap>
 #include <QVector>
 #include <functional>
+#include <memory>
+
+class SpotifyStream;
 
 struct AVFormatContext;
 struct AVCodecContext;
@@ -22,6 +25,10 @@ struct SwrContext;
 // from the last Ogg granule, and MP4 edit lists (AAC priming). The tests
 // check each of these sample for sample.
 //
+// A Spotify track (spotify://track/<id>) is decoded by Spotify's sidecar
+// instead (spotifyaudio.h) and comes out the same way, at 44.1 kHz, with
+// Spotify's loudness figures as its ReplayGain.
+//
 // Not thread-safe; one thread uses a decoder at a time.
 class Decoder {
 public:
@@ -36,16 +43,13 @@ public:
     // way, and no error message quotes the URL.
     bool open(const QString &path, const QUrl &url, QString *error = nullptr);
     void close();
-    bool isOpen() const { return m_codec != nullptr; }
+    bool isOpen() const { return m_codec != nullptr || m_spotify != nullptr; }
 
     // Up to frames frames into out (stereo, interleaved). 0 means the end.
     int read(float *out, int frames);
-    bool atEnd() const { return m_eof && m_fifo.size() == m_head; }
+    bool atEnd() const;
     // Decodes the first frame ahead of time, so a queued track starts at once.
-    void prime() {
-        if (m_codec && m_fifo.size() == m_head && !m_eof)
-            decodeMore();
-    }
+    void prime();
     // Sample-accurate where the format allows: decodes from the nearest
     // earlier keyframe and drops what comes before ms. A stream whose
     // server won't serve byte ranges is read forward to ms, or opened again
@@ -105,8 +109,11 @@ private:
     bool interrupted() const { return m_interrupt && m_interrupt(); }
     static int interruptCallback(void *opaque);
 
+    bool openSpotify(QString *error);
+
     QString m_path;
     QUrl m_url;
+    std::unique_ptr<SpotifyStream> m_spotify;
     bool m_network = false;
     bool m_live = false, m_titleChanged = false;
     int m_packetsSinceIcy = 0;

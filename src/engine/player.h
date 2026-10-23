@@ -44,8 +44,9 @@ class Player : public QObject {
     // The current entry is a live radio station (radio://…): no length and
     // no seeking; position is how long it has been listened to.
     Q_PROPERTY(bool live READ live NOTIFY trackChanged)
-    // The current entry plays in another program (Spotify), so no sound
-    // reaches the analyser: the visualisers show their idle animation.
+    // The current entry plays in another program (Spotify through
+    // spotify_player), so no sound reaches the analyser: the visualisers
+    // show their idle animation. False when Thrum plays Spotify itself.
     Q_PROPERTY(bool playsElsewhere READ playsElsewhere NOTIFY trackChanged)
     // Which engine plays ("qt" or "native") and whether it joins tracks
     // without a gap. Chosen at start: THRUM_ENGINE, else playback/engine in

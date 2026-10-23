@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "decoder.h"
+#include "spotifyaudio.h"
 #include "equalizer.h"
 
 extern "C" {
@@ -926,6 +927,12 @@ NativeEngine::NativeEngine(PcmSink *sink, QObject *parent) : AudioEngine(parent)
     connect(&m_timer, &QTimer::timeout, this, &NativeEngine::poll);
     m_stall.start();
     updateTimer();
+}
+
+bool NativeEngine::canPlay(const QString &path) const {
+    if (path.startsWith(QLatin1String("spotify:")))
+        return SpotifyAudio::canPlay(path);
+    return true;
 }
 
 NativeEngine::~NativeEngine() {

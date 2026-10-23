@@ -1,5 +1,7 @@
 #include "decoder.h"
 
+#include "spotifyaudio.h"
+
 #include <QRegularExpression>
 #include <cmath>
 #include <cstdio>
@@ -80,7 +82,48 @@ void Decoder::pollIcy() {
     }
 }
 
+bool Decoder::atEnd() const {
+    if (m_spotify)
+        return m_spotify->atEnd();
+    return m_eof && m_fifo.size() == m_head;
+}
+
+void Decoder::prime() {
+    if (m_spotify) {
+        m_spotify->prime();
+        return;
+    }
+    if (m_codec && m_fifo.size() == m_head && !m_eof)
+        decodeMore();
+}
+
+bool Decoder::openSpotify(QString *error) {
+    const auto audio = SpotifyAudio::installed();
+    if (!audio) {
+        if (error)
+            *error = QObject::tr("Thrum can't play Spotify itself here.");
+        return false;
+    }
+    m_spotify = std::make_unique<SpotifyStream>(audio);
+    if (!m_spotify->open(m_path, [this] { return interrupted(); }, error)) {
+        m_spotify.reset();
+        return false;
+    }
+    m_rate = m_spotify->sampleRate();
+    m_sourceChannels = 2;
+    m_durationMs = m_spotify->durationMs();
+    m_bitrateKbps = m_spotify->bitrateKbps();
+    m_meta = m_spotify->metaData();
+    m_rg.trackGain = m_spotify->trackGain;
+    m_rg.trackPeak = m_spotify->trackPeak;
+    m_rg.albumGain = m_spotify->albumGain;
+    m_rg.albumPeak = m_spotify->albumPeak;
+    return true;
+}
+
 bool Decoder::seekable() const {
+    if (m_spotify)
+        return true;
     if (!m_format || !m_format->pb)
         return false;
     return (m_format->pb->seekable & AVIO_SEEKABLE_NORMAL) != 0;
@@ -89,6 +132,7 @@ bool Decoder::seekable() const {
 Decoder::~Decoder() { close(); }
 
 void Decoder::close() {
+    m_spotify.reset();
     if (m_swr)
         swr_free(&m_swr);
     if (m_codec)
@@ -135,6 +179,8 @@ bool Decoder::open(const QString &path, const QUrl &url, QString *error) {
     m_packetsSinceIcy = 0;
     m_readError.clear();
     m_decodedTo = 0;
+    if (!SpotifyAudio::trackId(path).isEmpty())
+        return openSpotify(error);
     auto failWith = [&](const QString &message) {
         if (error)
             *error = AudioEngine::redact(message);
@@ -407,6 +453,12 @@ void Decoder::convert(AVFrame *frame) {
 }
 
 int Decoder::read(float *out, int frames) {
+    if (m_spotify) {
+        const int n = m_spotify->read(out, frames);
+        if (n == 0)
+            m_readError = m_spotify->readError();
+        return n;
+    }
     if (!m_codec)
         return 0;
     int done = 0;
@@ -432,6 +484,8 @@ int Decoder::read(float *out, int frames) {
 }
 
 bool Decoder::seek(qint64 ms) {
+    if (m_spotify)
+        return m_spotify->seek(ms);
     if (!m_codec || m_live)
         return false;
     AVStream *stream = m_format->streams[m_stream];

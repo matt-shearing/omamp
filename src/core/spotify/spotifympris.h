@@ -18,8 +18,9 @@ class QDBusServiceWatcher;
 // (the default on Linux) and Spotifast publishes
 // org.mpris.MediaPlayer2.spotifast.
 //
-// Only properties are read and only signals are listened to: no method is
-// called on the player. spotify_player refreshes its MPRIS state once a
+// Properties are read and signals listened to. The only methods called on
+// the player are setting its Volume and, when Thrum quits while its entry
+// plays there, Pause. spotify_player refreshes its MPRIS state once a
 // second from what it already knows, and its metadata carries no Spotify
 // id ("mpris:trackid" is "/"), so a track is matched by title and length
 // there. Spotifast's metadata has the id in "xesam:url".
@@ -38,6 +39,9 @@ public:
     // Sets the player's MPRIS Volume (0..1). A local D-Bus call: it costs
     // Spotify no Web API request.
     void setVolume(qreal volume);
+    // Pauses the player and waits for it to answer, at most timeoutMs: for
+    // quitting, when the event loop won't run again. True when it answered.
+    bool pauseNow(int timeoutMs);
     QString service() const { return m_service; }
     bool available() const { return m_available; }
 

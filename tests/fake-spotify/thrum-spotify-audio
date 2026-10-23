@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+# A stand-in for `thrum-spotify-session audio` in the tests: it speaks the
+# same protocol (sidecar/thrum-spotify-session/src/audio_protocol.rs) and
+# "decodes" every track to a sine tone, never touching Spotify. Its state
+# and log are in $FAKE_SPOTIFY_AUDIO_DIR:
+#
+#   pids            each start appends its process id
+#   calls.log       each request's command, one a line
+#   refuse          its text is the sign-in failure (ready: false)
+#   premium         every open fails as a Free account's would
+#   unavailable     track ids, one a line, that Spotify won't play
+#   duration-<id>   a track's length in ms (default 3000)
+#   hz-<id>         a track's tone in Hz (default 440)
+import json, math, os, struct, sys
+from array import array
+
+D = os.environ.get("FAKE_SPOTIFY_AUDIO_DIR", "")
+RATE = 44100
+
+
+def path(name):
+    return os.path.join(D, name)
+
+
+def read_file(name, default=None):
+    try:
+        with open(path(name)) as f:
+            return f.read().strip()
+    except OSError:
+        return default
+
+
+def log(line):
+    if D:
+        with open(path("calls.log"), "a") as f:
+            f.write(line + "\n")
+
+
+out = sys.stdout.buffer
+
+
+def send(header, data=b""):
+    body = json.dumps(header).encode() + b"\n" + data
+    out.write(struct.pack("<I", len(body)) + body)
+    out.flush()
+
+
+if D:
+    with open(path("pids"), "a") as f:
+        f.write("%d\n" % os.getpid())
+
+refused = read_file("refuse")
+if refused is not None:
+    send({"ready": False, "error": refused})
+    sys.exit(1)
+send({"ready": True, "user": "fake", "country": "AU", "rate": RATE, "channels": 2})
+
+streams = {}
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    r = json.loads(line)
+    cmd, rid = r.get("cmd"), r.get("id")
+    log(" ".join(str(x) for x in [cmd, r.get("stream", ""), r.get("track", ""), r.get("position_ms", "")]).strip())
+    if cmd == "quit":
+        break
+    if cmd == "ping":
+        send({"id": rid, "ok": True})
+    elif cmd == "open":
+        track = r["track"]
+        if read_file("premium") is not None:
+            send({"id": rid, "ok": False, "error": "Premium account required", "reason": "premium"})
+            continue
+        if track in (read_file("unavailable", "") or "").split():
+            send({"id": rid, "ok": False, "error": "This track is unavailable", "reason": "unavailable"})
+            continue
+        duration = int(read_file("duration-" + track, "3000"))
+        hz = float(read_file("hz-" + track, "440"))
+        pos = int(r.get("position_ms", 0)) * RATE // 1000
+        streams[r["stream"]] = {"pos": pos, "total": duration * RATE // 1000, "hz": hz}
+        send({"id": rid, "ok": True, "rate": RATE, "channels": 2, "duration_ms": duration, "position_ms": 0,
+              "bitrate": 320, "format": "OGG_VORBIS_320", "title": "Tone " + track[:4], "artists": ["Fake"],
+              "album": "Tones", "album_artists": ["Fake"], "track_gain_db": -3.0, "track_peak": 0.5})
+    elif cmd in ("read", "seek", "close"):
+        s = streams.get(r.get("stream"))
+        if s is None:
+            send({"id": rid, "ok": False, "error": "no such stream"})
+        elif cmd == "close":
+            del streams[r["stream"]]
+            send({"id": rid, "ok": True})
+        elif cmd == "seek":
+            s["pos"] = min(s["total"], int(r.get("position_ms", 0)) * RATE // 1000)
+            send({"id": rid, "ok": True, "position_ms": s["pos"] * 1000 // RATE})
+        else:
+            n = max(0, min(int(r.get("frames", 4096)), s["total"] - s["pos"]))
+            w = 2 * math.pi * s["hz"] / RATE
+            a = array("f")
+            for i in range(s["pos"], s["pos"] + n):
+                v = 0.5 * math.sin(w * i)
+                a.append(v)
+                a.append(v)
+            s["pos"] += n
+            data = a.tobytes() if sys.byteorder == "little" else (a.byteswap() or a).tobytes()
+            send({"id": rid, "ok": True, "frames": n, "end": s["pos"] >= s["total"]}, data)
+    else:
+        send({"id": rid, "ok": False, "error": "unknown command"})

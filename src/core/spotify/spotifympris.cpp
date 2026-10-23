@@ -245,6 +245,15 @@ Playback MprisWatch::state() const {
 
 } // namespace Spotify
 
+bool Spotify::MprisWatch::pauseNow(int timeoutMs) {
+    if (m_service.isEmpty() || !m_bus.isConnected())
+        return false;
+    const QDBusMessage pause =
+        QDBusMessage::createMethodCall(m_service, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", "Pause");
+    const QDBusMessage reply = m_bus.call(pause, QDBus::Block, timeoutMs);
+    return reply.type() == QDBusMessage::ReplyMessage;
+}
+
 void Spotify::MprisWatch::setVolume(qreal volume) {
     if (m_service.isEmpty())
         return;

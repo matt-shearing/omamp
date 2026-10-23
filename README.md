@@ -299,7 +299,9 @@ Thrum is MIT-licensed. Theme following and the project layout come from
 Omacut and Monologue by David Heinemeier Hansson, also MIT.
 
 Spotify works through [spotify_player](https://github.com/aome510/spotify-player),
-and the session helper is built on [librespot](https://github.com/librespot-org/librespot).
+and the session helper, which also decodes the Spotify tracks Thrum plays
+itself, is built on [librespot](https://github.com/librespot-org/librespot)
+(MIT).
 The radio channels are [Nightride FM](https://nightride.fm)'s and the Rekt
 Network's; Thrum plays their public streams.
 

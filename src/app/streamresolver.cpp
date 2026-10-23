@@ -25,7 +25,8 @@ Library *StreamResolver::library() {
 }
 
 QUrl StreamResolver::resolve(const QString &path, qint64 trackId, QString *error) {
-    // Spotify plays elsewhere (HandoffEngine); the reference is enough.
+    // Spotify: the reference is enough, whether Thrum plays it itself
+    // (spotifyaudio.h) or hands it to spotify_player (HandoffEngine).
     if (path.startsWith(QLatin1String("spotify://")))
         return QUrl(path);
     // A radio station: the radio picks the address (and falls back along

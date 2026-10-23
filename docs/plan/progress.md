@@ -6652,3 +6652,74 @@ spotify_player, fake Navidrome and made-up Wikipedia as before, offscreen in
 software in throwaway homes. The report is now of the demo library (53
 tracks). `site/og.jpg` and the site's copies of the changed pictures were
 rebuilt with `site/tools/build-assets.sh`.
+
+## Spotify played by Thrum itself (23 October 2026)
+
+Two bugs started this: the visualisers sat still during Spotify tracks, and
+spotify_player played on after Thrum quit. Both came from Spotify's sound
+never passing through Thrum. Recording spotify_player's stream back with
+`parec` was tried first and dropped on Matt's call: Thrum now decodes Spotify
+itself and plays it through its own engine.
+
+```
+sidecar/thrum-spotify-session/src/audio.rs           the audio mode: open, read, seek, close
+sidecar/thrum-spotify-session/src/audio_protocol.rs  its wire format, unit-tested
+src/engine/spotifyaudio.{h,cpp}                      the client: one helper process, thread-safe
+src/engine/decoder.cpp                               spotify://track/<id> opens a SpotifyStream
+src/engine/handoffengine.{h,cpp}                     canPlay() routing, EnginePlayback
+tests/spotifyaudio_tests.cpp                         against tests/fake-spotify/thrum-spotify-audio
+```
+
+- **Pull, not push.** The helper doesn't run librespot's `Player` or a sink.
+  It does what `PlayerTrackLoader` does (AudioItem, the 320 kbps file,
+  AudioFile, the key, AudioDecrypt, the 0xa7 header, the Symphonia decoder)
+  and answers `read` requests with float stereo at 44.1 kHz. Thrum's
+  `Decoder` reads a Spotify track like a file, so the native engine's
+  gapless joins, crossfade, ReplayGain, equaliser, resampling to the device,
+  output following and analyser tap all apply unchanged. Pause is the engine
+  not reading; there is no pause command. Each stream has its own thread in
+  the helper, so the next track's open (the engine's background open) never
+  stalls the one playing.
+- **Routing.** `AudioEngine::canPlay(path)` refuses `spotify:` by default;
+  the native engine accepts a track when a `SpotifyAudio` is installed and
+  Spotify is on. `HandoffEngine` hands an entry to its outside playback only
+  when that playback takes it and the real engine can't. With the Qt engine,
+  `main()` puts a second `HandoffEngine` inside with an `EnginePlayback` (a
+  native engine made on first use) for Spotify tracks; the outer one keeps
+  `SpotifyPlayback` (spotify_player) for whole-playlist entries and for
+  machines without the helper. `Player::playsElsewhere()` is now true only
+  when the engine can't play the entry, so the visualisers and the levels
+  socket follow it unchanged.
+- **The process.** `SpotifyAudio` forks the helper from a reader thread that
+  lives exactly as long as the child, with `PR_SET_PDEATHSIG` (which fires
+  on the forking thread's exit, so forking from the engine's short-lived
+  open threads would have killed it). Requests go over a socketpair with
+  `MSG_NOSIGNAL`; a send never holds the lock the reader needs. `shutdown()`
+  (on `aboutToQuit`, and in the destructor) sends quit, waits 1.5 s, kills
+  and reaps. A failed sign-in is remembered for 10 s so a list of tracks
+  doesn't start the helper once each.
+- **Quit, the spotify_player path.** `SpotifyPlayback::pauseForQuit()` sends
+  MPRIS `Pause` with a blocking call (1 s) when Thrum's entry is playing
+  there and MPRIS says Playing; without MPRIS, the backend's `pause`. A local
+  or radio entry leaves Spotify alone.
+- **Normalisation** is off; Spotify's track and album gain and peak (from
+  the Ogg header, offset 144) become the track's ReplayGain, used only when
+  ReplayGain is on.
+
+Checked for real, once, with Matt's spotify_player paused: the helper built
+from this branch, with a copy of the credential in a scratch folder, opened
+a track at 320 kbps Ogg Vorbis (`OGG_VORBIS_320`), read 5 s from 0:30 to a
+file (RMS 0.177, peak 0.94), sought, closed and quit cleanly. The copy was
+shredded afterwards. Not checked for real: the whole app playing Spotify
+through the speakers, Spotify's behaviour with two sessions of one account
+playing (spotify_player's and the helper's), a Free account's actual error
+text, and the bar plugin's quit path.
+
+Follow-ups:
+
+- **Spotify Connect**: controlling Thrum's Spotify playback from the phone.
+- **Like and now-playing** still follow spotify_player, not Thrum's track.
+- **One helper process**: the catalogue (`serve`) and the audio mode are two
+  processes and two sessions; they could share one.
+- **The Qt engine** gets no gapless join between a Spotify track and a local
+  one; the native engine does.

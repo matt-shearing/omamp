@@ -1,5 +1,7 @@
 #include "handoffengine.h"
 
+#include "spotifyaudio.h"
+
 HandoffEngine::HandoffEngine(AudioEngine *inner, ExternalPlayback *external, QObject *parent)
     : AudioEngine(parent), m_inner(inner) {
     m_inner->setParent(this);
@@ -55,8 +57,11 @@ void HandoffEngine::setExternal(ExternalPlayback *external) {
     for (auto &c : m_extConnections)
         disconnect(c);
     m_ext = external;
-    if (m_ext)
+    if (m_ext) {
         connectExternal();
+        m_ext->setSettings(m_settings);
+        pushVolume();
+    }
 }
 
 void HandoffEngine::connectExternal() {
@@ -84,6 +89,10 @@ void HandoffEngine::connectExternal() {
     m_extConnections[i++] = connect(m_ext, &ExternalPlayback::finished, this, [this] {
         if (m_external)
             onExternalFinished();
+    });
+    m_extConnections[i++] = connect(m_ext, &ExternalPlayback::pcmTapped, this, [this](const QAudioBuffer &buffer) {
+        if (m_external)
+            emit pcmTapped(buffer);
     });
     m_extConnections[i++] = connect(m_ext, &ExternalPlayback::failed, this,
                                     [this](const QString &path, const QString &detail) {
@@ -223,6 +232,77 @@ QVariantMap HandoffEngine::metaData() const { return m_external ? m_ext->metaDat
 void HandoffEngine::setSettings(const Settings &settings) {
     AudioEngine::setSettings(settings);
     m_inner->setSettings(settings);
+    if (m_ext)
+        m_ext->setSettings(settings);
+}
+
+bool HandoffEngine::canPlay(const QString &path) const {
+    return m_inner->canPlay(path) || (m_ext && m_ext->handles(path) && m_ext->playsInThrum());
+}
+
+// --- EnginePlayback ---------------------------------------------------------------
+
+EnginePlayback::EnginePlayback(Factory make, QObject *parent) : ExternalPlayback(parent), m_make(std::move(make)) {}
+
+bool EnginePlayback::handles(const QString &path) const { return SpotifyAudio::canPlay(path); }
+
+AudioEngine *EnginePlayback::ensure() {
+    if (m_engine)
+        return m_engine;
+    m_engine = m_make();
+    m_engine->setParent(this);
+    m_engine->setVolume(m_volume);
+    if (m_haveSettings)
+        m_engine->setSettings(m_settings);
+    connect(m_engine, &AudioEngine::positionChanged, this, &ExternalPlayback::positionChanged);
+    connect(m_engine, &AudioEngine::durationChanged, this, &ExternalPlayback::durationChanged);
+    connect(m_engine, &AudioEngine::stateChanged, this, &ExternalPlayback::stateChanged);
+    connect(m_engine, &AudioEngine::bufferingChanged, this, &ExternalPlayback::bufferingChanged);
+    connect(m_engine, &AudioEngine::metaDataChanged, this, &ExternalPlayback::metaDataChanged);
+    connect(m_engine, &AudioEngine::pcmTapped, this, &ExternalPlayback::pcmTapped);
+    // Nothing is queued in it: its track ending is the end of ours.
+    connect(m_engine, &AudioEngine::endOfQueue, this, &ExternalPlayback::finished);
+    connect(m_engine, &AudioEngine::trackFailed, this, &ExternalPlayback::failed);
+    return m_engine;
+}
+
+void EnginePlayback::load(const QString &path) { ensure()->load(path); }
+
+void EnginePlayback::unload() {
+    if (m_engine) {
+        m_engine->stop();
+        m_engine->load({});
+    }
+}
+
+void EnginePlayback::play() { ensure()->play(); }
+
+void EnginePlayback::pause() {
+    if (m_engine)
+        m_engine->pause();
+}
+
+void EnginePlayback::stop() {
+    if (m_engine)
+        m_engine->stop();
+}
+
+void EnginePlayback::seek(qint64 ms) {
+    if (m_engine)
+        m_engine->seek(ms);
+}
+
+void EnginePlayback::setVolume(qreal linear) {
+    m_volume = linear;
+    if (m_engine)
+        m_engine->setVolume(linear);
+}
+
+void EnginePlayback::setSettings(const AudioEngine::Settings &settings) {
+    m_settings = settings;
+    m_haveSettings = true;
+    if (m_engine)
+        m_engine->setSettings(settings);
 }
 
 void HandoffEngine::setVolume(qreal linear) {
@@ -238,8 +318,9 @@ void HandoffEngine::setMuted(bool muted) {
 }
 
 // The outside player only hears the volume while it plays Thrum's entry, so
-// a Spotify volume set elsewhere is left alone the rest of the time.
+// a Spotify volume set elsewhere is left alone the rest of the time. A
+// playback in Thrum always has it, so it never starts at full volume.
 void HandoffEngine::pushVolume() {
-    if (m_ext && m_external)
+    if (m_ext && (m_external || m_ext->playsInThrum()))
         m_ext->setVolume(m_muted ? 0.0 : m_volume);
 }

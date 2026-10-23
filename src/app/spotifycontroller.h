@@ -190,6 +190,11 @@ public:
     // a track plays and MPRIS isn't there, and how long a start may take
     // before it counts as failed (tests shorten them).
     void setTimings(int pollMs, int startTimeoutMs);
+    // Thrum is quitting: if Thrum's entry is playing in the backend, pause
+    // it there, waiting at most timeoutMs, so Spotify doesn't play on with
+    // nothing left to follow it. Anything playing there that isn't Thrum's
+    // entry (Spotify used on its own) is left alone.
+    void pauseForQuit(int timeoutMs = 1000);
     int pollMs() const { return m_pollMs; }
     // Reads the state now (tests, and after a command): from MPRIS when it
     // is there, else through the command line.

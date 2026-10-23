@@ -34,7 +34,7 @@ SOURCES += main.cpp thrum_tests.cpp library_tests.cpp query_tests.cpp palette_te
            ../src/app/webcontroller.cpp ../src/app/nascontroller.cpp ../src/app/streamresolver.cpp \
            ../src/app/devicescontroller.cpp ../src/app/librarycontroller_reports.cpp \
            ../src/app/appearance.cpp ../src/app/nowplaying.cpp ../src/app/visualiser.cpp ../src/app/mpris.cpp \
-           ../src/app/spotifycontroller.cpp spotify_tests.cpp mixed_tests.cpp \
+           ../src/app/spotifycontroller.cpp spotify_tests.cpp spotifyaudio_tests.cpp mixed_tests.cpp \
            ../src/app/radiocontroller.cpp ../src/app/windowplacement.cpp menu_tests.cpp \
            ../src/app/layoutprefs.cpp ../src/app/aboutcontroller.cpp layout_tests.cpp visualiser_tests.cpp \
            ../src/app/firstrun.cpp setup_tests.cpp \

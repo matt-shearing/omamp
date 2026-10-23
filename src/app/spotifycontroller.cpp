@@ -681,6 +681,19 @@ void SpotifyPlayback::stop() {
     emit positionChanged(0);
 }
 
+void SpotifyPlayback::pauseForQuit(int timeoutMs) {
+    if (m_path.isEmpty() || !m_started || m_state != AudioEngine::Playing)
+        return;
+    if (followsMpris()) {
+        if (m_c->mpris()->status() == QLatin1String("Playing"))
+            m_c->mpris()->pauseNow(timeoutMs);
+        return;
+    }
+    // No MPRIS: the backend's command line, on this thread.
+    if (const auto backend = m_c->backend())
+        backend->pause(nullptr);
+}
+
 void SpotifyPlayback::seek(qint64 ms) {
     ms = qBound<qint64>(0, ms, duration() > 0 ? duration() : ms);
     if (m_started && m_confirmed) {

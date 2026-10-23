@@ -28,6 +28,13 @@
 //!
 //! One-shot, for a person or a test: thrum-spotify-session playlist <id>,
 //! artist-top <id>, or ping, each printing one answer.
+//!
+//! `thrum-spotify-session audio` is the other mode: it decodes Spotify's
+//! tracks for Thrum to play (audio.rs, audio_protocol.rs). Its first frame
+//! out is the same ready line.
+
+mod audio;
+mod audio_protocol;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -88,7 +95,7 @@ fn default_credentials() -> PathBuf {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: thrum-spotify-session [--credentials <file>] [serve | ping | playlist <id> | artist-top <id>]"
+        "usage: thrum-spotify-session [--credentials <file>] [serve | audio | ping | playlist <id> | artist-top <id>]"
     );
     std::process::exit(2);
 }
@@ -104,8 +111,9 @@ async fn main() {
         credentials = PathBuf::from(args.remove(at + 1));
         args.remove(at);
     }
+    let audio_mode = args.first().map(String::as_str) == Some("audio");
     let one_shot = match args.first().map(String::as_str) {
-        None | Some("serve") => None,
+        None | Some("serve") | Some("audio") => None,
         Some("ping") => Some(json!({"id": 0, "cmd": "ping"})),
         Some("playlist") if args.len() == 2 => Some(json!({"id": 0, "cmd": "playlist", "playlist": args[1]})),
         Some("artist-top") if args.len() == 2 => Some(json!({"id": 0, "cmd": "artist-top", "artist": args[1]})),
@@ -116,10 +124,28 @@ async fn main() {
     let session = match connect(&credentials).await {
         Ok(s) => s,
         Err(f) => {
-            println!("{}", json!({"ready": false, "error": f.message}));
+            let not_ready = json!({"ready": false, "error": f.message});
+            if audio_mode {
+                audio::Out::new().send(&not_ready, &[]);
+            } else {
+                println!("{not_ready}");
+            }
             std::process::exit(1);
         }
     };
+
+    if audio_mode {
+        let out = audio::Out::new();
+        let ready = json!({"ready": true, "user": session.username(), "country": session.country(),
+                           "rate": audio_protocol::RATE, "channels": audio_protocol::CHANNELS});
+        if out.send(&ready, &[]) {
+            let (s, runtime) = (session.clone(), tokio::runtime::Handle::current());
+            let _ = tokio::task::spawn_blocking(move || audio::serve(s, runtime, out)).await;
+        }
+        session.shutdown();
+        // Streams still opening hold the runtime; nothing more is wanted.
+        std::process::exit(0);
+    }
 
     if let Some(request) = one_shot {
         let answer = handle(&session, &request).await;

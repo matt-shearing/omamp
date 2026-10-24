@@ -106,12 +106,18 @@ int main(int argc, char *argv[]) {
     // (EnginePlayback). What it can't play (a whole playlist played as one,
     // or everything without the sidecar) plays on spotify_player's Spotify
     // Connect device: HandoffEngine passes it over and pauses Thrum's own.
-    SpotifyController spotify;
+    //
+    // The sidecar is Thrum's one Spotify session: the engines play through
+    // it, the controller reads the catalogue and Liked Songs through it, and
+    // it can be a Spotify Connect device. It is installed before the
+    // controller is made, so the controller uses it rather than its own.
     std::shared_ptr<SpotifyAudio> spotifyAudio;
     if (const QString sidecar = Spotify::SessionReader::findProgram(); !sidecar.isEmpty()) {
-        spotifyAudio = std::make_shared<SpotifyAudio>(sidecar, Spotify::SpotifyPlayerBackend::cacheFolder() +
-                                                                   "/credentials.json");
+        spotifyAudio = std::make_shared<SpotifyAudio>(sidecar, Spotify::SessionReader::credentialsPath());
         SpotifyAudio::install(spotifyAudio);
+    }
+    SpotifyController spotify;
+    if (spotifyAudio) {
         spotifyAudio->setEnabled(spotify.enabled());
         QObject::connect(&spotify, &SpotifyController::settingsChanged, &spotify,
                          [&] { spotifyAudio->setEnabled(spotify.enabled()); });

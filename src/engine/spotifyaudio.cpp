@@ -79,7 +79,7 @@ QString SpotifyAudio::trackId(const QString &path) {
 }
 
 bool SpotifyAudio::canPlay(const QString &path) {
-    if (trackId(path).isEmpty())
+    if (trackId(path).isEmpty() && !isConnect(path))
         return false;
     const auto audio = installed();
     return audio && audio->enabled();
@@ -189,6 +189,16 @@ void SpotifyAudio::run(std::vector<std::string> args) {
         answer.header = QJsonDocument::fromJson(nl >= 0 ? body.left(nl) : body).object();
         if (nl >= 0)
             answer.data = body.mid(nl + 1);
+        if (answer.header.contains(QStringLiteral("event"))) {
+            EventHandler handler;
+            {
+                std::lock_guard l(m_mutex);
+                handler = m_events;
+            }
+            if (handler)
+                handler(answer.header);
+            continue;
+        }
         std::lock_guard l(m_mutex);
         if (!m_ready && answer.header.contains(QStringLiteral("ready"))) {
             if (answer.header.value(QStringLiteral("ready")).toBool())
@@ -235,6 +245,36 @@ void SpotifyAudio::run(std::vector<std::string> args) {
     m_cv.notify_all();
 }
 
+bool SpotifyAudio::launch(std::unique_lock<std::mutex> &lock) {
+    while (true) {
+        if (m_closed)
+            return false;
+        if (m_starting || (m_running && m_ready))
+            return true;
+        if (!m_failure.isEmpty() && now() - m_failedAt < kFailureMemoryMs)
+            return false;
+        // The last sidecar's reader finishes once it is reaped.
+        std::thread old = std::move(m_reader);
+        if (!old.joinable())
+            break;
+        lock.unlock();
+        old.join();
+        lock.lock();
+    }
+    m_starting = true;
+    m_failure.clear();
+    ++m_starts;
+    ++m_generation;
+    std::vector<std::string> args = {m_program.toStdString(), "--credentials", m_credentials.toStdString()};
+    if (!m_connectName.isEmpty() && !m_connectBroken) {
+        args.push_back("--connect");
+        args.push_back(m_connectName.toStdString());
+    }
+    args.push_back("serve");
+    m_reader = std::thread(&SpotifyAudio::run, this, std::move(args));
+    return true;
+}
+
 bool SpotifyAudio::ensureStarted(std::unique_lock<std::mutex> &lock, const Interrupt &interrupt, QString *error) {
     if (m_closed) {
         *error = tr("Thrum is closing.");
@@ -242,28 +282,12 @@ bool SpotifyAudio::ensureStarted(std::unique_lock<std::mutex> &lock, const Inter
     }
     if (m_running && m_ready)
         return true;
-    if (!m_starting) {
-        if (!m_failure.isEmpty() && now() - m_failedAt < kFailureMemoryMs) {
-            *error = m_failure;
-            return false;
-        }
-        // The last sidecar's reader finishes once it is reaped.
-        std::thread old = std::move(m_reader);
-        if (old.joinable()) {
-            lock.unlock();
-            old.join();
-            lock.lock();
-        }
-        if (m_closed || m_starting || (m_running && m_ready))
-            return ensureStarted(lock, interrupt, error);
-        m_starting = true;
-        m_failure.clear();
-        ++m_starts;
-        ++m_generation;
-        std::vector<std::string> args = {m_program.toStdString(), "--credentials", m_credentials.toStdString(),
-                                         "audio"};
-        m_reader = std::thread(&SpotifyAudio::run, this, std::move(args));
+    if (!launch(lock)) {
+        *error = m_closed ? tr("Thrum is closing.") : m_failure;
+        return false;
     }
+    if (m_running && m_ready)
+        return true;
     // Signing in takes about a second.
     const qint64 deadline = now() + 30000;
     while (m_starting) {
@@ -281,6 +305,14 @@ bool SpotifyAudio::ensureStarted(std::unique_lock<std::mutex> &lock, const Inter
     }
     if (m_running && m_ready)
         return true;
+    // Starting as a Connect device failed: start again without it, so
+    // playing and reading Spotify still work.
+    if (!m_closed && !m_connectName.isEmpty() && !m_connectBroken) {
+        m_connectBroken = true;
+        m_connectFailure = m_failure.isEmpty() ? tr("Couldn't start the Spotify player.") : m_failure;
+        m_failure.clear();
+        return ensureStarted(lock, interrupt, error);
+    }
     if (m_failure.isEmpty())
         m_failure = tr("Couldn't start the Spotify player.");
     m_failedAt = now();
@@ -337,6 +369,75 @@ void SpotifyAudio::tell(QJsonObject request) {
     sendLine(QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n');
 }
 
+void SpotifyAudio::setEventHandler(EventHandler handler) {
+    std::lock_guard l(m_mutex);
+    m_events = std::move(handler);
+}
+
+bool SpotifyAudio::ready() const {
+    std::lock_guard l(m_mutex);
+    return m_running && m_ready;
+}
+
+QString SpotifyAudio::lastFailure() const {
+    std::lock_guard l(m_mutex);
+    return m_failure;
+}
+
+QString SpotifyAudio::connectFailure() const {
+    std::lock_guard l(m_mutex);
+    return m_connectFailure;
+}
+
+QString SpotifyAudio::connectName() const {
+    std::lock_guard l(m_mutex);
+    return m_connectName;
+}
+
+void SpotifyAudio::quitRunning(std::unique_lock<std::mutex> &lock) {
+    if (!m_running && !m_starting)
+        return;
+    const pid_t pid = m_pid;
+    lock.unlock();
+    // A quit lets the Connect device say goodbye; the reader reaps it.
+    if (!sendLine("{\"cmd\":\"quit\"}\n") && pid > 0)
+        ::kill(pid, SIGTERM);
+    lock.lock();
+}
+
+void SpotifyAudio::setConnectName(const QString &name) {
+    std::unique_lock lock(m_mutex);
+    if (name == m_connectName)
+        return;
+    m_connectName = name;
+    // A failure of the old kind of start says nothing about the new one.
+    m_failure.clear();
+    m_connectBroken = false;
+    m_connectFailure.clear();
+    quitRunning(lock);
+    lock.unlock();
+    if (!name.isEmpty())
+        warmUp();
+}
+
+void SpotifyAudio::warmUp() {
+    std::unique_lock lock(m_mutex);
+    if (m_closed || m_warming || m_starting || (m_running && m_ready))
+        return;
+    m_warming = true;
+    std::thread old = std::move(m_warm);
+    lock.unlock();
+    if (old.joinable())
+        old.join();
+    lock.lock();
+    m_warm = std::thread([this] {
+        std::unique_lock l(m_mutex);
+        QString error;
+        ensureStarted(l, [this] { return m_closed; }, &error);
+        m_warming = false;
+    });
+}
+
 void SpotifyAudio::shutdown() {
     std::unique_lock lock(m_mutex);
     m_closed = true;
@@ -358,7 +459,10 @@ void SpotifyAudio::shutdown() {
         ::kill(m_pid, SIGKILL);
     }
     std::thread reader = std::move(m_reader);
+    std::thread warm = std::move(m_warm);
     lock.unlock();
+    if (warm.joinable())
+        warm.join();
     if (reader.joinable())
         reader.join();
 }
@@ -380,13 +484,16 @@ bool SpotifyStream::open(const QString &path, const SpotifyAudio::Interrupt &int
             *error = why;
         return false;
     };
-    if (id.isEmpty())
+    m_live = SpotifyAudio::isConnect(path);
+    if (id.isEmpty() && !m_live)
         return fail(QObject::tr("not a Spotify track"));
     if (!m_audio->enabled())
         return fail(QObject::tr("Spotify is off. Switch it on in Settings → Spotify."));
     m_stream = m_audio->newStream();
-    const SpotifyAudio::Answer a = m_audio->ask(
-        {{"cmd", "open"}, {"stream", m_stream}, {"track", id}, {"position_ms", 0}}, 30000, m_interrupt);
+    const SpotifyAudio::Answer a =
+        m_live ? m_audio->ask({{"cmd", "open-connect"}, {"stream", m_stream}}, 30000, m_interrupt)
+               : m_audio->ask({{"cmd", "open"}, {"stream", m_stream}, {"track", id}, {"position_ms", 0}}, 30000,
+                              m_interrupt);
     if (!a.ok()) {
         const QString reason = a.header.value("reason").toString();
         if (reason == QLatin1String("premium"))
@@ -449,6 +556,12 @@ bool SpotifyStream::fetch() {
     std::memcpy(m_buffer.data() + at, a.data.constData(), size_t(frames) * 2 * sizeof(float));
     if (a.header.value("end").toBool())
         m_end = true;
+    // The Connect device between tracks, or paused on the phone: silence
+    // keeps the engine going until Thrum hears what happened.
+    if (frames == 0 && m_live) {
+        m_buffer.resize(at + size_t(chunkFrames) * 2, 0.0f);
+        return true;
+    }
     return frames > 0;
 }
 

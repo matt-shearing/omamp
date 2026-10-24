@@ -1,7 +1,6 @@
 #include "spotifysession.h"
 
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -17,35 +16,9 @@ QJsonObject failure(const QString &error) { return {{"ok", false}, {"error", err
 
 } // namespace
 
-SessionReader::SessionReader(const QString &program, const QString &credentials)
-    : m_program(program), m_credentials(credentials) {
-    m_thread.setObjectName("spotify-session");
-    m_context = new QObject;
-    m_context->moveToThread(&m_thread);
-    m_thread.start();
-}
+SessionReader::SessionReader(std::shared_ptr<SpotifyAudio> audio) : m_audio(std::move(audio)) {}
 
-SessionReader::~SessionReader() {
-    // The process belongs to the reader's thread, so it is stopped there.
-    QMetaObject::invokeMethod(
-        m_context,
-        [this] {
-            if (m_process) {
-                m_process->write("{\"cmd\":\"quit\"}\n");
-                m_process->closeWriteChannel();
-                if (!m_process->waitForFinished(1500)) {
-                    m_process->kill();
-                    m_process->waitForFinished(1000);
-                }
-                delete m_process;
-                m_process = nullptr;
-            }
-        },
-        Qt::BlockingQueuedConnection);
-    m_thread.quit();
-    m_thread.wait();
-    delete m_context;
-}
+QString SessionReader::credentialsPath() { return SpotifyPlayerBackend::cacheFolder() + "/credentials.json"; }
 
 QString SessionReader::findProgram() {
     static const char *name = "thrum-spotify-session";
@@ -68,85 +41,12 @@ QString SessionReader::findProgram() {
 }
 
 QJsonObject SessionReader::ask(const QJsonObject &request, int timeoutMs) {
-    QMutexLocker lock(&m_mutex);
     const CancelFlag cancel = CancelScope::current();
-    QJsonObject answer;
-    QMetaObject::invokeMethod(
-        m_context, [&] { answer = askHere(request, timeoutMs, cancel); }, Qt::BlockingQueuedConnection);
-    return answer;
-}
-
-bool SessionReader::readLine(QByteArray *line, qint64 deadline, const CancelFlag &cancel) {
-    while (!m_process->canReadLine()) {
-        if (m_process->state() != QProcess::Running) {
-            m_process->waitForReadyRead(0);
-            if (!m_process->canReadLine())
-                return false;
-            break;
-        }
-        if ((cancel && cancel->load()) || QDateTime::currentMSecsSinceEpoch() >= deadline)
-            return false;
-        m_process->waitForReadyRead(100);
-    }
-    *line = m_process->readLine().trimmed();
-    return true;
-}
-
-bool SessionReader::ensureStarted(QString *error) {
-    if (m_process && m_process->state() == QProcess::Running)
-        return true;
-    delete m_process;
-    m_process = new QProcess;
-    m_process->setProgram(m_program);
-    m_process->setArguments({"--credentials", m_credentials, "serve"});
-    // Its log (librespot's) isn't wanted; its answers are on stdout.
-    m_process->setStandardErrorFile(QProcess::nullDevice());
-    m_process->start();
-    ++m_starts;
-    if (!m_process->waitForStarted(5000)) {
-        *error = tr("Couldn't start %1.").arg(QFileInfo(m_program).fileName());
-        return false;
-    }
-    QByteArray line;
-    // Signing in takes about a second.
-    if (!readLine(&line, QDateTime::currentMSecsSinceEpoch() + 25000, {})) {
-        *error = tr("%1 didn't sign in to Spotify in time.").arg(QFileInfo(m_program).fileName());
-        m_process->kill();
-        m_process->waitForFinished(1000);
-        return false;
-    }
-    const QJsonObject ready = QJsonDocument::fromJson(line).object();
-    if (!ready.value("ready").toBool()) {
-        *error = ready.value("error").toString(tr("%1 couldn't sign in to Spotify.").arg(QFileInfo(m_program).fileName()));
-        m_process->waitForFinished(1000);
-        return false;
-    }
-    return true;
-}
-
-QJsonObject SessionReader::askHere(const QJsonObject &request, int timeoutMs, const CancelFlag &cancel) {
-    if (m_program.isEmpty())
-        return failure(tr("thrum-spotify-session isn't installed."));
-    QString error;
-    if (!ensureStarted(&error))
-        return failure(error);
-    QJsonObject r = request;
-    const int id = m_next++;
-    r.insert("id", id);
-    m_process->write(QJsonDocument(r).toJson(QJsonDocument::Compact) + '\n');
-    const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + timeoutMs;
-    QByteArray line;
-    while (readLine(&line, deadline, cancel)) {
-        const QJsonObject answer = QJsonDocument::fromJson(line).object();
-        // An answer to a request given up on earlier is passed over.
-        if (answer.value("id").toInt() == id)
-            return answer;
-    }
-    if (cancel && cancel->load())
+    const SpotifyAudio::Answer a =
+        m_audio->ask(request, timeoutMs, [cancel] { return cancel && cancel->load(); });
+    if (!a.ok() && cancel && cancel->load())
         return failure(tr("cancelled"));
-    if (m_process->state() != QProcess::Running)
-        return failure(tr("thrum-spotify-session stopped."));
-    return failure(tr("thrum-spotify-session didn't answer in time."));
+    return a.header;
 }
 
 // --- The catalogue --------------------------------------------------------------
@@ -194,6 +94,50 @@ QList<Item> SessionCatalogue::playlistTracks(const Item &playlist, QString *erro
         return {};
     }
     return m_web.playlistTracks(playlist, error);
+}
+
+QList<Item> SessionCatalogue::albumTracks(const Item &album, QString *error) {
+    const QJsonObject answer = m_reader->ask({{"cmd", "album"}, {"album", album.id}}, Backend::longTimeoutMs());
+    if (answer.value("ok").toBool()) {
+        QList<Item> tracks = tracksIn(answer);
+        for (Item &t : tracks)
+            if (t.album.isEmpty())
+                t.album = album.name;
+        return tracks;
+    }
+    if (CancelScope::cancelled()) {
+        if (error)
+            *error = tr("cancelled");
+        return {};
+    }
+    return m_web.albumTracks(album, error);
+}
+
+bool SessionCatalogue::like(const QStringList &trackIds, bool on, QString *error) {
+    QJsonArray ids;
+    for (const QString &id : trackIds)
+        ids << id;
+    const QJsonObject answer = m_reader->ask({{"cmd", "like"}, {"tracks", ids}, {"on", on}}, Backend::timeoutMs());
+    if (!answer.value("ok").toBool() && error)
+        *error = answer.value("error").toString(tr("Couldn't change Liked Songs."));
+    return answer.value("ok").toBool();
+}
+
+QHash<QString, bool> SessionCatalogue::liked(const QStringList &trackIds, QString *error) {
+    QJsonArray ids;
+    for (const QString &id : trackIds)
+        ids << id;
+    const QJsonObject answer = m_reader->ask({{"cmd", "liked"}, {"tracks", ids}}, Backend::timeoutMs());
+    QHash<QString, bool> out;
+    if (!answer.value("ok").toBool()) {
+        if (error)
+            *error = answer.value("error").toString();
+        return out;
+    }
+    const QJsonArray found = answer.value("liked").toArray();
+    for (int i = 0; i < trackIds.size() && i < found.size(); ++i)
+        out.insert(trackIds.at(i), found.at(i).toBool());
+    return out;
 }
 
 QList<Item> SessionCatalogue::artistPage(const Item &given, QStringList *sections, QString *error) {

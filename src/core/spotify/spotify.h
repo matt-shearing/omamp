@@ -228,6 +228,10 @@ struct Settings {
     // Read Spotify's own playlists and artists' top tracks the way
     // Spotify's own app does (thrum-spotify-session), when it is installed.
     bool sessionReads = true;
+    // Thrum as a Spotify Connect device, so a phone can play on it
+    // (thrum-spotify-session --connect), and the name it shows.
+    bool connectDevice = false;
+    QString connectName = "Thrum";
 
     static QString defaultPath();
     static Settings load(const QString &path = {});
@@ -254,6 +258,14 @@ public:
     // each item in *sections.
     virtual QList<Item> artistPage(const Item &artist, QStringList *sections, QString *error) = 0;
     virtual QList<Item> playlistTracks(const Item &playlist, QString *error) = 0;
+    virtual QList<Item> albumTracks(const Item &album, QString *error) = 0;
+    // Whether any track can be saved to Liked Songs, not just the one the
+    // backend plays (Backend::like).
+    virtual bool canLike() const { return false; }
+    virtual bool like(const QStringList &trackIds, bool on, QString *error);
+    // Whether each track is in Liked Songs, by id; empty when that can't be
+    // asked.
+    virtual QHash<QString, bool> liked(const QStringList &trackIds, QString *error);
 };
 
 // The Web API, through the backend's command line. Spotify refuses apps
@@ -267,6 +279,7 @@ public:
     bool listsQuickly(const Item &playlist) const override { return !playlist.spotifyMade(); }
     QList<Item> artistPage(const Item &artist, QStringList *sections, QString *error) override;
     QList<Item> playlistTracks(const Item &playlist, QString *error) override;
+    QList<Item> albumTracks(const Item &album, QString *error) override;
 
 private:
     Backend *m_backend;

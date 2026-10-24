@@ -232,6 +232,8 @@ private:
     AudioEngine::State m_state = AudioEngine::Stopped;
     // Set once Spotify was told to play this track, until it is unloaded.
     bool m_started = false;
+    // A context entry: reading its tracks for Thrum was tried.
+    bool m_expandTried = false;
     // Waiting for the backend to show the track playing.
     bool m_starting = false;
     bool m_confirmed = false;
@@ -272,6 +274,14 @@ class SpotifyController : public QObject {
     // own app does, through thrum-spotify-session.
     Q_PROPERTY(bool sessionReads READ sessionReads WRITE setSessionReads NOTIFY settingsChanged)
     Q_PROPERTY(bool sessionReaderInstalled READ sessionReaderInstalled NOTIFY settingsChanged)
+    // Thrum as a Spotify Connect device (needs thrum-spotify-session), and
+    // the name phones show for it.
+    Q_PROPERTY(bool connectDevice READ connectDevice WRITE setConnectDevice NOTIFY settingsChanged)
+    Q_PROPERTY(QString connectName READ connectName WRITE setConnectName NOTIFY settingsChanged)
+    // off, starting, ready (listed on your other devices), playing (a
+    // phone plays on Thrum) or failed (connectError says why).
+    Q_PROPERTY(QString connectState READ connectState NOTIFY connectChanged)
+    Q_PROPERTY(QString connectError READ connectError NOTIFY connectChanged)
     Q_PROPERTY(QString backendName READ backendName NOTIFY settingsChanged)
     Q_PROPERTY(bool canBrowse READ canBrowse NOTIFY settingsChanged)
     Q_PROPERTY(bool installed READ installed NOTIFY statusChanged)
@@ -327,8 +337,10 @@ class SpotifyController : public QObject {
     Q_PROPERTY(QString searchText READ searchText NOTIFY viewChanged)
     Q_PROPERTY(SpotifyItemsModel *items READ items CONSTANT)
     Q_PROPERTY(QVariantList ownPlaylists READ ownPlaylists NOTIFY playlistsChanged)
-    // What the backend is playing, whoever started it: {active, playing,
-    // title, artists, album, art, progressMs, durationMs, device, liked}.
+    // What plays on Spotify: Thrum's own Spotify track while Thrum plays
+    // one itself ("thrum": true, device "Thrum"), else what the backend
+    // plays, whoever started it: {active, playing, title, artists, album,
+    // art, progressMs, durationMs, device, uri, liked, likedKnown, thrum}.
     Q_PROPERTY(QVariantMap nowPlaying READ nowPlaying NOTIFY nowPlayingChanged)
     // Spotify's answers to the library search box.
     Q_PROPERTY(SpotifyItemsModel *blendResults READ blendResults CONSTANT)
@@ -350,7 +362,9 @@ public:
     explicit SpotifyController(const QString &settingsPath = {}, const QString &artDir = {}, QObject *parent = nullptr);
     ~SpotifyController() override;
 
-    void setPlayer(Player *player) { m_player = player; }
+    // The Player whose queue Spotify entries go into. Thrum's own Spotify
+    // track is followed from it, and the Connect device plays through it.
+    void setPlayer(Player *player);
     void setPalette(Palette *palette);
     SpotifyPlayback *playback() { return &m_playback; }
     SpotifyArt *art() { return &m_art; }
@@ -382,6 +396,18 @@ public:
     bool sessionReaderInstalled() const { return !Spotify::SessionReader::findProgram().isEmpty(); }
     // The session reader in use, or null (tests).
     Spotify::SessionReader *sessionReader() const { return m_session.get(); }
+    bool connectDevice() const { return m_settings.connectDevice; }
+    void setConnectDevice(bool on);
+    QString connectName() const { return m_settings.connectName; }
+    void setConnectName(const QString &name);
+    QString connectState() const;
+    QString connectError() const;
+    // What the Connect device plays now (tests).
+    Spotify::Item connectTrack() const { return m_connect.track; }
+    // Whether whole playlists, albums and artists go into Now Playing as
+    // their tracks, played by Thrum (the session sidecar is there), rather
+    // than as one entry spotify_player plays.
+    bool expandsContexts() const;
     QString backendName() const { return m_backend->name(); }
     bool canBrowse() const { return m_backend->caps().library; }
 
@@ -502,8 +528,14 @@ public:
     Q_INVOKABLE QString copyChosenLinks(SpotifyItemsModel *model);
     // A playlist entry's map for a track: {path, title, artist, album, art, durationMs}.
     static QVariantMap entryFor(const Spotify::Item &track);
-    // Liked Songs for the playing Spotify track.
+    // Liked Songs for the playing Spotify track: Thrum's own (through the
+    // session) while Thrum plays one, else the backend's.
     Q_INVOKABLE void setPlayingLiked(bool liked);
+    // A playlist, album or artist entry is due to play and Thrum can play
+    // its tracks itself: reads them and puts them in its place in Now
+    // Playing, shuffled when asked. failed runs when that can't be done
+    // (spotify_player plays it as one then).
+    void expandEntry(const QString &path, std::function<void()> failed);
     Q_INVOKABLE void dismissMessage() { setMessage({}); }
     // Asks the window to open Settings → Spotify.
     Q_INVOKABLE void openSettings() { emit settingsRequested(); }
@@ -535,6 +567,7 @@ signals:
     void loadingChanged();
     void playlistsChanged();
     void nowPlayingChanged();
+    void connectChanged();
     void blendChanged();
     void messageChanged();
     void clientIdChanged();
@@ -593,7 +626,8 @@ private:
     void noteMpris();
     void playFrom(SpotifyItemsModel *model, int row, Mode mode);
     void queue(const QList<Spotify::Item> &tracks, int start, Mode mode);
-    void queueContext(const Spotify::Item &context, Mode mode, bool shuffle);
+    // expand: put its tracks in when Thrum can play them (expandsContexts).
+    void queueContext(const Spotify::Item &context, Mode mode, bool shuffle, bool expand = true);
     void rememberNames(const QList<Spotify::Item> &items);
     // Fills in an artist's name from what Thrum has seen.
     Spotify::Item withName(Spotify::Item item) const;
@@ -607,12 +641,34 @@ private:
     void runPaletteSearch();
     void runBlend();
     void addToPlaylist(const Spotify::Item &item, const QString &playlistId);
+    // Reads a playlist's, album's or artist's tracks for Now Playing.
+    void readContextTracks(const Spotify::Item &context, std::function<void(const Spotify::Result &)> done);
+    QList<Playlist::Track> queueTracks(const QList<Spotify::Item> &tracks) const;
+    // Thrum's own Spotify track, or an invalid item when the current entry
+    // isn't one Thrum plays itself.
+    Spotify::Item thrumTrack() const;
+    void noteThrumPlaying();
+    void checkLiked(const QString &id);
+    void applyConnectSettings();
+    void onConnectEvent(const QJsonObject &event);
+    void onPlayerForConnect();
+    bool connectSkip(const QString &path, int direction);
+    void tellConnect(const QString &action, const QJsonValue &value = {});
+    // Takes spotify://connect out of Now Playing (it means nothing once
+    // the phone has gone).
+    void dropConnectEntry();
 
     QString m_settingsPath;
     Spotify::Settings m_settings;
     std::shared_ptr<Spotify::Backend> m_backend;
-    // thrum-spotify-session, kept running while Thrum runs once asked.
+    // Thrum's one Spotify session (SpotifyAudio::installed(), or one of
+    // the controller's own without it), and its catalogue reader.
+    std::shared_ptr<SpotifyAudio> m_audio;
     std::shared_ptr<Spotify::SessionReader> m_session;
+    // Hands the sidecar's events to this thread; outlives the controller
+    // while the sidecar's reader holds it.
+    std::shared_ptr<QObject> m_eventRelay;
+    std::shared_ptr<std::function<void(const QJsonObject &)>> m_eventTarget;
     QPointer<Player> m_player;
     QPointer<Palette> m_palette;
     SpotifyArt m_art;
@@ -651,6 +707,20 @@ private:
     QList<Spotify::Item> m_playlists;
     QSet<QString> m_liked;
     bool m_likedKnown = false;
+    // Liked Songs asked for one track at a time (Thrum's own tracks).
+    QHash<QString, bool> m_likedAsked;
+    QSet<QString> m_likedAsking;
+    struct Connect {
+        bool playing = false;     // the phone says it plays
+        bool active = false;      // something has played on it
+        Spotify::Item track;
+        qint64 positionMs = 0;
+        QString client;
+        // Thrum is following the phone: its own play/pause aren't sent back.
+        bool echo = false;
+    } m_connect;
+    QString m_lastPlayerPath;
+    QString m_lastPlayerState;
     QHash<QString, Spotify::Item> m_known;
     // Playlists, albums and artists seen, by "<kind>:<id>".
     QHash<QString, Spotify::Item> m_contexts;

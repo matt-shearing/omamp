@@ -1,9 +1,15 @@
 // Spotify played by Thrum itself: the sidecar client (SpotifyAudio), a
 // Spotify track through the native engine, and through a native engine of
-// its own beside an engine that can't open it (EnginePlayback). The sidecar
-// is tests/fake-spotify/thrum-spotify-audio, which "decodes" every track to
-// a tone and never reaches Spotify.
+// its own beside an engine that can't open it (EnginePlayback); Like and
+// "playing now" following Thrum's own track; whole playlists going into Now
+// Playing as their tracks; one session for all of it; and Thrum as a
+// Spotify Connect device. The sidecar is tests/fake-spotify/
+// thrum-spotify-audio, which "decodes" every track to a tone, answers the
+// catalogue from recorded JSON and never reaches Spotify.
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -18,6 +24,7 @@
 #include "player.h"
 #include "spotify_fakes.h"
 #include "spotifyaudio.h"
+#include "spotifycontroller.h"
 
 namespace {
 
@@ -114,6 +121,56 @@ NativeEngine *realTimeEngine() {
     sink->setAutoPull(1.0);
     return new NativeEngine(sink);
 }
+
+QString readFile(const QString &file) {
+    QFile f(file);
+    return f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()) : QString();
+}
+
+// The window's arrangement: the fake spotify_player and the fake sidecar,
+// one SpotifyAudio installed (the session the engines and the controller
+// share), the controller switched on, and a Player whose native engine
+// plays Spotify itself.
+struct Thrum {
+    FakeSpotify fake;
+    AudioWorld world;
+    QTemporaryDir dir;
+    std::shared_ptr<SpotifyAudio> audio;
+    std::unique_ptr<SpotifyController> c;
+    std::unique_ptr<Player> player;
+    Thrum() {
+        fake.set("THRUM_SPOTIFY_SESSION", fakeSidecar());
+        audio = world.install();
+        c = std::make_unique<SpotifyController>(dir.filePath("spotify.conf"), dir.filePath("art"));
+        c->setEnabled(true);
+        player = std::make_unique<Player>(new HandoffEngine(realTimeEngine(), c->playback()), QString(), asItIs);
+        c->setPlayer(player.get());
+    }
+    ~Thrum() {
+        player.reset();
+        c.reset();
+        SpotifyAudio::install(nullptr);
+        audio.reset();
+    }
+    QString currentPath() const {
+        const int cur = player->currentIndex();
+        return cur >= 0 ? player->playlist()->at(cur).path : QString();
+    }
+    // The fake's Connect events, as the phone would cause them.
+    void phone(const QList<QJsonObject> &events) {
+        QByteArray lines;
+        for (const QJsonObject &e : events)
+            lines += QJsonDocument(e).toJson(QJsonDocument::Compact) + '\n';
+        world.write("connect-in", lines);
+    }
+    QStringList connectCalls(const QString &action) const {
+        QStringList out;
+        for (const QString &line : world.calls())
+            if (line.startsWith("connect ") && line.endsWith(" " + action))
+                out << line;
+        return out;
+    }
+};
 
 } // namespace
 
@@ -297,6 +354,172 @@ private slots:
         QCOMPARE(local->source(), QString("/music/b.flac"));
         QCOMPARE(local->state(), AudioEngine::Playing);
         QCOMPARE(side->state(), AudioEngine::Stopped);
+    }
+
+    // Like acts on the Spotify track Thrum plays itself, by its id, through
+    // the session: never spotify_player's `like`, which can only save what
+    // spotify_player plays. The "playing now" line shows Thrum's track.
+    void likeFollowsThrumsOwnTrack() {
+        Thrum t;
+        t.world.write("duration-" + kTrackA, "30000");
+        t.world.write("liked", "");
+        t.player->playTracks({{"spotify://track/" + kTrackA, "Tone A", "Fake", 30000, 0}}, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(t.c->nowPlaying().value("thrum").toBool(), 3000);
+        QVariantMap now = t.c->nowPlaying();
+        QCOMPARE(now.value("device").toString(), QString("Thrum"));
+        QCOMPARE(now.value("uri").toString(), "spotify:track:" + kTrackA);
+        QVERIFY(now.value("playing").toBool());
+        // Whether it is liked is asked of the session, once.
+        QTRY_VERIFY_WITH_TIMEOUT(t.c->nowPlaying().value("likedKnown").toBool(), 3000);
+        QVERIFY(!t.c->nowPlaying().value("liked").toBool());
+        QVERIFY(t.fake.calls().contains("session liked " + kTrackA));
+
+        t.c->setPlayingLiked(true);
+        QTRY_VERIFY_WITH_TIMEOUT(readFile(t.world.dir.filePath("liked")).contains(kTrackA), 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(t.c->nowPlaying().value("liked").toBool(), 3000);
+        t.c->setPlayingLiked(false);
+        QTRY_VERIFY_WITH_TIMEOUT(!readFile(t.world.dir.filePath("liked")).contains(kTrackA), 3000);
+        QTRY_VERIFY_WITH_TIMEOUT(!t.c->nowPlaying().value("liked").toBool(), 3000);
+        const QStringList cliLikes = t.fake.calls().filter(QRegularExpression("^like"));
+        QVERIFY2(cliLikes.isEmpty(), qPrintable(cliLikes.join(" | ")));
+
+        // Paused, it says so; stopped, Thrum's track is no longer shown.
+        t.player->pause();
+        QTRY_VERIFY_WITH_TIMEOUT(!t.c->nowPlaying().value("playing").toBool(), 3000);
+        QVERIFY(t.c->nowPlaying().value("thrum").toBool());
+        t.player->stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!t.c->nowPlaying().value("thrum").toBool(), 3000);
+    }
+
+    // The catalogue, Liked Songs and the sound come from one sidecar, so one
+    // Spotify session.
+    void oneSessionForEverything() {
+        Thrum t;
+        QTRY_VERIFY_WITH_TIMEOUT(t.c->running() && !t.c->checking(), 8000);
+        t.c->setViewVisible(true);
+        QTRY_COMPARE_WITH_TIMEOUT(t.c->items()->count(), 5, 8000);
+        t.c->openRow(3);
+        QTRY_COMPARE_WITH_TIMEOUT(t.c->items()->count(), 3, 5000);
+        QVERIFY(t.fake.calls().contains("session playlist " + t.fake.id("playlist:Synthwave Essentials")));
+        t.player->playTracks({{"spotify://track/" + kTrackA, "Tone A", "Fake", 3000, 0}}, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(t.c->nowPlaying().value("likedKnown").toBool(), 3000);
+        QCOMPARE(t.world.pids().size(), 1);
+        QCOMPARE(t.audio->starts(), 1);
+        QCOMPARE(t.c->sessionReader()->audio(), t.audio.get());
+    }
+
+    // A whole playlist goes into Now Playing as its tracks, which Thrum
+    // plays; so does a playlist entry already in the queue when its turn
+    // comes. spotify_player plays none of it.
+    void wholePlaylistsPlayAsTheirTracks() {
+        Thrum t;
+        const QString synth = t.fake.id("playlist:Synthwave Essentials");
+        QVERIFY(t.c->expandsContexts());
+        QTRY_VERIFY_WITH_TIMEOUT(t.c->running() && !t.c->checking(), 8000);
+        t.c->setViewVisible(true);
+        QTRY_COMPARE_WITH_TIMEOUT(t.c->items()->count(), 5, 8000);
+        t.c->openRow(3);
+        QTRY_COMPARE_WITH_TIMEOUT(t.c->items()->count(), 3, 5000);
+        t.fake.clearCalls();
+        t.c->playView(false);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->playlist()->count(), 3, 5000);
+        for (int r = 0; r < 3; ++r)
+            QVERIFY(t.player->playlist()->at(r).path.startsWith("spotify://track/"));
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        QVERIFY(!t.player->playsElsewhere());
+
+        // An entry for the whole playlist, as an older Thrum saved it.
+        t.player->stop();
+        t.player->playTracks({{"/music/first.flac", "First", "Me", 1000, 0},
+                              {"spotify://playlist/" + synth, "Synthwave Essentials", "Spotify", 0, 0}},
+                             1);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->playlist()->count(), 4, 5000);
+        QCOMPARE(t.player->playlist()->at(0).path, QString("/music/first.flac"));
+        QCOMPARE(t.player->currentIndex(), 1);
+        QVERIFY(t.currentPath().startsWith("spotify://track/"));
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        t.c->waitForIdle();
+        QVERIFY2(t.fake.calls().filter("playback start").isEmpty(), qPrintable(t.fake.calls().join(" | ")));
+    }
+
+    // Thrum as a Spotify Connect device: a phone playing on it is heard
+    // through Thrum's engine as one live entry that shows the phone's
+    // track; Thrum's pause, play and next reach the phone; the phone's pause
+    // reaches Thrum; and moving on in Thrum takes the entry away.
+    void aPhonePlaysOnThrum() {
+        Thrum t;
+        QCOMPARE(t.c->connectState(), QString("off"));
+        const QString wav = writeWav(t.dir.filePath("local.wav"), 30000);
+        t.player->appendTracks({{wav, "Local", "Me", 30000, 0}});
+        t.c->setConnectDevice(true);
+        QCOMPARE(t.c->connectName(), QString("Thrum"));
+        // It starts at once, as a device called Thrum.
+        QTRY_COMPARE_WITH_TIMEOUT(t.c->connectState(), QString("ready"), 5000);
+        QVERIFY2(readFile(t.world.dir.filePath("args")).contains("--connect Thrum serve"),
+                 qPrintable(readFile(t.world.dir.filePath("args"))));
+
+        const QJsonObject track{{"id", kTrackB},          {"title", "Phone Song"}, {"artists", QJsonArray{"Phone Artist"}},
+                                {"album", "Pocket"},      {"duration_ms", 200000}, {"art", ""}};
+        t.phone({QJsonObject{{"client", "Sam's phone"}, {"track", track}},
+                 QJsonObject{{"state", "playing"}, {"position_ms", 0}}});
+        QTRY_COMPARE_WITH_TIMEOUT(t.currentPath(), SpotifyAudio::connectPath(), 5000);
+        QCOMPARE(t.player->currentIndex(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        QVERIFY(t.player->live());
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->title(), QString("Phone Song"), 3000);
+        QCOMPARE(t.player->artist(), QString("Phone Artist"));
+        QTRY_VERIFY_WITH_TIMEOUT(loudest(t.player->levels()) > 0.3, 3000);
+        QCOMPARE(t.c->connectState(), QString("playing"));
+        QVariantMap now = t.c->nowPlaying();
+        QCOMPARE(now.value("title").toString(), QString("Phone Song"));
+        QCOMPARE(now.value("device").toString(), QString("Thrum, from Sam's phone"));
+        QCOMPARE(now.value("uri").toString(), "spotify:track:" + kTrackB);
+
+        // Thrum's buttons, as the phone's.
+        t.player->pause();
+        QTRY_VERIFY2_WITH_TIMEOUT(!t.connectCalls("pause").isEmpty(), qPrintable(t.world.calls().join(" | ")), 3000);
+        t.player->play();
+        QTRY_VERIFY_WITH_TIMEOUT(!t.connectCalls("play").isEmpty(), 3000);
+        t.player->next();
+        QTRY_VERIFY_WITH_TIMEOUT(!t.connectCalls("next").isEmpty(), 3000);
+        QCOMPARE(t.currentPath(), SpotifyAudio::connectPath());
+        // Like saves the phone's track.
+        t.c->setPlayingLiked(true);
+        QTRY_VERIFY_WITH_TIMEOUT(readFile(t.world.dir.filePath("liked")).contains(kTrackB), 3000);
+
+        // The phone pauses: so does Thrum, without telling the phone back.
+        const int pausesBefore = t.connectCalls("pause").size();
+        t.phone({QJsonObject{{"state", "paused"}, {"position_ms", 61000}}});
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("paused"), 3000);
+        QTest::qWait(200);
+        QCOMPARE(t.connectCalls("pause").size(), pausesBefore);
+
+        // Thrum moves on to its own music: the entry goes.
+        t.player->playIndex(0);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->playlist()->count(), 1, 3000);
+        QCOMPARE(t.currentPath(), wav);
+
+        t.c->setConnectDevice(false);
+        QCOMPARE(t.c->connectState(), QString("off"));
+        QVERIFY(!Spotify::Settings::load(t.dir.filePath("spotify.conf")).connectDevice);
+    }
+
+    // A Connect device that can't start (no Premium, say) is reported, and
+    // the session starts again without it, so Spotify tracks still play.
+    void aConnectDeviceThatFailsLeavesPlayingAlone() {
+        Thrum t;
+        t.world.write("refuse-connect", "Spotify Connect needs Premium");
+        t.c->setConnectDevice(true);
+        QTRY_COMPARE_WITH_TIMEOUT(t.c->connectState(), QString("failed"), 5000);
+        QVERIFY2(t.c->connectError().contains("Premium"), qPrintable(t.c->connectError()));
+        t.player->playTracks({{"spotify://track/" + kTrackA, "Tone A", "Fake", 3000, 0}}, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        const QStringList starts = readFile(t.world.dir.filePath("args")).split('\n', Qt::SkipEmptyParts);
+        QCOMPARE(starts.size(), 2);
+        QVERIFY(starts.first().contains("--connect"));
+        QVERIFY(!starts.last().contains("--connect"));
     }
 };
 

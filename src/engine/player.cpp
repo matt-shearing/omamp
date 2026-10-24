@@ -397,7 +397,14 @@ int Player::nextIndex() {
     return m_repeat ? 0 : -1;
 }
 
+bool Player::skipHandled(int direction) {
+    return m_skipHandler && m_current >= 0 && m_current < m_playlist.count() &&
+           m_skipHandler(m_playlist.at(m_current).path, direction);
+}
+
 void Player::next() {
+    if (skipHandled(1))
+        return;
     int after = nextIndex();
     // Pressing next on the last track wraps, like Winamp, even without repeat.
     if (after < 0)
@@ -414,7 +421,7 @@ void Player::next() {
 }
 
 void Player::previous() {
-    if (m_playlist.count() == 0)
+    if (m_playlist.count() == 0 || skipHandled(-1))
         return;
     // Like most players: a few seconds in, previous restarts the track.
     if (m_engine->position() > 3000) {
@@ -449,7 +456,12 @@ void Player::playIndex(int row) {
 }
 
 bool Player::live() const {
-    return m_current >= 0 && m_current < m_playlist.count() && Streaming::isLive(m_playlist.at(m_current).path);
+    if (m_current < 0 || m_current >= m_playlist.count())
+        return false;
+    const QString &path = m_playlist.at(m_current).path;
+    // Spotify Connect's sound (spotify://connect) is live too: the phone
+    // chooses what plays, and Thrum shows it as it changes.
+    return Streaming::isLive(path) || path == QLatin1String("spotify://connect");
 }
 
 bool Player::playsElsewhere() const {
@@ -513,6 +525,35 @@ int Player::queueNext(const QList<Playlist::Track> &tracks) {
             row += added;
     if (added > 0 && m_current < 0)
         load(0);
+    saveSoon();
+    return added;
+}
+
+int Player::expandEntry(int row, const QList<Playlist::Track> &tracks) {
+    if (row < 0 || row >= m_playlist.count() || tracks.isEmpty())
+        return 0;
+    const bool current = row == m_current;
+    const bool playing = current && m_wantPlaying;
+    const int added = m_playlist.insertTracks(row + 1, tracks);
+    if (added == 0)
+        return 0;
+    m_playlist.remove(row);
+    m_history.clear();
+    if (current) {
+        // The entry was loaded, never played: nothing to count.
+        m_engine->load({});
+        m_current = -1;
+        load(row);
+        if (playing) {
+            m_wantPlaying = true;
+            m_engine->play();
+        }
+    } else {
+        if (row < m_current)
+            m_current += added - 1;
+        requeue();
+        emit trackChanged();
+    }
     saveSoon();
     return added;
 }

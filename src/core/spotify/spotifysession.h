@@ -1,16 +1,15 @@
 #pragma once
 
-#include <QMutex>
-#include <QObject>
-#include <QPointer>
-#include <QProcess>
-#include <QThread>
+#include <memory>
 
 #include "spotify.h"
+#include "spotifyaudio.h"
 
 // Reading what Spotify keeps from new Web API apps, the way Spotify's own
 // apps read it: the tracks of Spotify's own playlists ("This Is …", the
-// Daily Mixes) and an artist's top tracks. thrum-spotify-session
+// Daily Mixes), an artist's top tracks, an album's tracks, and Liked Songs
+// for any track (spotify_player's command line can like only the one it
+// plays). thrum-spotify-session
 // (sidecar/thrum-spotify-session, Rust and librespot) signs in with the
 // librespot credential spotify_player already keeps, which it only reads,
 // and asks Spotify's private spclient endpoints, which have no per-app
@@ -19,41 +18,30 @@
 // and the Web API stays the fallback. docs/spotify.md.
 namespace Spotify {
 
-// The sidecar, kept running while Thrum runs: one JSON request a line on
-// its input, one answer a line on its output. It lives on a thread of its
-// own, so any worker can ask; one request runs at a time.
-class SessionReader : public QObject {
-    Q_OBJECT
+// The sidecar's catalogue: Thrum's one Spotify session (SpotifyAudio), the
+// same process that decodes Spotify's tracks for Thrum, answers these too.
+// Thread-safe; any worker can ask, and several asks run at once.
+class SessionReader {
 public:
-    // program: the sidecar; credentials: the librespot credential to read.
-    SessionReader(const QString &program, const QString &credentials);
-    ~SessionReader() override;
+    explicit SessionReader(std::shared_ptr<SpotifyAudio> audio);
 
     // Sends one request and waits for its answer, at most timeoutMs. A
-    // failure gives an answer with "ok": false and "error".
+    // failure gives an answer with "ok": false and "error". A CancelScope
+    // on the calling thread abandons the wait.
     QJsonObject ask(const QJsonObject &request, int timeoutMs = 30000);
     // How many sidecar processes were started (tests).
-    int starts() const { return m_starts; }
+    int starts() const { return m_audio->starts(); }
+    SpotifyAudio *audio() const { return m_audio.get(); }
 
     // The sidecar to run: THRUM_SPOTIFY_SESSION when set ("off" for none),
     // else thrum-spotify-session beside Thrum's own program, else on PATH.
     // Empty when there is none.
     static QString findProgram();
+    // The credential it reads: spotify_player's.
+    static QString credentialsPath();
 
 private:
-    QJsonObject askHere(const QJsonObject &request, int timeoutMs, const CancelFlag &cancel);
-    bool ensureStarted(QString *error);
-    // Reads one line of output, waiting at most until the deadline.
-    bool readLine(QByteArray *line, qint64 deadline, const CancelFlag &cancel);
-
-    QString m_program, m_credentials;
-    QThread m_thread;
-    // Lives on m_thread: work for the process is run through it there.
-    QObject *m_context = nullptr;
-    QMutex m_mutex;
-    QProcess *m_process = nullptr;
-    int m_next = 1;
-    int m_starts = 0;
+    std::shared_ptr<SpotifyAudio> m_audio;
 };
 
 // The catalogue Thrum uses when the sidecar is there: every playlist's
@@ -66,6 +54,10 @@ public:
     bool listsQuickly(const Item &) const override { return true; }
     QList<Item> artistPage(const Item &artist, QStringList *sections, QString *error) override;
     QList<Item> playlistTracks(const Item &playlist, QString *error) override;
+    QList<Item> albumTracks(const Item &album, QString *error) override;
+    bool canLike() const override { return true; }
+    bool like(const QStringList &trackIds, bool on, QString *error) override;
+    QHash<QString, bool> liked(const QStringList &trackIds, QString *error) override;
 
     SessionReader *reader() const { return m_reader.get(); }
 

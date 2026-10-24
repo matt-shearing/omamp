@@ -1,42 +1,4 @@
 #!/bin/sh
-# A stand-in for thrum-spotify-session in the tests: it signs in to nothing
-# and answers its line protocol from the recorded JSON in $FAKE_SPOTIFY_DIR,
-# the same fixtures the fake spotify_player uses. Every request is logged to
-# calls.log as "session <cmd> <id>".
-#
-#   playlist <id>     the tracks of items/playlist-<id>.json
-#   artist-top <id>   the top_tracks of items/artist-<id>.json
-#   session-signin    makes signing in fail with that file's text
-#   session-fail      makes requests fail with that file's text (no status)
-#   session-slow      sleeps that many seconds before each answer
-set -u
-D=${FAKE_SPOTIFY_DIR:?FAKE_SPOTIFY_DIR is not set}
-printf 'session-start %s\n' "$*" >> "$D/calls.log"
-if [ -f "$D/session-signin" ]; then
-    printf '{"ready":false,"error":"%s"}\n' "$(cat "$D/session-signin")"
-    exit 1
-fi
-printf '{"ready":true,"user":"samlistener","country":"AU"}\n'
-field() { printf '%s' "$1" | sed -n "s/.*\"$2\":\"\\([^\"]*\\)\".*/\\1/p"; }
-while IFS= read -r line; do
-    cmd=$(field "$line" cmd)
-    rid=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-    [ "$cmd" = quit ] && exit 0
-    case "$cmd" in
-    playlist) what=$(field "$line" playlist); file="$D/items/playlist-$what.json" ;;
-    artist-top) what=$(field "$line" artist); file="$D/items/artist-$what.json" ;;
-    *) what=""; file="" ;;
-    esac
-    printf 'session %s %s\n' "$cmd" "$what" >> "$D/calls.log"
-    [ -f "$D/session-slow" ] && sleep "$(cat "$D/session-slow")"
-    if [ -f "$D/session-fail" ]; then
-        printf '{"id":%s,"ok":false,"error":"%s"}\n' "$rid" "$(cat "$D/session-fail")"
-    elif [ -n "$file" ] && [ -f "$file" ]; then
-        # The fixture's object, minus its opening brace, after id and ok;
-        # an artist's top_tracks are the answer's tracks.
-        body=$(tr -d '\n' < "$file" | sed 's/^{//; s/"top_tracks"/"tracks"/')
-        printf '{"id":%s,"ok":true,%s\n' "$rid" "$body"
-    else
-        printf '{"id":%s,"ok":false,"error":"Not Found","status":404}\n' "$rid"
-    fi
-done
+# thrum-spotify-session in the tests: the fake beside it, which speaks the
+# whole protocol (the catalogue, the audio and the Connect device).
+exec python3 "$(dirname "$0")/thrum-spotify-audio" "$@"

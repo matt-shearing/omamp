@@ -593,6 +593,10 @@ Settings Settings::load(const QString &path) {
     out.blendPalette = s.value("spotify/blend_palette", true).toBool();
     out.startDaemon = s.value("spotify/start_daemon", true).toBool();
     out.sessionReads = s.value("spotify/session_reads", true).toBool();
+    out.connectDevice = s.value("spotify/connect_device", false).toBool();
+    out.connectName = s.value("spotify/connect_name", "Thrum").toString().trimmed();
+    if (out.connectName.isEmpty())
+        out.connectName = "Thrum";
     return out;
 }
 
@@ -606,6 +610,8 @@ bool Settings::save(const QString &path) const {
     s.setValue("spotify/blend_palette", blendPalette);
     s.setValue("spotify/start_daemon", startDaemon);
     s.setValue("spotify/session_reads", sessionReads);
+    s.setValue("spotify/connect_device", connectDevice);
+    s.setValue("spotify/connect_name", connectName);
     s.sync();
     return s.status() == QSettings::NoError;
 }
@@ -647,6 +653,16 @@ QList<Item> WebApiCatalogue::artistPage(const Item &artist, QStringList *section
 QList<Item> WebApiCatalogue::playlistTracks(const Item &playlist, QString *error) {
     return m_backend->tracksOf(playlist, error);
 }
+
+QList<Item> WebApiCatalogue::albumTracks(const Item &album, QString *error) { return m_backend->tracksOf(album, error); }
+
+bool Catalogue::like(const QStringList &, bool, QString *error) {
+    if (error)
+        *error = QCoreApplication::translate("Spotify", "Only the playing track can be liked here.");
+    return false;
+}
+
+QHash<QString, bool> Catalogue::liked(const QStringList &, QString *) { return {}; }
 
 bool Backend::playContext(const Item &context, bool, QString *error) { return playItem(context, error); }
 

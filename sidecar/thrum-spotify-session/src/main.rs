@@ -1,43 +1,41 @@
-//! thrum-spotify-session: reads what Spotify won't let a new Web API app read
-//! (the tracks of Spotify's own playlists, an artist's top tracks) the way
-//! Spotify's own apps do, over a librespot session.
+//! thrum-spotify-session: Thrum's one librespot session. It reads what
+//! Spotify won't let a new Web API app read (the tracks of Spotify's own
+//! playlists, an artist's top tracks) the way Spotify's own apps do, decodes
+//! Spotify's tracks for Thrum to play, saves tracks to Liked Songs, and can
+//! make Thrum a Spotify Connect device.
 //!
 //! It signs in with a librespot credential that already exists (by default
 //! spotify_player's, ~/.cache/spotify-player/credentials.json), which it only
-//! reads, and never stores a new one. It opens no Spotify Connect device and
-//! plays nothing. Its requests go to Spotify's private spclient endpoints:
+//! reads, and never stores a new one. Its requests go to Spotify's private
+//! spclient endpoints:
 //!
 //!   playlist     GET  /playlist/v2/playlist/<id>?decorate=…&from=…&length=…
 //!   track names  POST /extended-metadata/v0/extended-metadata (TRACK_V4)
 //!   artist       POST /extended-metadata/v0/extended-metadata (ARTIST_V4)
+//!   album        POST /extended-metadata/v0/extended-metadata (ALBUM_V4)
+//!   Liked Songs  POST /collection/v2/write, /collection/v2/contains
 //!
 //! These have no per-app quota, so they don't meet the Web API's rate
 //! limits. Spotify's developer terms don't cover them, and Spotify can
-//! change them.
+//! change them. Liked Songs falls back to the Web API (/v1/me/tracks) with
+//! the session's own token.
 //!
-//! Protocol: one JSON object a line on stdin, one answer a line on stdout.
+//! `thrum-spotify-session [--connect <name>] serve` is what Thrum runs: one
+//! JSON request a line on stdin, frames on stdout (audio_protocol.rs, and
+//! docs/spotify.md). `audio` is the same, by its old name. With --connect
+//! the session is also a Spotify Connect device called <name> (connect.rs).
 //!
-//!   {"id":1,"cmd":"ping"}
-//!   {"id":2,"cmd":"playlist","playlist":"<base62>","offset":0,"length":0}
-//!   {"id":3,"cmd":"artist-top","artist":"<base62>"}
-//!
-//! The first line out is {"ready":true,…} once signed in, or
-//! {"ready":false,"error":…}. Answers carry the request's id and "ok"; a
-//! failure has "error" and, when Spotify gave one, "status". Tracks are
-//! shaped as spotify_player prints them, with duration_ms.
-//!
-//! One-shot, for a person or a test: thrum-spotify-session playlist <id>,
-//! artist-top <id>, or ping, each printing one answer.
-//!
-//! `thrum-spotify-session audio` is the other mode: it decodes Spotify's
-//! tracks for Thrum to play (audio.rs, audio_protocol.rs). Its first frame
-//! out is the same ready line.
+//! One-shot, for a person or a test, each printing one JSON line:
+//! thrum-spotify-session playlist <id>, artist-top <id>, album <id>,
+//! liked <track id>, like <track id>, unlike <track id>, or ping.
 
 mod audio;
 mod audio_protocol;
+mod connect;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use librespot_core::authentication::Credentials;
 use librespot_core::config::SessionConfig;
@@ -49,7 +47,6 @@ use librespot_protocol::extension_kind::ExtensionKind;
 use librespot_protocol::playlist4_external::SelectedListContent;
 use protobuf::{EnumOrUnknown, Message as _};
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// How many tracks one metadata request asks about.
 const BATCH: usize = 100;
@@ -95,91 +92,110 @@ fn default_credentials() -> PathBuf {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: thrum-spotify-session [--credentials <file>] [serve | audio | ping | playlist <id> | artist-top <id>]"
+        "usage: thrum-spotify-session [--credentials <file>] [--connect <name>] \
+         [serve | audio | ping | playlist <id> | artist-top <id> | album <id> | liked|like|unlike <track id>]"
     );
     std::process::exit(2);
+}
+
+/// Takes `--<name> <value>` out of args.
+fn option(args: &mut Vec<String>, name: &str) -> Option<String> {
+    let at = args.iter().position(|a| a == name)?;
+    if at + 1 >= args.len() {
+        usage();
+    }
+    let value = args.remove(at + 1);
+    args.remove(at);
+    Some(value)
 }
 
 #[tokio::main]
 async fn main() {
     let mut args = std::env::args().skip(1).collect::<Vec<_>>();
-    let mut credentials = default_credentials();
-    if let Some(at) = args.iter().position(|a| a == "--credentials") {
-        if at + 1 >= args.len() {
-            usage();
-        }
-        credentials = PathBuf::from(args.remove(at + 1));
-        args.remove(at);
-    }
-    let audio_mode = args.first().map(String::as_str) == Some("audio");
+    let credentials = option(&mut args, "--credentials").map(PathBuf::from).unwrap_or_else(default_credentials);
+    let connect_name = option(&mut args, "--connect").filter(|n| !n.trim().is_empty());
     let one_shot = match args.first().map(String::as_str) {
         None | Some("serve") | Some("audio") => None,
         Some("ping") => Some(json!({"id": 0, "cmd": "ping"})),
         Some("playlist") if args.len() == 2 => Some(json!({"id": 0, "cmd": "playlist", "playlist": args[1]})),
         Some("artist-top") if args.len() == 2 => Some(json!({"id": 0, "cmd": "artist-top", "artist": args[1]})),
-        Some("--help" | "-h") => usage(),
+        Some("album") if args.len() == 2 => Some(json!({"id": 0, "cmd": "album", "album": args[1]})),
+        Some("liked") if args.len() == 2 => Some(json!({"id": 0, "cmd": "liked", "tracks": [args[1]]})),
+        Some(verb @ ("like" | "unlike")) if args.len() == 2 => {
+            Some(json!({"id": 0, "cmd": "like", "tracks": [args[1]], "on": verb == "like"}))
+        }
         _ => usage(),
     };
 
-    let session = match connect(&credentials).await {
-        Ok(s) => s,
-        Err(f) => {
-            let not_ready = json!({"ready": false, "error": f.message});
-            if audio_mode {
-                audio::Out::new().send(&not_ready, &[]);
-            } else {
-                println!("{not_ready}");
-            }
-            std::process::exit(1);
-        }
-    };
-
-    if audio_mode {
-        let out = audio::Out::new();
-        let ready = json!({"ready": true, "user": session.username(), "country": session.country(),
-                           "rate": audio_protocol::RATE, "channels": audio_protocol::CHANNELS});
-        if out.send(&ready, &[]) {
-            let (s, runtime) = (session.clone(), tokio::runtime::Handle::current());
-            let _ = tokio::task::spawn_blocking(move || audio::serve(s, runtime, out)).await;
-        }
-        session.shutdown();
-        // Streams still opening hold the runtime; nothing more is wanted.
-        std::process::exit(0);
-    }
-
     if let Some(request) = one_shot {
+        let session = match connect(&credentials).await {
+            Ok(s) => s,
+            Err(f) => {
+                println!("{}", json!({"ready": false, "error": f.message}));
+                std::process::exit(1);
+            }
+        };
         let answer = handle(&session, &request).await;
         println!("{answer}");
         std::process::exit(if answer["ok"] == true { 0 } else { 1 });
     }
 
-    let mut out = tokio::io::stdout();
-    let ready = json!({"ready": true, "user": session.username(), "country": session.country()});
-    let _ = out.write_all(format!("{ready}\n").as_bytes()).await;
-    let _ = out.flush().await;
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() {
-            continue;
+    let out = audio::Out::new();
+    let started = match &connect_name {
+        Some(name) => start_device(&credentials, name, out.clone()).await.map(|(s, d)| (s, Some(d))),
+        None => connect(&credentials).await.map(|s| (s, None)),
+    };
+    let (session, device) = match started {
+        Ok(started) => started,
+        Err(f) => {
+            out.send(&json!({"ready": false, "error": f.message}), &[]);
+            std::process::exit(1);
         }
-        let answer = match serde_json::from_str::<Value>(&line) {
-            Ok(request) if request["cmd"] == "quit" => break,
-            Ok(request) => handle(&session, &request).await,
-            Err(e) => json!({"id": Value::Null, "ok": false, "error": format!("not JSON: {e}")}),
-        };
-        if out.write_all(format!("{answer}\n").as_bytes()).await.is_err() || out.flush().await.is_err() {
-            break;
-        }
+    };
+    let mut ready = json!({"ready": true, "user": session.username(), "country": session.country(),
+                           "rate": audio_protocol::RATE, "channels": audio_protocol::CHANNELS});
+    if let Some(name) = &connect_name {
+        ready["connect"] = json!(name);
+    }
+    if out.send(&ready, &[]) {
+        let (s, runtime, d) = (session.clone(), tokio::runtime::Handle::current(), device.clone());
+        let _ = tokio::task::spawn_blocking(move || audio::serve(s, runtime, out, d)).await;
+    }
+    if let Some(d) = &device {
+        d.shutdown();
+        // Spirc says goodbye to Spotify, so phones stop listing the device.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     }
     session.shutdown();
+    // Streams still opening hold the runtime; nothing more is wanted.
+    std::process::exit(0);
+}
+
+fn read_credentials(path: &PathBuf) -> Result<Credentials, Failure> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| Failure::new(format!("can't read the Spotify sign-in at {}: {e}", path.display())))?;
+    serde_json::from_str(&text)
+        .map_err(|e| Failure::new(format!("the Spotify sign-in at {} isn't one librespot can use: {e}", path.display())))
+}
+
+/// Signs in as a Spotify Connect device called name.
+async fn start_device(path: &PathBuf, name: &str, out: audio::Out) -> Result<(Session, Arc<connect::Device>), Failure> {
+    let credentials = read_credentials(path)?;
+    let session = Session::new(SessionConfig::default(), None);
+    let started = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        connect::Device::start(name, session.clone(), credentials, out),
+    )
+    .await
+    .map_err(|_| Failure::new("Spotify didn't answer the sign-in within 20 seconds"))??;
+    let (device, task) = started;
+    tokio::spawn(task);
+    Ok((session, Arc::new(device)))
 }
 
 /// Signs in with the stored credential, without storing anything.
 async fn connect(path: &PathBuf) -> Result<Session, Failure> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| Failure::new(format!("can't read the Spotify sign-in at {}: {e}", path.display())))?;
-    let credentials: Credentials = serde_json::from_str(&text)
-        .map_err(|e| Failure::new(format!("the Spotify sign-in at {} isn't one librespot can use: {e}", path.display())))?;
+    let credentials = read_credentials(path)?;
     let session = Session::new(SessionConfig::default(), None);
     tokio::time::timeout(std::time::Duration::from_secs(20), session.connect(credentials, false))
         .await
@@ -187,7 +203,8 @@ async fn connect(path: &PathBuf) -> Result<Session, Failure> {
     Ok(session)
 }
 
-async fn handle(session: &Session, request: &Value) -> Value {
+/// A catalogue request's answer, with its id and "ok".
+pub(crate) async fn handle(session: &Session, request: &Value) -> Value {
     let id = request["id"].clone();
     let result = match request["cmd"].as_str() {
         Some("ping") => Ok(json!({"user": session.username(), "country": session.country()})),
@@ -197,6 +214,12 @@ async fn handle(session: &Session, request: &Value) -> Value {
             playlist(session, request["playlist"].as_str().unwrap_or(""), offset, length).await
         }
         Some("artist-top") => artist_top(session, request["artist"].as_str().unwrap_or("")).await,
+        Some("album") => album(session, request["album"].as_str().unwrap_or("")).await,
+        Some("like") => {
+            let on = request["on"].as_bool().unwrap_or(true);
+            like(session, &ids_in(request), on).await
+        }
+        Some("liked") => liked(session, &ids_in(request)).await,
         _ => Err(Failure::new("unknown command")),
     };
     match result {
@@ -264,10 +287,39 @@ async fn playlist(session: &Session, id: &str, offset: u32, length: u32) -> Resu
 }
 
 /// An artist's most played tracks in the account's country (or worldwide),
-/// in Spotify's order.
+/// in Spotify's order. The artist's metadata names them; when Spotify
+/// answers that without them (it does for some accounts), the first page of
+/// the artist's context, which is those ten tracks, does.
 async fn artist_top(session: &Session, id: &str) -> Result<Value, Failure> {
     let uri = SpotifyUri::Artist { id: spotify_id(id)? };
-    let bytes = session.spclient().get_artist_metadata(&uri).await?;
+    let (name, mut uris) = match artist_metadata(session, &uri).await {
+        Ok(found) => found,
+        Err(_) => (String::new(), Vec::new()),
+    };
+    if uris.is_empty() {
+        let context = session.spclient().get_context(&format!("spotify:artist:{id}")).await?;
+        uris = context
+            .pages
+            .first()
+            .map(|p| p.tracks.iter().map(|t| t.uri().to_string()).filter(|u| u.starts_with("spotify:track:")).take(10).collect())
+            .unwrap_or_default();
+    }
+    let found = tracks(session, &uris).await?;
+    let rows: Vec<Value> = uris.iter().filter_map(|u| found.get(u).cloned()).collect();
+    let name = if name.is_empty() {
+        rows.first()
+            .and_then(|t| t["artists"].as_array()?.iter().find(|a| a["id"] == id).map(|a| a["name"].clone()))
+            .and_then(|n| n.as_str().map(str::to_string))
+            .unwrap_or_default()
+    } else {
+        name
+    };
+    Ok(json!({"artist": {"id": id, "name": name}, "tracks": rows}))
+}
+
+/// The artist's name and top tracks from their metadata.
+async fn artist_metadata(session: &Session, uri: &SpotifyUri) -> Result<(String, Vec<String>), Failure> {
+    let bytes = session.spclient().get_artist_metadata(uri).await?;
     let artist = librespot_protocol::metadata::Artist::parse_from_bytes(&bytes)?;
     let country = session.country();
     let top = artist
@@ -286,9 +338,209 @@ async fn artist_top(session: &Session, id: &str) -> Result<Value, Failure> {
                 .collect()
         })
         .unwrap_or_default();
+    Ok((artist.name().to_string(), uris))
+}
+
+/// An album's name and its tracks, disc by disc.
+async fn album(session: &Session, id: &str) -> Result<Value, Failure> {
+    let uri = SpotifyUri::Album { id: spotify_id(id)? };
+    let bytes = session.spclient().get_album_metadata(&uri).await?;
+    let album = librespot_protocol::metadata::Album::parse_from_bytes(&bytes)?;
+    let uris: Vec<String> = album
+        .disc
+        .iter()
+        .flat_map(|d| d.track.iter())
+        .filter_map(|t| SpotifyId::from_raw(t.gid()).ok())
+        .filter_map(|tid| SpotifyUri::Track { id: tid }.to_uri().ok())
+        .collect();
     let found = tracks(session, &uris).await?;
     let rows: Vec<Value> = uris.iter().filter_map(|u| found.get(u).cloned()).collect();
-    Ok(json!({"artist": {"id": id, "name": artist.name()}, "tracks": rows}))
+    Ok(json!({"album": {"id": id, "name": album.name()}, "tracks": rows}))
+}
+
+/// The track ids a request names, checked.
+fn ids_in(request: &Value) -> Vec<String> {
+    request["tracks"]
+        .as_array()
+        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// Saves tracks to Liked Songs (on) or takes them out, as Spotify's own app
+/// does: a write to the account's "collection" set. The Web API with the
+/// session's token is the fallback.
+async fn like(session: &Session, ids: &[String], on: bool) -> Result<Value, Failure> {
+    if ids.is_empty() {
+        return Err(Failure::new("no tracks"));
+    }
+    for id in ids {
+        spotify_id(id)?;
+    }
+    let mut body = Vec::new();
+    pb::string(&mut body, 1, &session.username());
+    pb::string(&mut body, 2, "collection");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    for id in ids {
+        let mut item = Vec::new();
+        pb::string(&mut item, 1, &format!("spotify:track:{id}"));
+        pb::varint(&mut item, 2, now);
+        if !on {
+            pb::varint(&mut item, 3, 1);
+        }
+        pb::bytes(&mut body, 3, &item);
+    }
+    let written = session
+        .spclient()
+        .request(&http::Method::POST, "/collection/v2/write", Some(collection_headers()), Some(&body))
+        .await;
+    let via = match written {
+        Ok(_) => "collection",
+        Err(first) => {
+            let method = if on { http::Method::PUT } else { http::Method::DELETE };
+            web_api(session, method, &format!("/v1/me/tracks?ids={}", ids.join(",")))
+                .await
+                .map_err(|f| both(&first.into(), f))?;
+            "web-api"
+        }
+    };
+    Ok(json!({"tracks": ids, "on": on, "via": via}))
+}
+
+/// Whether each track is in Liked Songs, in the order asked.
+async fn liked(session: &Session, ids: &[String]) -> Result<Value, Failure> {
+    if ids.is_empty() {
+        return Ok(json!({"tracks": [], "liked": []}));
+    }
+    for id in ids {
+        spotify_id(id)?;
+    }
+    let mut body = Vec::new();
+    pb::string(&mut body, 1, &session.username());
+    pb::string(&mut body, 2, "collection");
+    // Each item is a CollectionItem with just its uri (a bare string is
+    // refused with 400).
+    for id in ids {
+        let mut item = Vec::new();
+        pb::string(&mut item, 1, &format!("spotify:track:{id}"));
+        pb::bytes(&mut body, 3, &item);
+    }
+    let asked = session
+        .spclient()
+        .request(&http::Method::POST, "/collection/v2/contains", Some(collection_headers()), Some(&body))
+        .await;
+    let first = match &asked {
+        Ok(b) => Failure::new(format!("an answer Thrum can't read ({} bytes)", b.len())),
+        Err(e) => Failure::new(e.to_string()),
+    };
+    let found = match asked.ok().and_then(|b| pb::bools(&b, 1)).filter(|f| f.len() == ids.len()) {
+        Some(found) => (found, "collection"),
+        None => {
+            let bytes = web_api(session, http::Method::GET, &format!("/v1/me/tracks/contains?ids={}", ids.join(",")))
+                .await
+                .map_err(|f| both(&first, f))?;
+            let found: Vec<bool> = serde_json::from_slice(&bytes)
+                .map_err(|e| Failure::new(format!("unreadable answer from Spotify: {e}")))?;
+            (found, "web-api")
+        }
+    };
+    Ok(json!({"tracks": ids, "liked": found.0, "via": found.1}))
+}
+
+/// The Web API's failure, saying why the collection endpoint failed first.
+fn both(first: &Failure, then: Failure) -> Failure {
+    Failure { message: format!("{} (Liked Songs directly: {})", then.message, first.message), status: then.status }
+}
+
+fn collection_headers() -> http::HeaderMap {
+    let mut h = http::HeaderMap::new();
+    let kind = http::HeaderValue::from_static("application/vnd.collection-v2.spotify.proto");
+    h.insert(http::header::CONTENT_TYPE, kind.clone());
+    h.insert(http::header::ACCEPT, kind);
+    h
+}
+
+/// A Web API request with the session's own token.
+async fn web_api(session: &Session, method: http::Method, path: &str) -> Result<bytes::Bytes, Failure> {
+    let token = session.login5().auth_token().await?;
+    let request = http::Request::builder()
+        .method(method)
+        .uri(format!("https://api.spotify.com{path}"))
+        .header(http::header::AUTHORIZATION, format!("Bearer {}", token.access_token))
+        .header(http::header::CONTENT_LENGTH, "0")
+        .body(bytes::Bytes::new())
+        .map_err(|e| Failure::new(e.to_string()))?;
+    Ok(session.http_client().request_body(request).await?)
+}
+
+/// The little protobuf the collection endpoints need, which librespot
+/// doesn't compile (collection2v2.proto).
+mod pb {
+    fn raw_varint(out: &mut Vec<u8>, mut v: u64) {
+        while v >= 0x80 {
+            out.push((v as u8) | 0x80);
+            v >>= 7;
+        }
+        out.push(v as u8);
+    }
+    pub fn varint(out: &mut Vec<u8>, field: u32, v: u64) {
+        raw_varint(out, u64::from(field) << 3);
+        raw_varint(out, v);
+    }
+    pub fn bytes(out: &mut Vec<u8>, field: u32, b: &[u8]) {
+        raw_varint(out, (u64::from(field) << 3) | 2);
+        raw_varint(out, b.len() as u64);
+        out.extend_from_slice(b);
+    }
+    pub fn string(out: &mut Vec<u8>, field: u32, s: &str) {
+        bytes(out, field, s.as_bytes());
+    }
+    fn read_varint(b: &[u8], at: &mut usize) -> Option<u64> {
+        let mut v = 0u64;
+        for shift in (0..64).step_by(7) {
+            let byte = *b.get(*at)?;
+            *at += 1;
+            v |= u64::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                return Some(v);
+            }
+        }
+        None
+    }
+    /// The repeated bool field, packed or not; None for anything unreadable.
+    pub fn bools(b: &[u8], field: u32) -> Option<Vec<bool>> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        while at < b.len() {
+            let key = read_varint(b, &mut at)?;
+            let (f, wire) = ((key >> 3) as u32, key & 7);
+            match wire {
+                0 => {
+                    let v = read_varint(b, &mut at)?;
+                    if f == field {
+                        out.push(v != 0);
+                    }
+                }
+                2 => {
+                    let len = read_varint(b, &mut at)? as usize;
+                    let end = at.checked_add(len).filter(|&e| e <= b.len())?;
+                    if f == field {
+                        let mut i = at;
+                        while i < end {
+                            out.push(read_varint(&b[..end], &mut i)? != 0);
+                        }
+                    }
+                    at = end;
+                }
+                5 => at += 4,
+                1 => at += 8,
+                _ => return None,
+            }
+        }
+        Some(out)
+    }
 }
 
 /// The details of each track among uris, by URI, a batch at a time.
@@ -404,6 +656,25 @@ mod tests {
         assert_eq!(f.status, Some(403));
         let f: Failure = librespot_core::Error::unavailable("offline").into();
         assert_eq!(f.status, None);
+    }
+
+    #[test]
+    fn collection_messages_are_encoded_as_spotify_reads_them() {
+        let mut b = Vec::new();
+        pb::string(&mut b, 1, "sam");
+        pb::varint(&mut b, 2, 300);
+        assert_eq!(b, vec![0x0a, 3, b's', b'a', b'm', 0x10, 0xac, 0x02]);
+        // found = [true, false, true], packed and not.
+        assert_eq!(pb::bools(&[0x0a, 3, 1, 0, 1], 1), Some(vec![true, false, true]));
+        assert_eq!(pb::bools(&[0x08, 1, 0x08, 0, 0x08, 1], 1), Some(vec![true, false, true]));
+        assert_eq!(pb::bools(&[0x0a, 9, 1], 1), None);
+    }
+
+    #[test]
+    fn liked_and_like_take_ids_from_tracks() {
+        let r = json!({"cmd": "like", "tracks": ["4uLU6hMCjMI75M1A2tKUQC", 7]});
+        assert_eq!(ids_in(&r), vec!["4uLU6hMCjMI75M1A2tKUQC".to_string()]);
+        assert!(ids_in(&json!({})).is_empty());
     }
 
     #[test]

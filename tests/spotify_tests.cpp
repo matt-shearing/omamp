@@ -1702,6 +1702,7 @@ private slots:
                     *sections = {"Popular tracks"};
                 return {t};
             }
+            QList<Spotify::Item> albumTracks(const Spotify::Item &, QString *) override { return {}; }
             QList<Spotify::Item> playlistTracks(const Spotify::Item &, QString *) override {
                 Spotify::Item t;
                 t.kind = "track";

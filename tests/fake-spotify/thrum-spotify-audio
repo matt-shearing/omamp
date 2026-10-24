@@ -1,39 +1,68 @@
 #!/usr/bin/env python3
-# A stand-in for `thrum-spotify-session audio` in the tests: it speaks the
-# same protocol (sidecar/thrum-spotify-session/src/audio_protocol.rs) and
-# "decodes" every track to a sine tone, never touching Spotify. Its state
-# and log are in $FAKE_SPOTIFY_AUDIO_DIR:
+# A stand-in for thrum-spotify-session in the tests: it speaks the same
+# framed protocol (sidecar/thrum-spotify-session/src/audio_protocol.rs),
+# "decodes" every track to a sine tone and answers the catalogue from
+# recorded JSON, never touching Spotify. thrum-spotify-session beside it is
+# the same program.
+#
+# The audio side's state and log are in $FAKE_SPOTIFY_AUDIO_DIR:
 #
 #   pids            each start appends its process id
 #   calls.log       each request's command, one a line
+#   args            each start's arguments, one start a line
 #   refuse          its text is the sign-in failure (ready: false)
+#   refuse-connect  its text is the sign-in failure when started --connect
 #   premium         every open fails as a Free account's would
 #   unavailable     track ids, one a line, that Spotify won't play
 #   duration-<id>   a track's length in ms (default 3000)
 #   hz-<id>         a track's tone in Hz (default 440)
-import json, math, os, struct, sys
+#   liked           track ids in Liked Songs, one a line (like/unlike edit it)
+#   connect-in      Connect events to send, one JSON object a line; read and
+#                   removed every 50 ms while running --connect
+#
+# The catalogue's are in $FAKE_SPOTIFY_DIR (the fake spotify_player's), as
+# "session <cmd> <id>" lines in calls.log:
+#
+#   playlist <id>     the tracks of items/playlist-<id>.json
+#   album <id>        the tracks of items/album-<id>.json
+#   artist-top <id>   the top_tracks of items/artist-<id>.json
+#   session-signin    makes signing in fail with that file's text
+#   session-fail      makes catalogue requests fail with that file's text
+#   session-slow      sleeps that many seconds before each catalogue answer
+import json, math, os, select, struct, sys, time
 from array import array
 
 D = os.environ.get("FAKE_SPOTIFY_AUDIO_DIR", "")
+C = os.environ.get("FAKE_SPOTIFY_DIR", "")
 RATE = 44100
+args = sys.argv[1:]
+connect_name = None
+if "--connect" in args:
+    connect_name = args[args.index("--connect") + 1]
 
 
-def path(name):
-    return os.path.join(D, name)
+def path(name, base=None):
+    return os.path.join(D if base is None else base, name)
 
 
-def read_file(name, default=None):
+def read_file(name, default=None, base=None):
+    if not (D if base is None else base):
+        return default
     try:
-        with open(path(name)) as f:
+        with open(path(name, base)) as f:
             return f.read().strip()
     except OSError:
         return default
 
 
-def log(line):
-    if D:
-        with open(path("calls.log"), "a") as f:
+def append(name, line, base=None):
+    if D if base is None else base:
+        with open(path(name, base), "a") as f:
             f.write(line + "\n")
+
+
+def log(line):
+    append("calls.log", line)
 
 
 out = sys.stdout.buffer
@@ -45,28 +74,131 @@ def send(header, data=b""):
     out.flush()
 
 
-if D:
-    with open(path("pids"), "a") as f:
-        f.write("%d\n" % os.getpid())
+append("pids", "%d" % os.getpid())
+append("args", " ".join(args))
+append("calls.log", "session-start " + " ".join(args), C)
 
-refused = read_file("refuse")
+refused = read_file("refuse") or read_file("session-signin", base=C)
+if refused is None and connect_name is not None:
+    refused = read_file("refuse-connect")
 if refused is not None:
     send({"ready": False, "error": refused})
     sys.exit(1)
-send({"ready": True, "user": "fake", "country": "AU", "rate": RATE, "channels": 2})
+ready = {"ready": True, "user": "samlistener", "country": "AU", "rate": RATE, "channels": 2}
+if connect_name is not None:
+    ready["connect"] = connect_name
+send(ready)
+
+
+def catalogue(r):
+    cmd, rid = r.get("cmd"), r.get("id")
+    what = {"playlist": r.get("playlist"), "album": r.get("album"), "artist-top": r.get("artist")}.get(cmd, "")
+    if cmd in ("like", "liked"):
+        what = ",".join(r.get("tracks", []))
+    append("calls.log", "session %s %s" % (cmd, what or ""), C)
+    slow = read_file("session-slow", base=C)
+    if slow:
+        time.sleep(float(slow))
+    failing = read_file("session-fail", base=C)
+    if failing is not None:
+        return {"id": rid, "ok": False, "error": failing}
+    if cmd in ("like", "liked"):
+        liked = set((read_file("liked", "") or "").split())
+        ids = r.get("tracks", [])
+        if cmd == "liked":
+            return {"id": rid, "ok": True, "tracks": ids, "liked": [i in liked for i in ids], "via": "collection"}
+        liked = (liked | set(ids)) if r.get("on", True) else (liked - set(ids))
+        if D:
+            with open(path("liked"), "w") as f:
+                f.write("\n".join(sorted(liked)) + "\n")
+        return {"id": rid, "ok": True, "tracks": ids, "on": r.get("on", True), "via": "collection"}
+    kind = "artist" if cmd == "artist-top" else cmd
+    fixture = os.path.join(C, "items", "%s-%s.json" % (kind, what)) if C else ""
+    if not fixture or not os.path.exists(fixture):
+        return {"id": rid, "ok": False, "error": "Not Found", "status": 404}
+    # spotify_player prints real line breaks inside strings; the recorded
+    # answers keep them, and the real sidecar has none.
+    with open(fixture) as f:
+        answer = json.loads(f.read().replace("\n", ""))
+    if cmd == "artist-top":
+        answer = {"artist": answer.get("artist"), "tracks": answer.get("top_tracks", [])}
+    answer.update({"id": rid, "ok": True})
+    return answer
+
+
+def tone(s, n):
+    w = 2 * math.pi * s["hz"] / RATE
+    a = array("f")
+    for i in range(s["pos"], s["pos"] + n):
+        v = 0.5 * math.sin(w * i)
+        a.append(v)
+        a.append(v)
+    s["pos"] += n
+    return a.tobytes() if sys.byteorder == "little" else (a.byteswap() or a).tobytes()
+
+
+# The Connect device: what plays, and whether the "phone" has it playing.
+device = {"playing": False, "pos": 0, "hz": 330}
+
+
+def connect_events():
+    name = path("connect-in")
+    if connect_name is None or not D or not os.path.exists(name):
+        return
+    with open(name) as f:
+        lines = f.read().splitlines()
+    os.remove(name)
+    for line in lines:
+        if line.strip():
+            e = json.loads(line)
+            if e.get("state") == "playing":
+                device["playing"] = True
+            elif e.get("state") in ("paused", "stopped"):
+                device["playing"] = False
+            e["event"] = "connect"
+            send(e)
+
 
 streams = {}
-for line in sys.stdin:
+buffered = b""
+while True:
+    if connect_name is not None:
+        ready_in, _, _ = select.select([sys.stdin], [], [], 0.05)
+        connect_events()
+        if not ready_in:
+            continue
+    line = sys.stdin.readline()
+    if not line:
+        break
     line = line.strip()
     if not line:
         continue
     r = json.loads(line)
     cmd, rid = r.get("cmd"), r.get("id")
-    log(" ".join(str(x) for x in [cmd, r.get("stream", ""), r.get("track", ""), r.get("position_ms", "")]).strip())
+    log(" ".join(str(x) for x in [cmd, r.get("stream", ""), r.get("track", ""), r.get("position_ms", ""),
+                                  r.get("action", "")]).strip())
     if cmd == "quit":
         break
     if cmd == "ping":
         send({"id": rid, "ok": True})
+    elif cmd in ("playlist", "album", "artist-top", "like", "liked"):
+        send(catalogue(r))
+    elif cmd == "connect":
+        if connect_name is None:
+            send({"id": rid, "ok": False, "error": "Thrum isn't a Spotify Connect device now"})
+            continue
+        action = r.get("action")
+        if action == "play":
+            device["playing"] = True
+        elif action == "pause":
+            device["playing"] = False
+        send({"id": rid, "ok": True})
+    elif cmd == "open-connect":
+        if connect_name is None:
+            send({"id": rid, "ok": False, "error": "Thrum isn't a Spotify Connect device now"})
+            continue
+        streams[r["stream"]] = {"connect": True}
+        send({"id": rid, "ok": True, "rate": RATE, "channels": 2, "live": True, "title": "Spotify Connect"})
     elif cmd == "open":
         track = r["track"]
         if read_file("premium") is not None:
@@ -89,19 +221,22 @@ for line in sys.stdin:
         elif cmd == "close":
             del streams[r["stream"]]
             send({"id": rid, "ok": True})
+        elif s.get("connect"):
+            if cmd == "seek":
+                send({"id": rid, "ok": True, "position_ms": r.get("position_ms", 0)})
+            elif device["playing"]:
+                # As fast as asked: the real one paces with the Player.
+                n = min(int(r.get("frames", 4096)), 4096)
+                send({"id": rid, "ok": True, "frames": n, "end": False}, tone(device, n))
+            else:
+                time.sleep(0.02)
+                send({"id": rid, "ok": True, "frames": 0, "end": False})
         elif cmd == "seek":
             s["pos"] = min(s["total"], int(r.get("position_ms", 0)) * RATE // 1000)
             send({"id": rid, "ok": True, "position_ms": s["pos"] * 1000 // RATE})
         else:
             n = max(0, min(int(r.get("frames", 4096)), s["total"] - s["pos"]))
-            w = 2 * math.pi * s["hz"] / RATE
-            a = array("f")
-            for i in range(s["pos"], s["pos"] + n):
-                v = 0.5 * math.sin(w * i)
-                a.append(v)
-                a.append(v)
-            s["pos"] += n
-            data = a.tobytes() if sys.byteorder == "little" else (a.byteswap() or a).tobytes()
+            data = tone(s, n)
             send({"id": rid, "ok": True, "frames": n, "end": s["pos"] >= s["total"]}, data)
     else:
         send({"id": rid, "ok": False, "error": "unknown command"})

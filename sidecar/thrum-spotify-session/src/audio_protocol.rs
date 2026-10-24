@@ -1,4 +1,4 @@
-//! The `audio` mode's wire format, kept apart from the playing so it can be
+//! The sidecar's wire format, kept apart from the playing so it can be
 //! tested without Spotify. docs/spotify.md describes it for people.
 //!
 //! In: one JSON request a line on stdin.
@@ -8,11 +8,21 @@
 //!   {"id":3,"cmd":"seek","stream":7,"position_ms":60000}
 //!   {"id":4,"cmd":"close","stream":7}
 //!   {"id":5,"cmd":"ping"}
+//!   {"id":6,"cmd":"playlist","playlist":"<base62>"}       the catalogue:
+//!   {"id":7,"cmd":"artist-top","artist":"<base62>"}       answered on the
+//!   {"id":8,"cmd":"album","album":"<base62>"}             session's runtime,
+//!   {"id":9,"cmd":"like","tracks":["<base62>"],"on":true}  beside the streams
+//!   {"id":10,"cmd":"liked","tracks":["<base62>"]}
+//!   {"id":11,"cmd":"open-connect","stream":8}   the Connect device's sound
+//!   {"id":12,"cmd":"connect","action":"pause"}  play, pause, next, previous,
+//!                                               seek (position_ms), volume
 //!   {"cmd":"quit"}
 //!
 //! Out: frames on stdout, each a little-endian u32 length and then that many
 //! bytes: a JSON header, a newline, and for a read the samples (interleaved
 //! stereo f32 little-endian at 44.1 kHz) the header counts in "frames".
+//! A frame with "event" instead of "id" is news from the Connect device
+//! (connect.rs), sent whenever it happens.
 
 use serde_json::{json, Value};
 
@@ -29,8 +39,16 @@ pub enum Request {
     Seek { id: Value, stream: u64, position_ms: u32 },
     Close { id: Value, stream: u64 },
     Ping { id: Value },
+    /// A catalogue request (playlist, artist-top, album, like, liked),
+    /// passed on whole.
+    Catalogue { id: Value, request: Value },
+    OpenConnect { id: Value, stream: u64 },
+    Connect { id: Value, action: String, value: Value },
     Quit,
 }
+
+/// The commands answered by the catalogue rather than a stream.
+pub const CATALOGUE: [&str; 5] = ["playlist", "artist-top", "album", "like", "liked"];
 
 /// A request that couldn't be read: the id to answer (null when there was
 /// none) and why.
@@ -62,6 +80,16 @@ pub fn parse(line: &str) -> Result<Request, BadRequest> {
         Some("seek") => Ok(Request::Seek { id: id.clone(), stream: stream()?, position_ms: ms("position_ms") }),
         Some("close") => Ok(Request::Close { id: id.clone(), stream: stream()? }),
         Some("ping") => Ok(Request::Ping { id: id.clone() }),
+        Some(cmd) if CATALOGUE.contains(&cmd) => Ok(Request::Catalogue { id: id.clone(), request: v.clone() }),
+        Some("open-connect") => Ok(Request::OpenConnect { id: id.clone(), stream: stream()? }),
+        Some("connect") => {
+            let action = v["action"].as_str().unwrap_or("").to_string();
+            if !["play", "pause", "next", "previous", "seek", "volume"].contains(&action.as_str()) {
+                return Err(bad("unknown Connect action"));
+            }
+            let value = if action == "seek" { v["position_ms"].clone() } else { v["value"].clone() };
+            Ok(Request::Connect { id: id.clone(), action, value })
+        }
         Some("quit") => Ok(Request::Quit),
         _ => Err(bad("unknown command")),
     }
@@ -132,6 +160,28 @@ mod tests {
         assert_eq!(parse(r#"{"id":4,"cmd":"close","stream":7}"#), Ok(Request::Close { id: json!(4), stream: 7 }));
         assert_eq!(parse(r#"{"id":5,"cmd":"ping"}"#), Ok(Request::Ping { id: json!(5) }));
         assert_eq!(parse(r#"{"cmd":"quit"}"#), Ok(Request::Quit));
+    }
+
+    #[test]
+    fn catalogue_and_connect_requests_are_read() {
+        let like = r#"{"id":9,"cmd":"like","tracks":["4uLU6hMCjMI75M1A2tKUQC"],"on":true}"#;
+        match parse(like) {
+            Ok(Request::Catalogue { id, request }) => {
+                assert_eq!(id, json!(9));
+                assert_eq!(request["on"], true);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(parse(r#"{"id":1,"cmd":"playlist","playlist":"x"}"#), Ok(Request::Catalogue { .. })));
+        assert_eq!(
+            parse(r#"{"id":2,"cmd":"open-connect","stream":3}"#),
+            Ok(Request::OpenConnect { id: json!(2), stream: 3 })
+        );
+        assert_eq!(
+            parse(r#"{"id":3,"cmd":"connect","action":"seek","position_ms":5000}"#),
+            Ok(Request::Connect { id: json!(3), action: "seek".into(), value: json!(5000) })
+        );
+        assert_eq!(parse(r#"{"id":4,"cmd":"connect","action":"dance"}"#).unwrap_err().error, "unknown Connect action");
     }
 
     #[test]

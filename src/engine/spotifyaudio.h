@@ -15,16 +15,24 @@
 #include <unordered_map>
 #include <vector>
 
-// Spotify played by Thrum itself. thrum-spotify-session's audio mode
-// (sidecar/thrum-spotify-session, librespot) signs in with the credential
-// spotify_player keeps and decodes Spotify's files to float stereo at
-// 44.1 kHz; the native engine opens a Spotify track (spotify://track/<id>)
-// through a Decoder like any file, so the equaliser, ReplayGain, the volume,
-// the visualiser, the output device and gapless joins all apply.
+// Thrum's one Spotify session. thrum-spotify-session (sidecar/
+// thrum-spotify-session, librespot) signs in with the credential
+// spotify_player keeps and, over one session:
+//
+// - decodes Spotify's files to float stereo at 44.1 kHz: the native engine
+//   opens a Spotify track (spotify://track/<id>) through a Decoder like any
+//   file, so the equaliser, ReplayGain, the volume, the visualiser, the
+//   output device and gapless joins all apply;
+// - answers the catalogue (Spotify::SessionReader: playlists, artists'
+//   top tracks, albums, Liked Songs);
+// - with a Connect name set, is a Spotify Connect device whose sound plays
+//   as spotify://connect, and whose news (what the phone plays, pauses,
+//   volume) comes to the event handler.
+//
 // docs/spotify.md has the protocol.
 //
-// One sidecar serves every track, started when the first one opens. It is
-// a child of a thread that lives exactly as long as it does, started with
+// One sidecar serves it all, started when first needed. It is a child of a
+// thread that lives exactly as long as it does, started with
 // PR_SET_PDEATHSIG, and killed and waited for on shutdown(), so it never
 // outlives Thrum.
 //
@@ -46,6 +54,9 @@ public:
     static bool canPlay(const QString &path);
     // The track id of spotify://track/<id>, or empty.
     static QString trackId(const QString &path);
+    // The Connect device's sound, as a queue entry.
+    static QString connectPath() { return QStringLiteral("spotify://connect"); }
+    static bool isConnect(const QString &path) { return path == connectPath(); }
 
     void setEnabled(bool on);
     bool enabled() const { return m_enabled; }
@@ -68,6 +79,24 @@ public:
     // Which sidecar the streams belong to: a stream of an earlier one is gone.
     quint64 generation() const;
 
+    // Makes the session a Spotify Connect device called name, or none
+    // (empty). A change restarts a running sidecar; with a name, it starts
+    // at once (in the background), so the device appears.
+    void setConnectName(const QString &name);
+    QString connectName() const;
+    // Starts the sidecar without waiting for it, when it isn't running.
+    void warmUp();
+    // Called on the sidecar's reader thread with each event frame
+    // ({"event":"connect",…}); queue it to where it is wanted.
+    using EventHandler = std::function<void(const QJsonObject &)>;
+    void setEventHandler(EventHandler handler);
+    // Whether the sidecar is running and signed in, and why it last failed.
+    bool ready() const;
+    QString lastFailure() const;
+    // Why the Connect device couldn't start, or empty. The sidecar then
+    // runs without it, so Spotify tracks still play.
+    QString connectFailure() const;
+
     // Quits the sidecar and waits for it (killing it after a moment). No
     // other starts after this.
     void shutdown();
@@ -78,12 +107,24 @@ public:
 
 private:
     bool ensureStarted(std::unique_lock<std::mutex> &lock, const Interrupt &interrupt, QString *error);
+    // Starts a sidecar when none runs or starts; false while a failure is
+    // remembered. Joins the last one's reader, unlocking meanwhile.
+    bool launch(std::unique_lock<std::mutex> &lock);
+    // Asks the running sidecar to quit (it is restarted when next needed).
+    void quitRunning(std::unique_lock<std::mutex> &lock);
     void run(std::vector<std::string> argv);
     bool sendLine(const QByteArray &line);
     void stopLocked(std::unique_lock<std::mutex> &lock);
 
-    QString m_program, m_credentials;
+    QString m_program, m_credentials, m_connectName;
     bool m_enabled = true;
+    EventHandler m_events;
+    // The last start as a Connect device failed: starts go without it
+    // until the name changes.
+    bool m_connectBroken = false;
+    QString m_connectFailure;
+    std::thread m_warm;
+    bool m_warming = false;
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     std::thread m_reader;
@@ -117,6 +158,8 @@ public:
     // Reads ahead, so a queued track starts at once.
     void prime();
     bool atEnd() const { return m_end && m_buffer.size() == m_head; }
+    // The Connect device's sound: no length, no end.
+    bool live() const { return m_live; }
 
     int sampleRate() const { return m_rate; }
     qint64 durationMs() const { return m_durationMs; }
@@ -137,7 +180,7 @@ private:
     SpotifyAudio::Interrupt m_interrupt;
     qint64 m_stream = 0;
     quint64 m_generation = 0;
-    bool m_open = false, m_end = false;
+    bool m_open = false, m_end = false, m_live = false;
     int m_rate = 44100, m_bitrate = 0;
     qint64 m_durationMs = 0;
     QVariantMap m_meta;

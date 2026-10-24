@@ -179,7 +179,7 @@ bool Decoder::open(const QString &path, const QUrl &url, QString *error) {
     m_packetsSinceIcy = 0;
     m_readError.clear();
     m_decodedTo = 0;
-    if (!SpotifyAudio::trackId(path).isEmpty())
+    if (!SpotifyAudio::trackId(path).isEmpty() || SpotifyAudio::isConnect(path))
         return openSpotify(error);
     auto failWith = [&](const QString &message) {
         if (error)

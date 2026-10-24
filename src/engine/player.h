@@ -124,6 +124,12 @@ public:
     void setLiveInfo(const QString &title, const QString &artist, const QString &album);
     QString statusText() const { return buffering() ? tr("Buffering…") : QString(); }
 
+    // Asked first by next() (direction 1) and previous() (-1) with the
+    // current entry's path: true when it moved on itself (the Spotify
+    // Connect entry skips on Spotify), so the queue stays where it is.
+    using SkipHandler = std::function<bool(const QString &path, int direction)>;
+    void setSkipHandler(SkipHandler handler) { m_skipHandler = std::move(handler); }
+
     // Without a resolver, http(s) entries play as they are and other
     // references fail with a message.
     void setResolver(Resolver resolver);
@@ -184,6 +190,11 @@ public:
     int playTracks(const QList<Playlist::Track> &tracks, int start);
     int queueNext(const QList<Playlist::Track> &tracks);
     int appendTracks(const QList<Playlist::Track> &tracks);
+    // Puts tracks in place of the entry at row (a whole Spotify playlist,
+    // album or artist, read into its tracks). When row is the current
+    // entry, the first of them becomes current, and plays if Thrum was
+    // playing. Returns how many were put in; 0 leaves the entry.
+    int expandEntry(int row, const QList<Playlist::Track> &tracks);
 
     // Adds folders the user picked, starting playback if the list was empty.
     void addPicked(const QStringList &paths);
@@ -266,6 +277,8 @@ private:
     // Files that failed in a row, so a list of broken files can't loop.
     int m_badRun = 0;
     bool m_wantPlaying = false;
+    SkipHandler m_skipHandler;
+    bool skipHandled(int direction);
     int m_volume = 70;
     bool m_shuffle = false, m_repeat = false;
     bool m_stopped = true;

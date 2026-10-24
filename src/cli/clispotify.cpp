@@ -83,10 +83,12 @@ int runSpotify(const QStringList &arguments, QTextStream &out, QTextStream &err)
     // Spotify's own playlists and artists' top tracks through the session
     // reader, as the window does, when it is installed and switched on.
     const QString reader = Spotify::SessionReader::findProgram();
-    if (backendId == "spotify_player" && Spotify::Settings::load().sessionReads && !reader.isEmpty())
+    std::shared_ptr<SpotifyAudio> session;
+    if (backendId == "spotify_player" && Spotify::Settings::load().sessionReads && !reader.isEmpty()) {
+        session = std::make_shared<SpotifyAudio>(reader, Spotify::SessionReader::credentialsPath());
         backend->setCatalogue(std::make_unique<Spotify::SessionCatalogue>(
-            backend.get(), std::make_shared<Spotify::SessionReader>(
-                               reader, Spotify::SpotifyPlayerBackend::cacheFolder() + "/credentials.json")));
+            backend.get(), std::make_shared<Spotify::SessionReader>(session)));
+    }
     const QString verb = rest.value(0, "status");
     const QString argument = rest.mid(1).join(' ');
     QString error;

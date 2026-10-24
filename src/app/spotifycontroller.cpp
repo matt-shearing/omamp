@@ -12,6 +12,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QProcess>
+#include <QRandomGenerator>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QUrlQuery>
@@ -532,7 +533,7 @@ void SpotifyPlayback::load(const QString &path) {
         m_track.id = m_context ? QString() : id;
     }
     m_state = AudioEngine::Stopped;
-    m_started = m_starting = m_confirmed = m_pausedByUs = m_askedOnce = false;
+    m_started = m_starting = m_confirmed = m_pausedByUs = m_askedOnce = m_expandTried = false;
     m_base = 0;
     m_since.invalidate();
     emit metaDataChanged();
@@ -614,6 +615,23 @@ void SpotifyPlayback::play() {
     }
     m_pausedByUs = false;
     const int generation = m_generation;
+    // Thrum can play the tracks itself: they take the entry's place in Now
+    // Playing, and spotify_player isn't asked. Only if that fails does
+    // Spotify play it as one, below.
+    if (m_context && !m_expandTried && !m_started && m_c->expandsContexts()) {
+        m_expandTried = true;
+        m_starting = true;
+        emit bufferingChanged();
+        setState(AudioEngine::Playing);
+        QPointer<SpotifyPlayback> self(this);
+        m_c->expandEntry(m_path, [self, generation] {
+            if (!self || generation != self->m_generation)
+                return;
+            self->m_starting = false;
+            self->play();
+        });
+        return;
+    }
     if (m_started && m_confirmed) {
         ++m_commands;
         m_lastCommand.start();
@@ -887,6 +905,9 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
     m_requests.setGapMs(envMs("THRUM_SPOTIFY_GAP_MS", 300));
     m_warmupMs = envMs("THRUM_SPOTIFY_WARMUP_MS", 6000);
     m_slowMs = envMs("THRUM_SPOTIFY_SLOW_MS", 4000);
+    m_eventRelay = std::make_shared<QObject>();
+    m_eventTarget = std::make_shared<std::function<void(const QJsonObject &)>>(
+        [this](const QJsonObject &event) { onConnectEvent(event); });
     makeBackend();
     // What Spotify refused today, per client ID, beside the pictures.
     m_refusals.setFile(m_art.dir() + "/refused.json");
@@ -947,6 +968,16 @@ SpotifyController::SpotifyController(const QString &settingsPath, const QString 
 }
 
 SpotifyController::~SpotifyController() {
+    // Events still on their way find nobody.
+    *m_eventTarget = nullptr;
+    if (m_player)
+        m_player->setSkipHandler({});
+    // A session of the controller's own ends with it (the installed one is
+    // main()'s, and stays a Connect device as long as Thrum runs).
+    if (m_audio && m_audio != SpotifyAudio::installed()) {
+        m_audio->setEventHandler({});
+        m_audio->shutdown();
+    }
     *m_alive = false;
     m_requests.cancelAll();
 }
@@ -958,13 +989,33 @@ void SpotifyController::waitForIdle() {
 
 void SpotifyController::makeBackend() {
     m_backend = Spotify::Backend::create(m_settings.backend);
+    // Thrum's one Spotify session: the one the engines play through, or,
+    // without one (tests, a window with no sidecar installed at start), a
+    // session of the controller's own.
+    const QString reader = Spotify::SessionReader::findProgram();
+    if (!m_audio && !reader.isEmpty()) {
+        m_audio = SpotifyAudio::installed();
+        if (!m_audio)
+            m_audio = std::make_shared<SpotifyAudio>(reader, Spotify::SessionReader::credentialsPath());
+        auto target = m_eventTarget;
+        QObject *relay = m_eventRelay.get();
+        auto keep = m_eventRelay;
+        m_audio->setEventHandler([target, relay, keep](const QJsonObject &event) {
+            QMetaObject::invokeMethod(
+                relay,
+                [target, keep, event] {
+                    if (*target)
+                        (*target)(event);
+                },
+                Qt::QueuedConnection);
+        });
+        applyConnectSettings();
+    }
     // Spotify's own playlists and artists' top tracks the way Spotify's own
     // app reads them, when the reader is installed and switched on.
-    const QString reader = Spotify::SessionReader::findProgram();
-    if (m_settings.backend == "spotify_player" && m_settings.sessionReads && !reader.isEmpty()) {
+    if (m_settings.backend == "spotify_player" && m_settings.sessionReads && m_audio) {
         if (!m_session)
-            m_session = std::make_shared<Spotify::SessionReader>(
-                reader, Spotify::SpotifyPlayerBackend::cacheFolder() + "/credentials.json");
+            m_session = std::make_shared<Spotify::SessionReader>(m_audio);
         m_backend->setCatalogue(std::make_unique<Spotify::SessionCatalogue>(m_backend.get(), m_session));
     } else {
         m_session.reset();
@@ -990,6 +1041,8 @@ void SpotifyController::setEnabled(bool on) {
     m_settings.enabled = on;
     saveSettings();
     followMpris();
+    applyConnectSettings();
+    noteThrumPlaying();
     if (on) {
         refreshStatus();
         // The list loads when the view is shown, not now: switching on
@@ -1583,6 +1636,8 @@ void SpotifyController::fetchList(const View &view, bool force, std::function<vo
                 r.items = b.catalogue()->artistPage(view.container, &r.sections, &r.error);
             } else if (view.section == "tracks" && view.container.kind == "playlist") {
                 r.items = b.catalogue()->playlistTracks(view.container, &r.error);
+            } else if (view.section == "tracks" && view.container.kind == "album") {
+                r.items = b.catalogue()->albumTracks(view.container, &r.error);
             } else if (view.section == "tracks") {
                 r.items = b.tracksOf(view.container, &r.error);
             } else {
@@ -1875,6 +1930,12 @@ void SpotifyController::noteMpris() {
 }
 
 void SpotifyController::noteNowPlaying(const Spotify::Playback &given) {
+    // While Thrum plays a Spotify track itself, that is what plays on
+    // Spotify as far as Thrum's views go.
+    if (thrumTrack().isValid()) {
+        noteThrumPlaying();
+        return;
+    }
     Spotify::Playback p = given;
     // MPRIS from spotify_player names no id: find the track among those
     // Thrum has seen, so its cover and Liked state are known.
@@ -1937,15 +1998,7 @@ void SpotifyController::queue(const QList<Spotify::Item> &tracks, int start, Mod
     if (!m_player || tracks.isEmpty())
         return;
     rememberTracks(tracks);
-    QList<Playlist::Track> list;
-    for (const Spotify::Item &t : tracks) {
-        Playlist::Track pt;
-        pt.path = t.queuePath();
-        pt.title = t.name.isEmpty() ? t.uri() : t.name;
-        pt.artist = t.artistText();
-        pt.durationMs = t.durationMs;
-        list << pt;
-    }
+    const QList<Playlist::Track> list = queueTracks(tracks);
     int n = 0;
     if (mode == Play)
         n = m_player->playTracks(list, qMax(0, start));
@@ -1957,9 +2010,28 @@ void SpotifyController::queue(const QList<Spotify::Item> &tracks, int start, Mod
         setMessage(tr("Added %n Spotify track(s) to Now Playing", "", n));
 }
 
-void SpotifyController::queueContext(const Spotify::Item &given, Mode mode, bool shuffle) {
+void SpotifyController::queueContext(const Spotify::Item &given, Mode mode, bool shuffle, bool expand) {
     if (!m_player || !given.isValid())
         return;
+    // Thrum plays Spotify itself: the tracks go in, so Thrum's queue,
+    // shuffle and repeat hold for them. Reading them fails: one entry, as
+    // before, that spotify_player plays.
+    if (expand && expandsContexts()) {
+        Spotify::Item c = withName(given);
+        readContextTracks(c, [this, c, mode, shuffle](const Spotify::Result &r) {
+            if (r.cancelled)
+                return;
+            if (!r.ok() || r.items.isEmpty()) {
+                queueContext(c, mode, shuffle, false);
+                return;
+            }
+            QList<Spotify::Item> tracks = r.items;
+            if (shuffle)
+                std::shuffle(tracks.begin(), tracks.end(), *QRandomGenerator::global());
+            queue(tracks, 0, mode);
+        });
+        return;
+    }
     const Spotify::Item c = withName(given);
     rememberNames({c});
     m_art.want(c);
@@ -2317,9 +2389,26 @@ void SpotifyController::addBlendRowToPlaylist(int row, const QString &playlistId
 
 void SpotifyController::setPlayingLiked(bool liked) {
     const QString id = m_nowPlaying.value("uri").toString().section(':', 2);
+    // Thrum's own track: saved by id, through the session. spotify_player's
+    // command line could only like what spotify_player plays.
+    const bool thrum = m_nowPlaying.value("thrum").toBool();
+    const std::shared_ptr<SpotifyAudio> audio = m_audio;
+    if (thrum && (id.isEmpty() || !audio)) {
+        setMessage(tr("Thrum can't change Liked Songs here."));
+        return;
+    }
     request(
         Spotify::Requests::Control, {},
-        [liked](Spotify::Backend &b, Spotify::Result &r) { b.like(liked, &r.error); },
+        [liked, thrum, id, audio](Spotify::Backend &b, Spotify::Result &r) {
+            if (!thrum) {
+                b.like(liked, &r.error);
+                return;
+            }
+            const QJsonObject a = Spotify::SessionReader(audio).ask(
+                {{"cmd", "like"}, {"tracks", QJsonArray{id}}, {"on", liked}}, Spotify::Backend::timeoutMs());
+            if (!a.value("ok").toBool())
+                r.error = a.value("error").toString(tr("Couldn't change Liked Songs."));
+        },
         [this, liked, id](const Spotify::Result &r) {
             if (!r.ok()) {
                 setMessage(r.error);
@@ -2330,12 +2419,390 @@ void SpotifyController::setPlayingLiked(bool liked) {
                     m_liked.insert(id);
                 else
                     m_liked.remove(id);
+                m_likedAsked.insert(id, liked);
             }
             m_cache.remove("library:liked");
             m_nowPlaying.insert("liked", liked);
             emit nowPlayingChanged();
             setMessage(liked ? tr("Saved to Liked Songs") : tr("Removed from Liked Songs"));
         });
+}
+
+// --- Thrum's own Spotify track ------------------------------------------------------
+
+void SpotifyController::setPlayer(Player *player) {
+    if (m_player) {
+        disconnect(m_player, nullptr, this, nullptr);
+        m_player->setSkipHandler({});
+    }
+    m_player = player;
+    if (!player)
+        return;
+    connect(player, &Player::trackChanged, this, [this] {
+        noteThrumPlaying();
+        onPlayerForConnect();
+    });
+    connect(player, &Player::stateChanged, this, [this] {
+        noteThrumPlaying();
+        onPlayerForConnect();
+    });
+    connect(player, &Player::volumeChanged, this, [this] {
+        const int cur = m_player->currentIndex();
+        if (m_connect.active && cur >= 0 && SpotifyAudio::isConnect(m_player->playlist()->at(cur).path))
+            tellConnect("volume", m_player->volume() / 100.0);
+    });
+    player->setSkipHandler([this](const QString &path, int direction) { return connectSkip(path, direction); });
+    // A Connect entry left from the last run plays nothing now.
+    dropConnectEntry();
+}
+
+Spotify::Item SpotifyController::thrumTrack() const {
+    if (!m_player || !m_settings.enabled)
+        return {};
+    const int cur = m_player->currentIndex();
+    if (cur < 0 || cur >= m_player->playlist()->count())
+        return {};
+    const Playlist::Track &entry = m_player->playlist()->at(cur);
+    if (SpotifyAudio::isConnect(entry.path))
+        return m_connect.track;
+    const QString id = SpotifyAudio::trackId(entry.path);
+    // Handed to spotify_player: its own state says what plays.
+    if (id.isEmpty() || m_player->playsElsewhere())
+        return {};
+    Spotify::Item t = knownTrack(id);
+    if (!t.isValid()) {
+        t.kind = "track";
+        t.id = id;
+    }
+    if (t.name.isEmpty())
+        t.name = m_player->title().isEmpty() ? entry.title : m_player->title();
+    if (t.artists.isEmpty() && !entry.artist.isEmpty())
+        t.artists = QStringList{m_player->artist().isEmpty() ? entry.artist : m_player->artist()};
+    if (t.album.isEmpty())
+        t.album = m_player->album();
+    if (t.durationMs <= 0)
+        t.durationMs = m_player->duration();
+    return t;
+}
+
+void SpotifyController::noteThrumPlaying() {
+    const Spotify::Item t = thrumTrack();
+    const QString state = m_player ? m_player->state() : QString();
+    if (!t.isValid() || state == QLatin1String("stopped")) {
+        if (m_nowPlaying.value("thrum").toBool()) {
+            // Thrum is off Spotify: what the backend plays shows again.
+            m_nowPlaying.clear();
+            emit nowPlayingChanged();
+            noteMpris();
+        }
+        return;
+    }
+    const int cur = m_player->currentIndex();
+    const bool connect = SpotifyAudio::isConnect(m_player->playlist()->at(cur).path);
+    m_art.want(t);
+    const QString key = SpotifyArt::keyFor(t);
+    QVariantMap m{{"active", true}, {"thrum", true}};
+    m.insert("playing", state == QLatin1String("playing"));
+    m.insert("title", t.name);
+    m.insert("artists", t.artistText());
+    m.insert("album", t.album);
+    m.insert("progressMs", connect ? m_connect.positionMs : m_player->position());
+    m.insert("durationMs", t.durationMs);
+    m.insert("device", connect && !m_connect.client.isEmpty() ? tr("Thrum, from %1").arg(m_connect.client)
+                                                              : QStringLiteral("Thrum"));
+    m.insert("uri", t.uri());
+    m.insert("artKey", key);
+    m.insert("art", fileUrl(m_art.cachedFile(t)));
+    const auto asked = m_likedAsked.constFind(t.id);
+    m.insert("liked", asked != m_likedAsked.constEnd() ? asked.value() : m_liked.contains(t.id));
+    m.insert("likedKnown", asked != m_likedAsked.constEnd() || m_likedKnown);
+    if (asked == m_likedAsked.constEnd())
+        checkLiked(t.id);
+    if (m != m_nowPlaying) {
+        m_nowPlaying = m;
+        emit nowPlayingChanged();
+    }
+}
+
+// Asks the session whether one track is in Liked Songs, once.
+void SpotifyController::checkLiked(const QString &id) {
+    if (!m_audio || id.isEmpty() || m_likedAsking.contains(id))
+        return;
+    m_likedAsking.insert(id);
+    const std::shared_ptr<SpotifyAudio> audio = m_audio;
+    request(
+        Spotify::Requests::Control, "liked:" + id,
+        [audio, id](Spotify::Backend &, Spotify::Result &r) {
+            const QJsonObject a =
+                Spotify::SessionReader(audio).ask({{"cmd", "liked"}, {"tracks", QJsonArray{id}}}, Spotify::Backend::timeoutMs());
+            const QJsonArray found = a.value("liked").toArray();
+            if (!a.value("ok").toBool() || found.isEmpty())
+                r.error = a.value("error").toString("no answer");
+            else
+                r.extra.insert("liked", found.first().toBool());
+        },
+        [this, id](const Spotify::Result &r) {
+            m_likedAsking.remove(id);
+            if (!r.ok())
+                return;
+            const bool liked = r.extra.value("liked").toBool();
+            m_likedAsked.insert(id, liked);
+            if (liked)
+                m_liked.insert(id);
+            else if (m_likedKnown)
+                m_liked.remove(id);
+            noteThrumPlaying();
+        });
+}
+
+// --- Whole playlists, albums and artists, as their tracks -------------------------------
+
+bool SpotifyController::expandsContexts() const {
+    const auto installed = SpotifyAudio::installed();
+    return m_settings.enabled && installed && installed->enabled() && installed == m_audio;
+}
+
+QList<Playlist::Track> SpotifyController::queueTracks(const QList<Spotify::Item> &tracks) const {
+    QList<Playlist::Track> list;
+    for (const Spotify::Item &t : tracks) {
+        Playlist::Track pt;
+        pt.path = t.queuePath();
+        pt.title = t.name.isEmpty() ? t.uri() : t.name;
+        pt.artist = t.artistText();
+        pt.durationMs = t.durationMs;
+        list << pt;
+    }
+    return list;
+}
+
+void SpotifyController::readContextTracks(const Spotify::Item &context,
+                                          std::function<void(const Spotify::Result &)> done) {
+    View v;
+    v.section = "tracks";
+    v.container = context;
+    fetchList(v, false, [done](const Spotify::Result &given) {
+        Spotify::Result r = given;
+        // An artist's page lists albums after the tracks: the tracks play.
+        r.items.erase(std::remove_if(r.items.begin(), r.items.end(),
+                                     [](const Spotify::Item &i) { return i.kind != "track"; }),
+                      r.items.end());
+        done(r);
+    });
+}
+
+void SpotifyController::expandEntry(const QString &path, std::function<void()> failed) {
+    QString kind, id;
+    Spotify::parseReference(path, &kind, &id);
+    Spotify::Item c = knownContext(kind, id);
+    if (!c.isValid()) {
+        c.kind = kind;
+        c.id = id;
+    }
+    const bool shuffle = Spotify::queuePathShuffles(path);
+    readContextTracks(c, [this, path, shuffle, failed](const Spotify::Result &r) {
+        if (!m_player || r.cancelled)
+            return;
+        const int row = m_player->currentIndex();
+        // Thrum moved on while it read.
+        if (row < 0 || m_player->playlist()->at(row).path != path)
+            return;
+        if (!r.ok() || r.items.isEmpty()) {
+            failed();
+            return;
+        }
+        QList<Spotify::Item> tracks = r.items;
+        if (shuffle)
+            std::shuffle(tracks.begin(), tracks.end(), *QRandomGenerator::global());
+        rememberTracks(tracks);
+        m_player->expandEntry(row, queueTracks(tracks));
+    });
+}
+
+// --- Thrum as a Spotify Connect device ---------------------------------------------------
+
+void SpotifyController::setConnectDevice(bool on) {
+    if (on == m_settings.connectDevice)
+        return;
+    m_settings.connectDevice = on;
+    saveSettings();
+    applyConnectSettings();
+}
+
+void SpotifyController::setConnectName(const QString &given) {
+    const QString name = given.trimmed().left(64);
+    if (name.isEmpty() || name == m_settings.connectName)
+        return;
+    m_settings.connectName = name;
+    saveSettings();
+    applyConnectSettings();
+}
+
+void SpotifyController::applyConnectSettings() {
+    if (!m_audio)
+        return;
+    const bool on = m_settings.enabled && m_settings.connectDevice;
+    m_audio->setConnectName(on ? m_settings.connectName : QString());
+    if (!on) {
+        m_connect = Connect();
+        dropConnectEntry();
+    }
+    emit connectChanged();
+    // The sidecar signs in on its own thread; the state is looked at until
+    // it settles.
+    if (on) {
+        auto alive = m_alive;
+        auto check = std::make_shared<std::function<void(int)>>();
+        *check = [this, alive, check](int left) {
+            if (!*alive)
+                return;
+            emit connectChanged();
+            if (left > 0 && connectState() == QLatin1String("starting"))
+                QTimer::singleShot(500, this, [check, left] { (*check)(left - 1); });
+        };
+        QTimer::singleShot(500, this, [check] { (*check)(80); });
+    }
+}
+
+QString SpotifyController::connectState() const {
+    if (!m_audio || !m_settings.enabled || !m_settings.connectDevice)
+        return "off";
+    if (!m_audio->connectFailure().isEmpty())
+        return "failed";
+    if (!m_audio->ready())
+        return m_audio->lastFailure().isEmpty() ? "starting" : "failed";
+    return m_connect.playing ? "playing" : "ready";
+}
+
+QString SpotifyController::connectError() const {
+    if (!m_audio)
+        return {};
+    const QString connect = m_audio->connectFailure();
+    return connect.isEmpty() ? m_audio->lastFailure() : connect;
+}
+
+void SpotifyController::tellConnect(const QString &action, const QJsonValue &value) {
+    const std::shared_ptr<SpotifyAudio> audio = m_audio;
+    if (!audio)
+        return;
+    QJsonObject request{{"cmd", "connect"}, {"action", action}};
+    if (action == QLatin1String("seek"))
+        request.insert("position_ms", value);
+    else if (!value.isUndefined() && !value.isNull())
+        request.insert("value", value);
+    this->request(
+        Spotify::Requests::Control, {},
+        [audio, request](Spotify::Backend &, Spotify::Result &) {
+            Spotify::SessionReader(audio).ask(request, Spotify::Backend::timeoutMs());
+        },
+        {});
+}
+
+bool SpotifyController::connectSkip(const QString &path, int direction) {
+    if (!SpotifyAudio::isConnect(path) || !m_connect.active)
+        return false;
+    tellConnect(direction > 0 ? "next" : "previous");
+    return true;
+}
+
+void SpotifyController::dropConnectEntry() {
+    if (!m_player)
+        return;
+    Playlist *list = m_player->playlist();
+    for (int row = list->count() - 1; row >= 0; --row)
+        if (SpotifyAudio::isConnect(list->at(row).path) && row != m_player->currentIndex())
+            m_player->remove(row);
+}
+
+void SpotifyController::onConnectEvent(const QJsonObject &event) {
+    if (event.value("event").toString() != QLatin1String("connect") || !m_settings.enabled)
+        return;
+    m_connect.active = true;
+    if (event.contains("client"))
+        m_connect.client = event.value("client").toString();
+    if (event.contains("position_ms"))
+        m_connect.positionMs = event.value("position_ms").toInteger();
+    const int cur = m_player ? m_player->currentIndex() : -1;
+    const bool onConnect = cur >= 0 && SpotifyAudio::isConnect(m_player->playlist()->at(cur).path);
+    if (event.contains("track")) {
+        const QJsonObject o = event.value("track").toObject();
+        Spotify::Item t;
+        t.kind = "track";
+        t.id = o.value("id").toString();
+        t.name = o.value("title").toString();
+        for (const QJsonValue &a : o.value("artists").toArray())
+            t.artists << a.toString();
+        t.album = o.value("album").toString();
+        t.durationMs = o.value("duration_ms").toInteger();
+        t.imageUrl = o.value("art").toString();
+        m_connect.track = t;
+        if (t.isValid())
+            rememberTracks({t});
+        if (onConnect)
+            m_player->setLiveInfo(t.name, t.artistText(), t.album);
+    }
+    if (event.contains("volume") && onConnect)
+        m_player->setVolume(qRound(event.value("volume").toDouble() * 100));
+    const QString state = event.value("state").toString();
+    if (state == QLatin1String("playing")) {
+        m_connect.playing = true;
+        if (m_player && !onConnect) {
+            // The phone chose Thrum: its sound plays next, now.
+            Playlist::Track pt;
+            pt.path = SpotifyAudio::connectPath();
+            pt.title = tr("Spotify Connect");
+            pt.artist = m_connect.client.isEmpty() ? tr("Played from another device") : m_connect.client;
+            if (cur < 0) {
+                m_player->playTracks({pt}, 0);
+            } else {
+                m_player->queueNext({pt});
+                m_player->playIndex(cur + 1);
+            }
+            const Spotify::Item t = m_connect.track;
+            if (t.isValid())
+                m_player->setLiveInfo(t.name, t.artistText(), t.album);
+        } else if (m_player && m_player->state() != QLatin1String("playing")) {
+            m_player->play();
+        }
+    } else if (state == QLatin1String("paused") || state == QLatin1String("stopped")) {
+        m_connect.playing = false;
+        if (onConnect && m_player->state() == QLatin1String("playing"))
+            m_player->pause();
+    }
+    noteThrumPlaying();
+    emit connectChanged();
+}
+
+// Thrum's own buttons, while it plays the Connect device: the phone sees
+// Thrum pause and play, and Thrum moving on pauses the device.
+void SpotifyController::onPlayerForConnect() {
+    if (!m_player)
+        return;
+    const int cur = m_player->currentIndex();
+    const QString path = cur >= 0 ? m_player->playlist()->at(cur).path : QString();
+    const QString state = m_player->state();
+    if (SpotifyAudio::isConnect(path)) {
+        if (state == QLatin1String("playing") && !m_connect.playing && m_connect.active) {
+            m_connect.playing = true;
+            tellConnect("play");
+        } else if (m_connect.playing && (state == QLatin1String("paused") ||
+                                         (state == QLatin1String("stopped") && m_lastPlayerPath == path &&
+                                          m_lastPlayerState == QLatin1String("playing")))) {
+            m_connect.playing = false;
+            tellConnect("pause");
+        }
+        if (m_connect.track.isValid())
+            m_player->setLiveInfo(m_connect.track.name, m_connect.track.artistText(), m_connect.track.album);
+    } else if (SpotifyAudio::isConnect(m_lastPlayerPath)) {
+        if (m_connect.playing) {
+            m_connect.playing = false;
+            tellConnect("pause");
+        }
+        // Later: the Player is in the middle of changing tracks.
+        QTimer::singleShot(0, this, &SpotifyController::dropConnectEntry);
+        emit connectChanged();
+    }
+    m_lastPlayerPath = path;
+    m_lastPlayerState = state;
 }
 
 // --- Blending -----------------------------------------------------------------------------

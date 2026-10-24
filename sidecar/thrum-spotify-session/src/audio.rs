@@ -1,6 +1,8 @@
-//! The `audio` mode: Spotify's tracks decoded for Thrum, which plays them
-//! through its own engine (its equaliser, volume, visualiser and output).
-//! Nothing here touches a sound card. The wire format is in audio_protocol.
+//! The server Thrum talks to: Spotify's tracks decoded for Thrum, which
+//! plays them through its own engine (its equaliser, volume, visualiser and
+//! output), the catalogue's answers and the Connect device, over one
+//! session. Nothing here touches a sound card. The wire format is in
+//! audio_protocol.
 //!
 //! Thrum pulls: it opens a stream for a track, reads samples when its
 //! engine wants more, seeks and closes. Pausing is Thrum not reading. Each
@@ -13,8 +15,9 @@
 
 use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
+use std::time::Duration;
 
 use librespot_audio::{AudioDecrypt, AudioFile, StreamLoaderController};
 use librespot_core::session::Session;
@@ -27,6 +30,7 @@ use symphonia::core::io::MediaSource;
 use symphonia::core::probe::Hint;
 
 use crate::audio_protocol::{self as proto, Request};
+use crate::connect::Device;
 
 /// Where Spotify's Ogg files keep the audio, after their own header.
 const OGG_HEADER_END: u64 = 0xa7;
@@ -53,13 +57,15 @@ fn kbps(format: AudioFileFormat) -> u32 {
     }
 }
 
-/// Writes whole frames, one at a time, from any thread.
+/// Writes whole frames, one at a time, from any thread. Every Out writes
+/// through the same lock, so frames never interleave.
 #[derive(Clone)]
 pub struct Out(Arc<Mutex<io::Stdout>>);
 
 impl Out {
     pub fn new() -> Self {
-        Out(Arc::new(Mutex::new(io::stdout())))
+        static OUT: OnceLock<Out> = OnceLock::new();
+        OUT.get_or_init(|| Out(Arc::new(Mutex::new(io::stdout())))).clone()
     }
     pub fn send(&self, header: &Value, data: &[u8]) -> bool {
         let bytes = proto::frame(header, data);
@@ -73,8 +79,12 @@ enum Job {
     Seek { id: Value, position_ms: u32 },
 }
 
-/// Answers requests from stdin until it closes or says quit.
-pub fn serve(session: Session, runtime: tokio::runtime::Handle, out: Out) {
+/// How long a read of the Connect device's sound waits for some.
+const CONNECT_WAIT: Duration = Duration::from_millis(60);
+
+/// Answers requests from stdin until it closes or says quit. device: the
+/// Connect device, when the sidecar was started as one.
+pub fn serve(session: Session, runtime: tokio::runtime::Handle, out: Out, device: Option<Arc<Device>>) {
     let mut streams: HashMap<u64, mpsc::Sender<Job>> = HashMap::new();
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
@@ -106,6 +116,38 @@ pub fn serve(session: Session, runtime: tokio::runtime::Handle, out: Out) {
             Ok(Request::Seek { id, stream, position_ms }) => {
                 pass(&mut streams, &out, stream, id.clone(), Job::Seek { id, position_ms });
             }
+            Ok(Request::Catalogue { id: _, request }) => {
+                // Lists can take seconds; streams carry on meanwhile.
+                let (session, out) = (session.clone(), out.clone());
+                runtime.spawn(async move {
+                    let answer = crate::handle(&session, &request).await;
+                    out.send(&answer, &[]);
+                });
+            }
+            Ok(Request::OpenConnect { id, stream }) => {
+                let Some(device) = device.clone() else {
+                    out.send(&proto::failure(&id, "Thrum isn't a Spotify Connect device now", None), &[]);
+                    continue;
+                };
+                if streams.contains_key(&stream) {
+                    out.send(&proto::failure(&id, "that stream is already open", None), &[]);
+                    continue;
+                }
+                let (tx, rx) = mpsc::channel();
+                streams.insert(stream, tx);
+                let out = out.clone();
+                thread::spawn(move || run_connect_stream(device, out, id, rx));
+            }
+            Ok(Request::Connect { id, action, value }) => {
+                let answer = match &device {
+                    None => proto::failure(&id, "Thrum isn't a Spotify Connect device now", None),
+                    Some(d) => match d.command(&action, &value) {
+                        Ok(()) => json!({"id": id, "ok": true}),
+                        Err(e) => proto::failure(&id, &e.to_string(), None),
+                    },
+                };
+                out.send(&answer, &[]);
+            }
             Ok(Request::Close { id, stream }) => {
                 // Dropping the sender ends the stream's thread.
                 streams.remove(&stream);
@@ -122,6 +164,32 @@ fn pass(streams: &mut HashMap<u64, mpsc::Sender<Job>>, out: &Out, stream: u64, i
     if !alive {
         streams.remove(&stream);
         out.send(&proto::failure(&id, "no such stream", None), &[]);
+    }
+}
+
+/// The Connect device's sound as a stream: it has no end, and a read
+/// returns what there is (nothing while the phone is between tracks).
+fn run_connect_stream(device: Arc<Device>, out: Out, id: Value, jobs: mpsc::Receiver<Job>) {
+    out.send(&json!({"id": id, "ok": true, "rate": proto::RATE, "channels": proto::CHANNELS, "live": true,
+                     "title": "Spotify Connect"}), &[]);
+    while let Ok(job) = jobs.recv() {
+        match job {
+            Job::Read { id, frames } => {
+                let samples = device.pcm.take(frames, CONNECT_WAIT);
+                let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+                let header = json!({"id": id, "ok": true, "frames": samples.len() / proto::CHANNELS, "end": false});
+                if !out.send(&header, &bytes) {
+                    return;
+                }
+            }
+            Job::Seek { id, position_ms } => {
+                let answer = match device.command("seek", &json!(position_ms)) {
+                    Ok(()) => json!({"id": id, "ok": true, "position_ms": position_ms}),
+                    Err(e) => proto::failure(&id, &e.to_string(), None),
+                };
+                out.send(&answer, &[]);
+            }
+        }
     }
 }
 

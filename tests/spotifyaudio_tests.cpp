@@ -440,8 +440,25 @@ private slots:
         QCOMPARE(t.player->currentIndex(), 1);
         QVERIFY(t.currentPath().startsWith("spotify://track/"));
         QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+
+        // Next from a playing track onto a whole-playlist entry not read
+        // before: the Player loads it and plays it, asking twice while its
+        // tracks are read.
+        const QString drive = t.fake.id("playlist:Late Night Drive");
+        t.fake.touch(t.fake.state() + "/session-slow", "0.5");
+        t.player->stop();
+        t.player->playTracks({{"spotify://track/" + kTrackA, "Tone A", "Fake", 30000, 0},
+                              {"spotify://playlist/" + drive, "Late Night Drive", "Sam", 0, 0}},
+                             0);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        t.player->next();
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->playlist()->count(), 6, 5000);
+        QCOMPARE(t.player->currentIndex(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        QVERIFY(!t.player->playsElsewhere());
+        QTest::qWait(500);
         t.c->waitForIdle();
-        QVERIFY2(t.fake.calls().filter("playback start").isEmpty(), qPrintable(t.fake.calls().join(" | ")));
+        QVERIFY2(t.fake.calls().filter("playback").isEmpty(), qPrintable(t.fake.calls().join(" | ")));
     }
 
     // Thrum as a Spotify Connect device: a phone playing on it is heard
@@ -470,7 +487,9 @@ private slots:
         QVERIFY(t.player->live());
         QTRY_COMPARE_WITH_TIMEOUT(t.player->title(), QString("Phone Song"), 3000);
         QCOMPARE(t.player->artist(), QString("Phone Artist"));
-        QTRY_VERIFY_WITH_TIMEOUT(loudest(t.player->levels()) > 0.3, 3000);
+        QTRY_VERIFY2_WITH_TIMEOUT(loudest(t.player->levels()) > 0.3,
+                                  qPrintable(t.player->state() + " | " + t.world.calls().mid(qMax(0, t.world.calls().size() - 12)).join(" | ")),
+                                  3000);
         QCOMPARE(t.c->connectState(), QString("playing"));
         QVariantMap now = t.c->nowPlaying();
         QCOMPARE(now.value("title").toString(), QString("Phone Song"));
@@ -516,8 +535,12 @@ private slots:
         QVERIFY2(t.c->connectError().contains("Premium"), qPrintable(t.c->connectError()));
         t.player->playTracks({{"spotify://track/" + kTrackA, "Tone A", "Fake", 3000, 0}}, 0);
         QTRY_COMPARE_WITH_TIMEOUT(t.player->state(), QString("playing"), 5000);
+        // The engine says playing while it opens; the track is heard once
+        // the sidecar started again has opened it.
+        QTRY_VERIFY_WITH_TIMEOUT(!t.world.calls().filter(QRegularExpression("^open 1 ")).isEmpty(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(loudest(t.player->levels()) > 0.3, 3000);
         const QStringList starts = readFile(t.world.dir.filePath("args")).split('\n', Qt::SkipEmptyParts);
-        QCOMPARE(starts.size(), 2);
+        QVERIFY2(starts.size() == 2, qPrintable(starts.join(" | ")));
         QVERIFY(starts.first().contains("--connect"));
         QVERIFY(!starts.last().contains("--connect"));
     }

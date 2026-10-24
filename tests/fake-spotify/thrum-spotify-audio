@@ -159,17 +159,27 @@ def connect_events():
             send(e)
 
 
+def lines_in():
+    # The raw descriptor and a buffer of our own: select() can't see what
+    # Python's buffered stdin has already read.
+    fd, pending = sys.stdin.fileno(), b""
+    while True:
+        while b"\n" in pending:
+            line, pending = pending.split(b"\n", 1)
+            yield line.decode()
+        if connect_name is not None:
+            ready_in, _, _ = select.select([fd], [], [], 0.05)
+            connect_events()
+            if not ready_in:
+                continue
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            return
+        pending += chunk
+
+
 streams = {}
-buffered = b""
-while True:
-    if connect_name is not None:
-        ready_in, _, _ = select.select([sys.stdin], [], [], 0.05)
-        connect_events()
-        if not ready_in:
-            continue
-    line = sys.stdin.readline()
-    if not line:
-        break
+for line in lines_in():
     line = line.strip()
     if not line:
         continue

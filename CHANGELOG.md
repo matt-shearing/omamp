@@ -10,10 +10,30 @@ until 0.4.0, so the entries before it use the old name.
   spotify_player's Connect device, at 320 kbps. The visualisers move, and
   the volume, equaliser, ReplayGain (from Spotify's loudness figures),
   output device and gapless joins with local tracks all work. It needs
-  Spotify Premium. A whole playlist queued as one entry, and every Spotify
-  track without the helper, still plays on spotify_player.
+  Spotify Premium. Without the helper, Spotify tracks still play on
+  spotify_player.
 - **Quitting Thrum stops Spotify.** Thrum's own Spotify playback ends with
   it, and spotify_player is paused if it was playing Thrum's entry.
+- **Like follows Thrum's own Spotify track.** While Thrum plays a Spotify
+  track itself, Like saves that track (by its id, as Spotify's own app
+  does), and the "playing now" line in the Spotify view shows it as
+  "Playing in Thrum", with whether it is already liked.
+- **Whole playlists, albums and artists play through Thrum.** They go into
+  Now Playing as their tracks (an artist's ten best-known), shuffled if you
+  asked, so Thrum's queue, shuffle and repeat hold for them. A whole-playlist
+  entry already in Now Playing is read into its tracks when its turn comes.
+  spotify_player plays them as one only when the session helper isn't
+  installed or can't read them.
+- **Thrum can be a Spotify Connect device.** Switch on **Let your phone and
+  other Spotify apps play on Thrum** in Settings → Spotify, and Thrum
+  appears in the device list of your Spotify apps. Music played on it from
+  the phone plays through Thrum's engine (volume, equaliser, visualiser) as
+  a live entry in Now Playing that shows the phone's track. Thrum's play,
+  pause, next and previous reach the phone, and the phone's reach Thrum.
+  It needs Spotify Premium; off by default.
+- **One Spotify session.** The session helper now reads the catalogue,
+  decodes tracks, saves Liked Songs and runs the Connect device in one
+  process, where reading and playing were two processes signed in twice.
 
 ## 0.4.0
 

@@ -112,7 +112,7 @@ private:
     bool launch(std::unique_lock<std::mutex> &lock);
     // Asks the running sidecar to quit (it is restarted when next needed).
     void quitRunning(std::unique_lock<std::mutex> &lock);
-    void run(std::vector<std::string> argv);
+    void run(std::vector<std::string> argv, quint64 generation);
     bool sendLine(const QByteArray &line);
     void stopLocked(std::unique_lock<std::mutex> &lock);
 
@@ -137,6 +137,8 @@ private:
     QString m_failure;
     qint64 m_failedAt = 0;
     quint64 m_generation = 0;
+    // The sidecar of this generation was asked to quit (quitRunning).
+    quint64 m_quitGeneration = 0;
     qint64 m_nextId = 1, m_nextStream = 1;
     int m_starts = 0;
     std::set<qint64> m_waiting;

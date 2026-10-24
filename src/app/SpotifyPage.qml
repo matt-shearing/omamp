@@ -336,9 +336,45 @@ ScrollView {
                   : qsTr("thrum-spotify-session isn't installed, so Spotify-made playlists play as a whole and artists' pages come from search.")
         }
 
+        Heading { text: qsTr("Spotify Connect"); enabled: spotify.enabled }
+        CheckBox {
+            objectName: "spotifyConnectDevice"
+            enabled: spotify.enabled && spotify.sessionReaderInstalled
+            text: qsTr("Let your phone and other Spotify apps play on Thrum")
+            font.pixelSize: 13
+            checked: spotify.connectDevice
+            onClicked: spotify.connectDevice = checked
+        }
+        RowLayout {
+            spacing: 8
+            enabled: spotify.enabled && spotify.connectDevice
+            Label { text: qsTr("Name it shows as"); font.pixelSize: 13 }
+            TextField {
+                objectName: "spotifyConnectName"
+                Layout.preferredWidth: 200
+                text: spotify.connectName
+                font.pixelSize: 13
+                selectByMouse: true
+                maximumLength: 64
+                onEditingFinished: spotify.connectName = text
+            }
+        }
+        Note {
+            objectName: "spotifyConnectState"
+            text: !spotify.sessionReaderInstalled
+                  ? qsTr("thrum-spotify-session isn't installed, so Thrum can't be a Spotify Connect device.")
+                  : spotify.connectState === "starting" ? qsTr("Signing in as a Spotify Connect device…")
+                  : spotify.connectState === "ready" ? qsTr("“%1” is in the device list of your Spotify apps. Choose it there and the music plays in Thrum, through its equaliser and visualiser.").arg(spotify.connectName)
+                  : spotify.connectState === "playing" ? qsTr("Playing from another Spotify app. Thrum's play, pause, next and previous reach it; seek on the phone.")
+                  : spotify.connectState === "failed" ? qsTr("Thrum couldn't become a Spotify Connect device: %1").arg(spotify.connectError)
+                  : qsTr("Off. Thrum still plays Spotify tracks you put in Now Playing.")
+        }
+
         Heading { text: qsTr("What crosses over, and what doesn't"); enabled: spotify.enabled }
         Note {
-            text: qsTr("The deck, the strip, the big view, the mini players, media keys and the Omarchy bar show a Spotify track with its cover and position. Gapless joins, crossfade, ReplayGain, the equaliser and the visualiser work on your own files only: Spotify's sound never passes through Thrum, and its volume is Spotify's.")
+            text: spotify.sessionReaderInstalled
+                  ? qsTr("Thrum plays Spotify tracks itself, so gapless joins, crossfade, ReplayGain, the equaliser, the visualiser and Thrum's volume work on them as on your own files. A whole playlist, album or artist goes into Now Playing as its tracks. The deck, the strip, the big view, the mini players, media keys and the Omarchy bar show each track with its cover.")
+                  : qsTr("The deck, the strip, the big view, the mini players, media keys and the Omarchy bar show a Spotify track with its cover and position. Gapless joins, crossfade, ReplayGain, the equaliser and the visualiser work on your own files only: Spotify's sound never passes through Thrum, and its volume is Spotify's.")
         }
         Item { height: 12; width: 1 }
     }

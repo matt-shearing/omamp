@@ -127,7 +127,7 @@ bool SpotifyAudio::sendLine(const QByteArray &line) {
 // The reader thread: starts the sidecar, reads its frames until it closes
 // its output, then reaps it. The sidecar is this thread's child, and
 // PR_SET_PDEATHSIG ties it to this thread, which lives exactly as long.
-void SpotifyAudio::run(std::vector<std::string> args) {
+void SpotifyAudio::run(std::vector<std::string> args, quint64 generation) {
     int toChild[2] = {-1, -1}, fromChild[2] = {-1, -1};
     const int devnull = ::open("/dev/null", O_RDWR | O_CLOEXEC);
     bool made = ::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, toChild) == 0 &&
@@ -201,6 +201,9 @@ void SpotifyAudio::run(std::vector<std::string> args) {
         }
         std::lock_guard l(m_mutex);
         if (!m_ready && answer.header.contains(QStringLiteral("ready"))) {
+            // Asked to quit while it signed in: it isn't the one wanted.
+            if (generation == m_quitGeneration)
+                continue;
             if (answer.header.value(QStringLiteral("ready")).toBool())
                 m_ready = true;
             else
@@ -224,7 +227,7 @@ void SpotifyAudio::run(std::vector<std::string> args) {
     }
     {
         std::lock_guard l(m_mutex);
-        if (m_starting && m_failure.isEmpty())
+        if (m_starting && m_failure.isEmpty() && generation != m_quitGeneration)
             m_failure = tr("The Spotify player stopped while signing in.");
         m_starting = false;
         m_running = false;
@@ -271,7 +274,7 @@ bool SpotifyAudio::launch(std::unique_lock<std::mutex> &lock) {
         args.push_back(m_connectName.toStdString());
     }
     args.push_back("serve");
-    m_reader = std::thread(&SpotifyAudio::run, this, std::move(args));
+    m_reader = std::thread(&SpotifyAudio::run, this, std::move(args), m_generation);
     return true;
 }
 
@@ -305,6 +308,10 @@ bool SpotifyAudio::ensureStarted(std::unique_lock<std::mutex> &lock, const Inter
     }
     if (m_running && m_ready)
         return true;
+    // It was asked to quit while signing in (its Connect name changed): the
+    // next one starts now.
+    if (!m_closed && m_failure.isEmpty() && m_quitGeneration == m_generation)
+        return ensureStarted(lock, interrupt, error);
     // Starting as a Connect device failed: start again without it, so
     // playing and reading Spotify still work.
     if (!m_closed && !m_connectName.isEmpty() && !m_connectBroken) {
@@ -397,10 +404,16 @@ QString SpotifyAudio::connectName() const {
 void SpotifyAudio::quitRunning(std::unique_lock<std::mutex> &lock) {
     if (!m_running && !m_starting)
         return;
+    // Nobody uses it from now on: the next ask waits for its reader to end
+    // and starts the new one.
+    m_ready = false;
+    m_quitGeneration = m_generation;
     const pid_t pid = m_pid;
+    const bool signingIn = m_starting;
     lock.unlock();
-    // A quit lets the Connect device say goodbye; the reader reaps it.
-    if (!sendLine("{\"cmd\":\"quit\"}\n") && pid > 0)
+    // A quit lets the Connect device say goodbye; one still signing in
+    // isn't reading yet. The reader reaps it either way.
+    if ((signingIn || !sendLine("{\"cmd\":\"quit\"}\n")) && pid > 0)
         ::kill(pid, SIGTERM);
     lock.lock();
 }

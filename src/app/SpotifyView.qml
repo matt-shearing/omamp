@@ -185,7 +185,8 @@ FocusScope {
                         spacing: 1
                         Text {
                             Layout.fillWidth: true
-                            text: (spotify.nowPlaying.playing ? qsTr("Playing on Spotify: ") : qsTr("Paused on Spotify: ")) + (spotify.nowPlaying.title || "")
+                            text: (spotify.nowPlaying.thrum ? (spotify.nowPlaying.playing ? qsTr("Playing in Thrum: ") : qsTr("Paused in Thrum: "))
+                                   : (spotify.nowPlaying.playing ? qsTr("Playing on Spotify: ") : qsTr("Paused on Spotify: "))) + (spotify.nowPlaying.title || "")
                             elide: Text.ElideRight
                             font.pixelSize: 13
                             font.bold: true
@@ -193,7 +194,7 @@ FocusScope {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: (spotify.nowPlaying.artists || "") + (spotify.nowPlaying.device ? "  ·  " + qsTr("on %1").arg(spotify.nowPlaying.device) : "")
+                            text: (spotify.nowPlaying.artists || "") + (spotify.nowPlaying.device && spotify.nowPlaying.device !== "Thrum" ? "  ·  " + qsTr("on %1").arg(spotify.nowPlaying.device) : "")
                             elide: Text.ElideRight
                             font.pixelSize: 12
                             color: theme.c.muted

@@ -533,7 +533,8 @@ void SpotifyPlayback::load(const QString &path) {
         m_track.id = m_context ? QString() : id;
     }
     m_state = AudioEngine::Stopped;
-    m_started = m_starting = m_confirmed = m_pausedByUs = m_askedOnce = m_expandTried = false;
+    m_started = m_starting = m_confirmed = m_pausedByUs = m_askedOnce = false;
+    m_expand = NotExpanded;
     m_base = 0;
     m_since.invalidate();
     emit metaDataChanged();
@@ -618,8 +619,13 @@ void SpotifyPlayback::play() {
     // Thrum can play the tracks itself: they take the entry's place in Now
     // Playing, and spotify_player isn't asked. Only if that fails does
     // Spotify play it as one, below.
-    if (m_context && !m_expandTried && !m_started && m_c->expandsContexts()) {
-        m_expandTried = true;
+    if (m_context && m_expand != ExpandFailed && !m_started && m_c->expandsContexts()) {
+        // Asked again while reading (Next loads, then plays): still reading.
+        if (m_expand == Expanding) {
+            setState(AudioEngine::Playing);
+            return;
+        }
+        m_expand = Expanding;
         m_starting = true;
         emit bufferingChanged();
         setState(AudioEngine::Playing);
@@ -627,6 +633,7 @@ void SpotifyPlayback::play() {
         m_c->expandEntry(m_path, [self, generation] {
             if (!self || generation != self->m_generation)
                 return;
+            self->m_expand = ExpandFailed;
             self->m_starting = false;
             self->play();
         });

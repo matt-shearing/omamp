@@ -132,10 +132,14 @@ Thrum comes with a small helper, `thrum-spotify-session`, that does it too:
 - It signs in with the sign-in spotify_player already keeps
   (`~/.cache/spotify-player/credentials.json`). It only reads that file and
   stores nothing.
-- It opens no Spotify Connect device and plays nothing. Thrum starts it the
-  first time it is needed and keeps it running while Thrum runs.
-- Through it, every playlist lists quickly, Spotify's own included, and an
-  artist's page shows their top tracks (albums still come from search).
+- It is Thrum's one Spotify session: the same process decodes the Spotify
+  tracks Thrum plays, saves tracks to Liked Songs, and, when you switch it
+  on, is Thrum's Spotify Connect device ([below](#spotify-connect)). Thrum
+  starts it the first time it is needed and keeps it running while Thrum
+  runs.
+- Through it, every playlist lists quickly, Spotify's own included, an
+  artist's page shows their top tracks (albums still come from search), and
+  an album lists its tracks.
 - If it can't sign in or answer, Thrum falls back to the Web API, and a
   playlist Spotify made opens as a whole again.
 
@@ -152,6 +156,9 @@ its own:
 ```text
 thrum-spotify-session playlist <id>      a playlist's name, owner and tracks
 thrum-spotify-session artist-top <id>    an artist's top ten tracks
+thrum-spotify-session album <id>         an album's tracks
+thrum-spotify-session liked <track id>   whether a track is in Liked Songs
+thrum-spotify-session like|unlike <id>   saves a track to Liked Songs, or takes it out
 ```
 
 ## What you can do
@@ -162,13 +169,16 @@ In the Spotify node:
 - **Search Spotify**: tracks, albums, artists and playlists, under headings.
 - **Play**, **Play next**, **Add to Now Playing** and **Add to playlist** act
   on the chosen rows (below). A track row plays the list from that track, as the
-  library does. A playlist or album row plays all of its tracks; an artist,
-  and a playlist Spotify made, go in as one entry that Spotify plays. Enter
-  or a double-click opens the row instead. Backspace or **‹ Back** returns.
+  library does. A playlist or album row plays all of its tracks. So do an
+  artist (their ten best-known tracks) and a playlist Spotify made, when
+  Thrum plays Spotify itself; without the helper they go in as one entry
+  that Spotify plays. Enter or a double-click opens the row instead.
+  Backspace or **‹ Back** returns.
 - **Play a Spotify link**: paste an `open.spotify.com` link or a `spotify:`
   URI. A track plays next; an album, playlist or artist opens.
-- The line along the top shows what Spotify is playing, whoever started it,
-  with **Like** for Liked Songs.
+- The line along the top shows what plays on Spotify, with **Like** for
+  Liked Songs: the Spotify track Thrum plays itself ("Playing in Thrum"),
+  else what spotify_player plays, whoever started it.
 
 ### Choosing several rows
 
@@ -208,8 +218,12 @@ they act on the tracks among them, in list order:
 - **Dragging** the chosen tracks onto a Thrum playlist in the tree adds
   them, as dragging library tracks does.
 
-**Like** still acts on the playing track only: spotify_player's command
-line can save nothing else to Liked Songs.
+**Like** acts on the playing track. While Thrum plays the track itself,
+Thrum saves it by its id through the helper, as Spotify's own app does
+(`/collection/v2/write` on Spotify's private endpoints, with the Web API's
+`/v1/me/tracks` as the fallback), and asks the same way whether it is
+already liked. Otherwise it goes through `spotify_player like`, which saves
+whatever spotify_player plays.
 
 Elsewhere:
 
@@ -267,11 +281,19 @@ native engine of their own beside it, without gapless joins across the
 change. Playing Spotify in Thrum needs Spotify Premium; a Free account gets
 a message saying so.
 
-**spotify_player plays the rest:** a whole playlist, album or artist queued
-as one entry (Spotify plays it itself), and every Spotify track when the
-helper isn't installed or can't sign in. Then Spotify plays on its own
-Spotify Connect device (spotify_player's, named `spotify-player` unless its
-`app.toml` says otherwise) and Thrum pauses its own engine:
+**A whole playlist, album or artist** goes into Now Playing as its tracks,
+which Thrum then plays itself: a playlist's tracks in order, an album's, an
+artist's ten best-known. **Shuffle** shuffles them as they go in. An entry
+for a whole playlist that was already in Now Playing (from an older Thrum,
+or a Thrum playlist) is read into its tracks when its turn comes. So
+Thrum's queue, shuffle and repeat hold for all of it, and spotify_player
+plays nothing.
+
+**spotify_player plays the rest:** every Spotify track when the helper isn't
+installed (a build without `cargo`) or can't sign in, and a whole playlist,
+album or artist whose tracks the helper couldn't read. Then Spotify plays on
+its own Spotify Connect device (spotify_player's, named `spotify-player`
+unless its `app.toml` says otherwise) and Thrum pauses its own engine:
 
 - **No gapless join, crossfade, ReplayGain or equaliser** across the
   change, and starting each track takes about a second.
@@ -290,18 +312,52 @@ Spotify Connect device (spotify_player's, named `spotify-player` unless its
   spotify_player hears of it. If someone starts something else in Spotify,
   Thrum pauses its queue and says so.
 
-**spotify_player is still needed** for everything but playing: signing in
-(the helper reads its credential), your library, playlists, search, Like and
-playlist edits, all through its daemon and command line. Spotify Connect
-(controlling Thrum's Spotify playback from a phone) is not done yet.
+**spotify_player is still needed** for signing in (the helper reads its
+credential), your library, your playlist list, search and playlist edits,
+all through its daemon and command line.
 
-**Like** acts on the track spotify_player is playing, so while Thrum plays
-Spotify itself it doesn't follow Thrum's track.
+## Spotify Connect
 
-### The audio helper's protocol
+Thrum can be a Spotify Connect device, so the Spotify app on your phone (or
+any other Spotify app signed in to the same account) can play on it. Switch
+it on in Settings → Spotify: **Let your phone and other Spotify apps play on
+Thrum**, and give it a name (`Thrum` unless you change it). It needs the
+helper and Spotify Premium.
 
-`thrum-spotify-session --credentials <file> audio` reads one JSON request a
-line on stdin and writes frames on stdout. A frame is a little-endian
+- **Thrum appears in the phone's device list** as soon as the helper has
+  signed in, while Thrum runs. Choose it there and the phone's music plays
+  in Thrum, through Thrum's engine: its volume, equaliser, visualiser and
+  output device.
+- **In Now Playing it is one live entry**, *Spotify Connect*, put after
+  what was playing. The deck, the big view, MPRIS and the Omarchy bar show
+  the phone's track as it changes, like a radio station's song; the line
+  in the Spotify view says "Thrum, from" the phone, and **Like** saves the
+  phone's track.
+- **Thrum's buttons reach the phone:** play, pause, next and previous (the
+  media keys too). Seek on the phone; Thrum's position counts from when
+  Connect began. The phone's pause, skip, seek and volume reach Thrum.
+- **Moving on in Thrum** (choosing another entry) pauses the phone's
+  playback and takes the entry out of Now Playing.
+- If the device can't start (a Free account, say), Settings → Spotify says
+  why, and Thrum carries on without it: Spotify tracks still play.
+
+How it works: the helper started with `--connect <name>` signs in through
+librespot-connect 0.8's `Spirc`, which speaks Spotify Connect and drives
+librespot's own `Player`, exactly as the `librespot` program does. The
+Player's sink is not a sound card: it hands the decoded sound to Thrum,
+which pulls it as the stream `spotify://connect`, and the sink waits while
+Thrum hasn't taken what it has (a quarter of a second), so the Player goes
+at Thrum's pace. What happens on the device comes to Thrum as event frames.
+The device is found through the account (Spotify's dealer), not mDNS
+zeroconf, so it appears only on your own account's apps, and the helper
+keeps no credential of its own. Turning it on or off, or renaming it,
+restarts the helper, which stops a Spotify track playing at that moment.
+
+### The helper's protocol
+
+`thrum-spotify-session --credentials <file> [--connect <name>] serve` reads
+one JSON request a line on stdin and writes frames on stdout. (`audio` is
+the same mode by its old name.) A frame is a little-endian
 `u32` length, then that many bytes: a JSON header, a newline, and for a read
 the samples. Its first frame is `{"ready":true,"rate":44100,"channels":2,…}`,
 or `{"ready":false,"error":…}`.
@@ -315,8 +371,42 @@ or `{"ready":false,"error":…}`.
 {"id":3,"cmd":"seek","stream":7,"position_ms":60000} → {"id":3,"ok":true,"position_ms":…}
 {"id":4,"cmd":"close","stream":7}                    → {"id":4,"ok":true}
 {"id":5,"cmd":"ping"}                                → {"id":5,"ok":true}
+{"id":6,"cmd":"playlist","playlist":"<id>"}          → {"id":6,"ok":true,"playlist":{…},"tracks":[…]}
+{"id":7,"cmd":"artist-top","artist":"<id>"}          → {"id":7,"ok":true,"artist":{…},"tracks":[…]}
+{"id":8,"cmd":"album","album":"<id>"}                → {"id":8,"ok":true,"album":{…},"tracks":[…]}
+{"id":9,"cmd":"like","tracks":["<id>"],"on":true}    → {"id":9,"ok":true,"via":"collection"}
+{"id":10,"cmd":"liked","tracks":["<id>"]}            → {"id":10,"ok":true,"liked":[false]}
+{"id":11,"cmd":"open-connect","stream":8}            → {"id":11,"ok":true,"live":true,…}
+{"id":12,"cmd":"connect","action":"pause"}           → {"id":12,"ok":true}
 {"cmd":"quit"}
 ```
+
+The catalogue's answers (playlist, artist-top, album, like, liked) run on
+the session's own runtime, so a slow list never holds up a read. A
+`connect` action is `play`, `pause`, `next`, `previous`, `seek` (with
+`position_ms`) or `volume` (0 to 1). A read of the Connect stream returns
+what the device has decoded (none while the phone is between tracks; Thrum
+plays silence then) and never ends. A frame with `"event"` in place of
+`"id"` is the device's news, sent when it happens:
+
+```
+{"event":"connect","track":{"id","uri","title","artists","album","duration_ms","art"}}
+{"event":"connect","state":"playing"|"paused"|"stopped","position_ms":…}
+{"event":"connect","position_ms":…}       a seek
+{"event":"connect","volume":0.5}
+{"event":"connect","client":"Sam's phone"}
+```
+
+Liked Songs, as Spotify's desktop app reaches it: `POST
+/collection/v2/write` and `/collection/v2/contains` on spclient, with
+`Content-Type: application/vnd.collection-v2.spotify.proto`. The messages
+are `collection2v2.proto`'s, which librespot doesn't compile, so the helper
+writes them itself: `WriteRequest {1 username, 2 set = "collection",
+3 repeated CollectionItem {1 uri, 2 added_at, 3 is_removed}}`, and for
+`contains` the same username and set with each track as a `CollectionItem`
+at field 3 (a bare URI string there is refused with 400); the answer is a
+packed `repeated bool found = 1`. Checked against a real account on
+24 October 2026.
 
 Thrum pulls: it reads when its engine wants sound, so pausing is not
 reading, and the helper never touches a sound card. Each stream runs on a
@@ -325,7 +415,9 @@ A refused open has `"ok":false`, `"error"` and, when known, `"reason"`:
 `"premium"` or `"unavailable"`. Thrum starts one helper for all streams
 (`src/engine/spotifyaudio.{h,cpp}`), as a child of a thread that lives
 exactly as long as it, with `PR_SET_PDEATHSIG`, and quits it (killing it
-after 1.5 seconds) when Thrum quits.
+after 1.5 seconds) when Thrum quits. The catalogue (`SessionReader`) and the
+Connect device go through the same process, so Thrum holds one librespot
+session, not one per job.
 
 ## The two backends
 
@@ -447,8 +539,10 @@ The fake can be slow (`slow-<verb>`) and can write spotify_player's
 rate-limit warning to a log (`ratelimit`). It also behaves as Spotify does
 with your own client ID: `get item … artist` logs the three refusals and
 answers late, and so does `get item` on a playlist listed in `restricted`.
-A fake `thrum-spotify-session` answers the helper's line protocol from the
-same fixtures. The real helper's own tests run with `cargo test`. MPRIS is tested with a fake
+A fake `thrum-spotify-session` (`tests/fake-spotify/thrum-spotify-audio`,
+Python) answers the helper's whole protocol: the catalogue from the same
+fixtures, Liked Songs from a file, the sound as tones, and Connect events a
+test writes to a file. The real helper's own tests run with `cargo test`. MPRIS is tested with a fake
 spotify_player MPRIS service on a private `dbus-daemon`, so nothing appears
 on the desktop's session bus; every other test points Thrum at a bus name
 that doesn't exist. The client ID writer is tested on `app.toml` files in
@@ -462,7 +556,14 @@ protocol and "decodes" every track to a sine tone: one helper for all
 tracks, a refused sign-in remembered, the visualiser moving and resting,
 pause, seek, a Spotify track followed by a local file and by another Spotify
 track opened ahead, the Premium message, the Qt engine's side engine, and no
-helper process left afterwards.
+helper process left afterwards. It also covers Like and the "playing now"
+line following Thrum's own track, one helper process for the catalogue,
+Liked Songs and the sound, whole playlists going into Now Playing as their
+tracks (and an old whole-playlist entry read into its tracks when it
+plays), and the Connect device: a phone's track playing as the live entry
+with its title, Thrum's pause, play and next reaching the phone, the
+phone's pause reaching Thrum, the entry going when Thrum moves on, and a
+device that can't start leaving Spotify tracks playing.
 
 ## Things to check by hand
 
@@ -478,6 +579,10 @@ check:
 5. Settings → Spotify → Status shows **Follows playback: Through MPRIS**.
 6. Open an artist: the page shows tracks and albums at once, with no
    rate-limit message.
-7. Open a "This Is …" playlist and press **Play playlist**: Spotify plays it,
-   and the deck shows each track as it changes. With the helper installed,
-   the playlist's tracks list instead.
+7. Open a "This Is …" playlist and press **Play playlist**: with the helper
+   installed, its tracks go into Now Playing and Thrum plays them; without
+   it, Spotify plays it and the deck shows each track as it changes.
+8. Switch on Spotify Connect, then on your phone open the device list:
+   "Thrum" is there. Play on it; Thrum plays the phone's music, pauses when
+   the phone pauses, and its Next skips on the phone. (Not yet tried with a
+   real phone.)

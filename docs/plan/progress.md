@@ -6723,3 +6723,105 @@ Follow-ups:
   processes and two sessions; they could share one.
 - **The Qt engine** gets no gapless join between a Spotify track and a local
   one; the native engine does.
+
+## One Spotify session: Like, whole playlists and Spotify Connect (24 October 2026)
+
+The four follow-ups from 23 October are done on branch
+`claude/spotify-connect-like-cb41a6`.
+
+- **One session.** `thrum-spotify-session` has one server mode (`serve`;
+  `audio` is the old name for it) that answers everything over the framed
+  protocol: open, read, seek and close; the catalogue (playlist,
+  artist-top, a new album); Liked Songs (like, liked); and, started with
+  `--connect <name>`, the Connect device. Catalogue requests run on the
+  session's tokio runtime, so a slow list never holds up a read.
+  `Spotify::SessionReader` is now a thin client of `SpotifyAudio` (the
+  process the engines already used), so the window, the engines and the
+  catalogue share one process and one librespot session. The child-process
+  hygiene is `SpotifyAudio`'s, unchanged: forked from a reader thread that
+  lives as long as the child, `PR_SET_PDEATHSIG`, quit then kill and wait.
+  `main()` installs the session before making the controller; the CLI and
+  tests make one of their own.
+- **Like and "playing now" follow Thrum's track.** While the current entry
+  is a Spotify track Thrum plays itself, `nowPlaying` is built from the
+  Player (`"thrum": true`, device "Thrum"), and Like goes to the session by
+  id. Whether the track is liked is asked once per track. The session saves
+  through Spotify's own collection endpoints (`/collection/v2/write`,
+  `/collection/v2/contains`, content type
+  `application/vnd.collection-v2.spotify.proto`), with the protobuf written
+  by hand because librespot doesn't compile `collection2v2.proto`. The
+  layout of `contains` was found by trying it read-only against the real
+  account: items are `CollectionItem {uri}` messages at field 3 (a bare
+  string there is a 400), and the answer is packed bools. The Web API
+  (`/v1/me/tracks`, the session's login5 token) is the fallback; it was
+  429-limited on the shared desktop client ID when tried.
+- **Whole playlists, albums and artists as tracks.** With the installed
+  session enabled (`expandsContexts()`), `queueContext()` reads the tracks
+  (through the list cache; an artist's ten best-known) and queues them,
+  shuffled when asked. A context entry already in the queue is expanded when
+  it plays: `SpotifyPlayback::play()` asks the controller, which calls the
+  new `Player::expandEntry()` to put the tracks in its place and play on.
+  Only a failed read hands it to spotify_player. **The handoff stays** for
+  builds without cargo (no sidecar) and for a sidecar that can't sign in or
+  read the list.
+- **Spotify Connect, done.** librespot-connect 0.8's `Spirc::new()` must do
+  the signing in itself (its dealer listeners go up first), so with
+  `--connect` the sidecar's one session is signed in through Spirc, and the
+  catalogue and decoding use the same session. Spirc drives a librespot
+  `Player` whose sink (`connect.rs`) hands samples to a quarter-second
+  buffer that Thrum pulls as `spotify://connect`; the sink waits while it is
+  full, so the Player runs at Thrum's pace, and a pause from Thrum sets a
+  hold so the Player never waits on a write before it hears the pause.
+  Player events go to Thrum as event frames, delivered to the controller's
+  thread through a relay object. The controller puts a live entry in Now
+  Playing when the phone starts, shows the phone's track with
+  `setLiveInfo`, follows the phone's pause and volume, and sends Thrum's
+  play, pause and volume back; `Player::setSkipHandler()` lets Next and
+  Previous on that entry skip on the phone. Moving to another entry pauses
+  the device and drops the entry. If the Connect start fails, `SpotifyAudio`
+  remembers why (`connectFailure()`) and starts again without it. Settings →
+  Spotify has the switch, the name and the state; it is off by default.
+- **Artist top tracks** fall back to the artist's context page when the
+  metadata has none.
+
+Tests: 527 pass (`JOBS=6 bin/test`), 5 new in `spotifyaudio_tests.cpp`
+(Like and now-playing on Thrum's track; one sidecar for everything; whole
+playlists as tracks, including Next onto an entry whose read is slow; a
+phone playing on Thrum; a Connect device that can't start). The fake
+sidecar (`tests/fake-spotify/thrum-spotify-audio`, which
+`thrum-spotify-session` now runs) speaks the whole framed protocol. Two
+test-only problems found on the way: Python's buffered stdin hides lines
+from `select()` (the fake now reads the raw descriptor), and the engine
+reports Playing before a track has opened. `cargo test`: 18 pass.
+
+Checked for real, silently (temp XDG dirs, `THRUM_NO_AUDIO_DEVICE=1`,
+offscreen, driven over MPRIS), with spotify_player paused: Thrum played
+"Housewife" itself with the position moving; one sidecar child ran with
+`--connect "Thrum check"`, and spotify_player's device list showed
+"Thrum check"; the palette's Like then Like again saved and removed the
+track (the session's `liked` read false → true → false, and the library
+ended as it began); Next onto the Today's Top Hits entry (a Spotify-made
+playlist) put its 50 tracks in Now Playing and kept playing in Thrum; quit
+left no sidecar. The second run went through a `spotify_player` wrapper
+that refuses playback, like, connect and daemon commands, and refused none.
+
+**The first run touched Matt's spotify_player.** Next reached the playlist
+entry twice while its tracks were read (the Player loads, then plays), and
+the second `play()` fell through to the handoff, which started Today's Top
+Hits on spotify_player. It played about 30 seconds of "Housewife" before I
+paused it over MPRIS; it had been paused on "The Big Sleep" and is now
+paused on "Housewife". Fixed (`SpotifyPlayback` now has an Expanding state)
+and covered by the slow-read test, which fails on the old code.
+
+Not checked for real: a phone actually playing on Thrum (transferring
+Matt's playback was out of bounds), Connect volume and seek from a phone,
+and the Web API fallback for Liked Songs.
+
+Follow-ups:
+
+- **Try Connect with a real phone**: transfer, pause, skip, seek, volume,
+  and a phone taking playback back.
+- **Seeking on the Connect entry** from Thrum: it is live, so Thrum's seek
+  bar does nothing; the phone seeks.
+- **Toggling Connect restarts the sidecar**, which stops a Spotify track
+  playing at that moment.

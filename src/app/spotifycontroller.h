@@ -232,8 +232,9 @@ private:
     AudioEngine::State m_state = AudioEngine::Stopped;
     // Set once Spotify was told to play this track, until it is unloaded.
     bool m_started = false;
-    // A context entry: reading its tracks for Thrum was tried.
-    bool m_expandTried = false;
+    // A context entry: whether its tracks are being read for Thrum, or that
+    // failed (only then does spotify_player play it).
+    enum Expand { NotExpanded, Expanding, ExpandFailed } m_expand = NotExpanded;
     // Waiting for the backend to show the track playing.
     bool m_starting = false;
     bool m_confirmed = false;
